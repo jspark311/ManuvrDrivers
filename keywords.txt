@@ -1,0 +1,16 @@
+#########################################
+# Syntax Coloring Map For ManuvrDrivers
+#########################################
+
+#########################################
+# Datatypes (TMP102)
+TMP102               KEYWORD1
+
+#########################################
+# Methods and Functions (TMP102)
+init               KEYWORD2
+poll               KEYWORD2
+
+#########################################
+# Constants (TMP102)
+TMP102DataRate     LITERAL1

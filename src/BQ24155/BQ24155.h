@@ -25,14 +25,6 @@ limitations under the License.
 #include <AbstractPlatform.h>
 #include <I2CAdapter.h>
 
-/* Sensor registers that exist in hardware */
-#define BQ24155_REG_STATUS     0x00
-#define BQ24155_REG_LIMITS     0x01
-#define BQ24155_REG_BATT_REGU  0x02
-#define BQ24155_REG_PART_REV   0x03
-#define BQ24155_REG_FAST_CHRG  0x04
-
-
 /* Driver state flags. */
 #define BQ24155_FLAG_INIT_CTRL      0x0001  // Register init flags.
 #define BQ24155_FLAG_INIT_LIMITS    0x0002  // Register init flags.
@@ -40,12 +32,21 @@ limitations under the License.
 #define BQ24155_FLAG_INIT_FAST_CHRG 0x0008  // Register init flags.
 #define BQ24155_FLAG_DISABLE_STAT   0x1000
 #define BQ24155_FLAG_ISEL_HIGH      0x2000
+#define BQ24155_FLAG_LIMIT_WRITING  0x4000  // There is write operation to the limit register pending.
 
 #define BQ24155_FLAG_MASK_INIT_CMPLT ( \
   BQ24155_FLAG_INIT_CTRL     | BQ24155_FLAG_INIT_LIMITS | \
   BQ24155_FLAG_INIT_BATT_REG | BQ24155_FLAG_INIT_FAST_CHRG)
 
-
+/* Registers that exist in hardware */
+enum class BQ24155RegID : uint8_t {
+  STATUS    = 0x00,
+  LIMITS    = 0x01,
+  BATT_REGU = 0x02,
+  PART_REV  = 0x03,
+  FAST_CHRG = 0x04,
+  INVALID   = 0x05
+};
 
 enum class BQ24155Fault : uint8_t {
   NOMINAL      = 0x00,
@@ -163,6 +164,13 @@ class BQ24155 : public I2CDevice {
     };
 
     /**
+    * @return true if the charger is found on the bus.
+    */
+    inline bool devFound() {
+      return (0x48 == (0xF8 & _get_shadow_value(BQ24155RegID::PART_REV)));
+    };
+
+    /**
     * @return true if the STAT pin is disabled.
     */
     inline bool disableSTATPin() {
@@ -197,9 +205,8 @@ class BQ24155 : public I2CDevice {
 
   private:
     const BQ24155Opts _opts;
-    uint16_t _flgs     = 0;
-    // TODO: Reflect registers in their own vars to head-off concurrency bugs.
-    // uint8_t  _reg_lim  = 0;
+    uint16_t _flgs      = 0;
+    uint8_t  shadows[5] = {0, 0, 0, 0, 0};
 
     /**
     * @return ISEL pin state.
@@ -210,7 +217,7 @@ class BQ24155 : public I2CDevice {
     /**
     * @return The chip's hardware revision.
     */
-    inline uint8_t _part_revision() {   return (regValue(BQ24155_REG_PART_REV) & 0x07);   };
+    inline uint8_t _part_revision() {   return (_get_shadow_value(BQ24155RegID::PART_REV) & 0x07);   };
 
     /**
     * Conversion fxn.
@@ -238,7 +245,14 @@ class BQ24155 : public I2CDevice {
       return (((step & 0x07) * (6.8f / _opts.sense_milliohms)) + (BQ24155_VIREGU_OFFSET / _opts.sense_milliohms));
     };
 
-    int8_t _write_reg_internal(uint8_t r, uint8_t v);
+    int8_t _post_discovery_init();
+
+    int8_t  _set_shadow_value(BQ24155RegID, uint8_t);
+    uint8_t _get_shadow_value(BQ24155RegID);
+    int8_t  _read_registers(BQ24155RegID, uint8_t);
+    int8_t  _write_registers(BQ24155RegID, uint8_t);
+
+    static BQ24155RegID _reg_id_from_addr(const uint8_t addr);
 };
 
 #endif  // __LTC294X_DRIVER_H__

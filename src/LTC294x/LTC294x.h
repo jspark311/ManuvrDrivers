@@ -25,18 +25,6 @@ limitations under the License.
 #include <AbstractPlatform.h>
 #include <I2CAdapter.h>
 
-
-/* Sensor registers that exist in hardware */
-#define LTC294X_REG_STATUS        0x00
-#define LTC294X_REG_CONTROL       0x01
-#define LTC294X_REG_ACC_CHARGE    0x02  // 16-bit
-#define LTC294X_REG_CHRG_THRESH_H 0x04  // 16-bit
-#define LTC294X_REG_CHRG_THRESH_L 0x06  // 16-bit
-#define LTC294X_REG_VOLTAGE       0x08  // 16-bit
-#define LTC294X_REG_V_THRESH      0x0A  // 16-bit
-#define LTC294X_REG_TEMP          0x0C  // 16-bit
-#define LTC294X_REG_TEMP_THRESH   0x0E  // 16-bit
-
 #define LTC294X_I2CADDR        0x64
 #define DEG_K_C_OFFSET      272.15f
 
@@ -60,6 +48,21 @@ limitations under the License.
 #define LTC294X_OPT_PIN_IS_CC   0x01  // Is the I/O pin to be treated as an output?
 #define LTC294X_OPT_INTEG_SENSE 0x02  // This is a "-1" varient, and has an integrated sense resistor.
 #define LTC294X_OPT_ADC_AUTO    0x04  // The converter should run automatically.
+
+
+/* Registers that exist in hardware */
+enum class LTC294xRegID : uint8_t {
+  STATUS        = 0x00,
+  CONTROL       = 0x01,
+  ACC_CHARGE    = 0x02,  // 16-bit
+  CHRG_THRESH_H = 0x04,  // 16-bit
+  CHRG_THRESH_L = 0x06,  // 16-bit
+  VOLTAGE       = 0x08,  // 16-bit
+  V_THRESH      = 0x0A,  // 16-bit
+  TEMP          = 0x0C,  // 16-bit
+  TEMP_THRESH   = 0x0E,  // 16-bit
+  INVALID       = 0x10
+};
 
 
 enum class LTC294xADCModes : uint8_t {
@@ -122,24 +125,19 @@ class LTC294xOpts {
 /**
 * Driver class for LTC294x.
 */
-class LTC294x : public I2CDeviceWithRegisters, public SensorWrapper {
+class LTC294x : public I2CDevice {
   public:
     LTC294x(const LTC294xOpts*, uint16_t batt_capacity);
     ~LTC294x();
 
     /* Overrides from SensorWrapper */
-    SensorError init();
-    SensorError readSensor();
-    SensorError setParameter(uint16_t reg, int len, uint8_t*);  // Used to set operational parameters for the sensor.
-    SensorError getParameter(uint16_t reg, int len, uint8_t*);  // Used to read operational parameters from the sensor.
+    int8_t init();
+    int8_t poll();
 
-    /* Overrides from I2CDeviceWithRegisters... */
-    int8_t register_write_cb(DeviceRegister*);
-    int8_t register_read_cb(DeviceRegister*);
+    /* Overrides from I2CDevice... */
+    int8_t io_op_callahead(BusOp*);
+    int8_t io_op_callback(BusOp*);
     void printDebug(StringBuilder*);
-    inline void printRegisters(StringBuilder* output) {
-      I2CDeviceWithRegisters::printDebug(output);
-    };
 
     /* Returns temperature in Celcius. */
     float temperature();
@@ -149,7 +147,7 @@ class LTC294x : public I2CDeviceWithRegisters, public SensorWrapper {
     inline float batteryCurrent() {    return _chrg_dt;      };
     inline float minimumCurrent() {    return _chrg_min_dt;  };
     inline float maximumCurrent() {    return _chrg_max_dt;  };
-    inline uint16_t batteryCharge() {  return regValue(LTC294X_REG_ACC_CHARGE);  };
+    inline uint16_t batteryCharge() {  return _get_shadow_value(LTC294xRegID::ACC_CHARGE);  };
     inline int8_t batteryCharge(uint16_t x) {  return _set_charge_register(x);   };
 
     int8_t setChargeThresholds(uint16_t low, uint16_t high);
@@ -169,7 +167,7 @@ class LTC294x : public I2CDeviceWithRegisters, public SensorWrapper {
     };
 
 
-    inline bool asleep() {    return (1 == (regValue(LTC294X_REG_CONTROL) & 0x01));  };
+    inline bool asleep() {    return (1 == ((uint8_t) _get_shadow_value(LTC294xRegID::CONTROL) & 0x01));  };
     int8_t  sleep(bool);
 
 
@@ -186,6 +184,7 @@ class LTC294x : public I2CDeviceWithRegisters, public SensorWrapper {
     uint8_t  _thrsh_h_temp = 0;  // cached threshold values
     uint8_t  _thrsh_l_volt = 0;  // cached threshold values
     uint8_t  _thrsh_h_volt = 0;  // cached threshold values
+    uint8_t  shadows[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
     /* Expected bounds of charge counter for given battery size. */
     uint16_t _charge_expected_min = 0;
@@ -212,19 +211,8 @@ class LTC294x : public I2CDeviceWithRegisters, public SensorWrapper {
     int8_t _set_charge_register(uint16_t x);
     int8_t _set_thresh_reg_charge(uint16_t l, uint16_t h);
 
-    inline int8_t _write_control_reg(uint8_t v) {
-      return writeIndirect(LTC294X_REG_CONTROL, v);
-    };
-
-    /* Compresses two single-byte registers into a single 16-bit register. */
-    inline int8_t _set_thresh_reg_voltage(uint8_t l, uint8_t h) {
-      return writeIndirect(LTC294X_REG_V_THRESH, ((uint16_t) l) | ((uint16_t) h << 8));
-    };
-
-    /* Compresses two single-byte registers into a single 16-bit register. */
-    inline int8_t _set_thresh_reg_temperature(uint8_t l, uint8_t h) {
-      return writeIndirect(LTC294X_REG_TEMP_THRESH, ((uint16_t) l) | ((uint16_t) h << 8));
-    };
+    int8_t _write_control_reg(uint8_t v);
+    int8_t _post_discovery_init();
 
     /**
     * @param The ADC mode.
@@ -235,7 +223,7 @@ class LTC294x : public I2CDeviceWithRegisters, public SensorWrapper {
     * @return The ADC mode.
     */
     LTC294xADCModes _adc_mode() {
-      return (LTC294xADCModes) (regValue(LTC294X_REG_CONTROL) & LTC294X_OPT_MASK_ADC_MODE);
+      return (LTC294xADCModes) ((uint8_t) _get_shadow_value(LTC294xRegID::CONTROL) & LTC294X_OPT_MASK_ADC_MODE);
     };
 
     /**
@@ -248,7 +236,7 @@ class LTC294x : public I2CDeviceWithRegisters, public SensorWrapper {
     /**
     * @return Is this device a 2942?
     */
-    inline bool _is_2942() {   return (0 == (regValue(LTC294X_REG_STATUS) & 0x80));   };
+    inline bool _is_2942() {   return (0 == ((uint8_t) _get_shadow_value(LTC294xRegID::STATUS) & 0x80));   };
 
     /**
     * @param Is power-tracking data valid?
@@ -268,6 +256,13 @@ class LTC294x : public I2CDeviceWithRegisters, public SensorWrapper {
     void _update_tracking();
     void _proc_updated_status_reg(uint8_t);
     uint8_t _derive_prescaler();
+
+    int8_t   _set_shadow_value(LTC294xRegID, uint16_t);
+    uint16_t _get_shadow_value(LTC294xRegID);
+    int8_t  _read_registers(LTC294xRegID, uint8_t);
+    int8_t  _write_registers(LTC294xRegID, uint8_t);
+
+    static LTC294xRegID _reg_id_from_addr(const uint8_t addr);
 };
 
 

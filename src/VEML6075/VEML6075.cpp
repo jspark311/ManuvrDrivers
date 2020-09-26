@@ -33,7 +33,6 @@
 
 #define VEML6075_ADDRESS   0x10
 
-#define VEML6075_REGISTER_LENGTH 2   // 2 bytes per register
 #define NUM_INTEGRATION_TIMES 5
 
 #define VEML6075_DEVICE_ID 0x26
@@ -86,26 +85,71 @@ const float UVB_RESPONSIVITY[NUM_INTEGRATION_TIMES] = {
 };
 
 
+
+/*******************************************************************************
+*      _______.___________.    ___   .___________. __    ______     _______.
+*     /       |           |   /   \  |           ||  |  /      |   /       |
+*    |   (----`---|  |----`  /  ^  \ `---|  |----`|  | |  ,----'  |   (----`
+*     \   \       |  |      /  /_\  \    |  |     |  | |  |        \   \
+* .----)   |      |  |     /  _____  \   |  |     |  | |  `----.----)   |
+* |_______/       |__|    /__/     \__\  |__|     |__|  \______|_______/
+*
+* Static members and initializers should be located here.
+*******************************************************************************/
+
+/* Converts a register address back into an enum. */
+VEML6075RegId VEML6075::_reg_id_from_addr(const uint8_t reg_addr) {
+  switch (reg_addr & 0x0F) {
+    case 0x00:   return VEML6075RegId::UV_CONF;
+    case 0x07:   return VEML6075RegId::UVA_DATA;
+    case 0x09:   return VEML6075RegId::UVB_DATA;
+    case 0x0A:   return VEML6075RegId::UVCOMP1_DATA;
+    case 0x0B:   return VEML6075RegId::UVCOMP2_DATA;
+    case 0x0C:   return VEML6075RegId::ID;
+  }
+  return VEML6075RegId::INVALID;
+}
+
+
+/* Converts an enum into a register address. */
+uint8_t VEML6075::_reg_addr_from_id(const VEML6075RegId r) {
+  switch (r) {
+    case VEML6075RegId::UV_CONF:       return 0x00;
+    case VEML6075RegId::UVA_DATA:      return 0x07;
+    case VEML6075RegId::UVB_DATA:      return 0x09;
+    case VEML6075RegId::UVCOMP1_DATA:  return 0x0A;
+    case VEML6075RegId::UVCOMP2_DATA:  return 0x0B;
+    case VEML6075RegId::ID:            return 0x0C;
+    default:
+      break;
+  }
+  return 0;
+}
+
+
+
+/*******************************************************************************
+*   ___ _              ___      _ _              _      _
+*  / __| |__ _ ______ | _ ) ___(_) |___ _ _ _ __| |__ _| |_ ___
+* | (__| / _` (_-<_-< | _ \/ _ \ | / -_) '_| '_ \ / _` |  _/ -_)
+*  \___|_\__,_/__/__/ |___/\___/_|_\___|_| | .__/_\__,_|\__\___|
+*                                          |_|
+* Constructors/destructors, class initialization functions and so-forth...
+*******************************************************************************/
+
 VEML6075::VEML6075() : I2CDevice(VEML6075_ADDRESS) {}
 
 
-VEML6075_error_t VEML6075::init() {
-  VEML6075_error_t err = VEML6075_ERROR_UNDEFINED;
+int8_t VEML6075::init() {
+  int8_t ret = -1;
   if (nullptr != _bus) {
-    if (VEML6075_ERROR_SUCCESS == _connected()) {
-      if (VEML6075_ERROR_SUCCESS == enabled(true)) {   // Power on
-        err = setIntegrationTime(IT_100MS);      // Set intergration time to 100ms
-        if (err == VEML6075_ERROR_SUCCESS) {
-          err = setHighDynamic(DYNAMIC_NORMAL);  // High-dynamic mode off
-          if (err == VEML6075_ERROR_SUCCESS) {
-            err = setAutoForce(AF_DISABLE);      // Disable auto-force mode
-          }
-        }
-      }
+    ret--;
+    _veml_clear_flag(VEML6075_FLAG_INITIALIZED);
+    if (0 == _read_registers(VEML6075RegId::ID, 2)) {
+      ret = 0;
     }
   }
-  _veml_set_flag(VEML6075_FLAG_INITIALIZED, (VEML6075_ERROR_SUCCESS == err));
-  return err;
+  return ret;
 }
 
 
@@ -122,150 +166,124 @@ int8_t VEML6075::poll() {
   if (initialized() && enabled()) {
     ret = 0;
     if ((_last_read + _integrationTime) <= millis()) {
-      ret = (VEML6075_ERROR_SUCCESS == _read_data()) ? 1 : -1;
+      ret = (VEML6075Err::SUCCESS == _read_data()) ? 1 : -1;
     }
   }
   return ret;
 }
 
 
-VEML6075_error_t VEML6075::setIntegrationTime(VEML6075::veml6075_uv_it_t it) {
-  veml6075_t conf;
-  if (it >= IT_RESERVED_0) {
-    return VEML6075_ERROR_UNDEFINED;
+/*******************************************************************************
+* Functions specific to this class....                                         *
+*******************************************************************************/
+
+int8_t VEML6075::_post_discovery_init() {
+  int8_t ret = -1;
+  *((uint8_t*) shadows) = 0x10;
+  if (0 != _write_registers(VEML6075RegId::UV_CONF, 2)) {
+    ret = 0;
   }
+  return ret;
+}
 
-  VEML6075_error_t err = readI2CRegister(&conf, VEML6075::REG_UV_CONF);
-  if (err != VEML6075_ERROR_SUCCESS) {
-    return err;
-  }
 
-  conf &= ~(VEML6075_UV_IT_MASK);
-  conf |= (it<<VEML6075_UV_IT_SHIFT);
-  err = writeI2CRegister(conf, VEML6075::REG_UV_CONF);
-  if (err != VEML6075_ERROR_SUCCESS) {
-    return err;
-  }
 
-  _aResponsivity = UVA_RESPONSIVITY[(uint8_t)it];
-  _bResponsivity = UVB_RESPONSIVITY[(uint8_t)it];
-
+VEML6075Err VEML6075::setIntegrationTime(VEML6075IntTime it) {
+  uint8_t conf = *((uint8_t*) shadows);  // Valid conf is the first byte of the first 16-bit index.
   switch (it) {
-    case IT_50MS:   _integrationTime = 50;     break;
-    case IT_100MS:  _integrationTime = 100;    break;
-    case IT_200MS:  _integrationTime = 200;    break;
-    case IT_400MS:  _integrationTime = 400;    break;
-    case IT_800MS:  _integrationTime = 800;    break;
-    default:        _integrationTime = 0;      break;
+    case VEML6075IntTime::IT_50MS:
+    case VEML6075IntTime::IT_100MS:
+    case VEML6075IntTime::IT_200MS:
+    case VEML6075IntTime::IT_400MS:
+    case VEML6075IntTime::IT_800MS:
+      conf &= ~(VEML6075_UV_IT_MASK);
+      conf |= (((uint8_t) it) << VEML6075_UV_IT_SHIFT);
+      *((uint8_t*) shadows) = conf;
+      if (0 != _write_registers(VEML6075RegId::UV_CONF, 2)) {
+        return VEML6075Err::WRITE;
+      }
+      break;
+    default:
+      return VEML6075Err::UNDEFINED;
   }
-  return err;
+  return VEML6075Err::SUCCESS;
 }
 
 
-VEML6075::veml6075_uv_it_t VEML6075::getIntegrationTime() {
-  veml6075_t conf;
-  VEML6075_error_t err = readI2CRegister(&conf, VEML6075::REG_UV_CONF);
-  if (err != VEML6075_ERROR_SUCCESS) {
-    return IT_INVALID;
+VEML6075Err VEML6075::setHighDynamic(veml6075_hd_t hd) {
+  uint8_t conf = *((uint8_t*) shadows);  // Valid conf is the first byte of the first 16-bit index.
+  switch (hd) {
+    case veml6075_hd_t::DYNAMIC_NORMAL:
+    case veml6075_hd_t::DYNAMIC_HIGH:
+      conf &= ~(VEML6075_HD_MASK);
+      conf |= (((uint8_t) hd) << VEML6075_HD_SHIFT);
+      *((uint8_t*) shadows) = conf;
+      if (0 != _write_registers(VEML6075RegId::UV_CONF, 2)) {
+        return VEML6075Err::WRITE;
+      }
+      break;
+    default:
+      return VEML6075Err::UNDEFINED;
   }
-  return static_cast<VEML6075::veml6075_uv_it_t>((conf & VEML6075_UV_IT_MASK) >> VEML6075_UV_IT_SHIFT);
+  return VEML6075Err::SUCCESS;
 }
 
 
-VEML6075_error_t VEML6075::setHighDynamic(VEML6075::veml6075_hd_t hd) {
-  veml6075_t conf;
-  VEML6075_error_t err = readI2CRegister(&conf, VEML6075::REG_UV_CONF);
-  if (err == VEML6075_ERROR_SUCCESS) {
-    conf &= ~(VEML6075_HD_MASK);
-    conf |= (hd << VEML6075_HD_SHIFT);
-    err = writeI2CRegister(conf, VEML6075::REG_UV_CONF);
-    if (err == VEML6075_ERROR_SUCCESS) {
-      _veml_set_flag(VEML6075_FLAG_DYNAMIC_HIGH, (hd == DYNAMIC_HIGH));
-    }
+VEML6075Err VEML6075::setTrigger(veml6075_uv_trig_t trig) {
+  uint8_t conf = *((uint8_t*) shadows);  // Valid conf is the first byte of the first 16-bit index.
+  switch (trig) {
+    case veml6075_uv_trig_t::NO_TRIGGER:
+    case veml6075_uv_trig_t::TRIGGER_ONE_OR_UV_TRIG:
+      conf &= ~(VEML6075_TRIG_MASK);
+      conf |= (((uint8_t) trig) << VEML6075_TRIG_SHIFT);
+      *((uint8_t*) shadows) = conf;
+      if (0 != _write_registers(VEML6075RegId::UV_CONF, 2)) {
+        return VEML6075Err::WRITE;
+      }
+      break;
+    default:
+      return VEML6075Err::UNDEFINED;
   }
-  return err;
+  return VEML6075Err::SUCCESS;
 }
 
 
-VEML6075::veml6075_hd_t VEML6075::getHighDynamic() {
-  veml6075_t conf;
-  VEML6075_error_t err = readI2CRegister(&conf, VEML6075::REG_UV_CONF);
-  if (err != VEML6075_ERROR_SUCCESS) {
-    return HD_INVALID;
+VEML6075Err VEML6075::setAutoForce(veml6075_af_t af) {
+  uint8_t conf = *((uint8_t*) shadows);  // Valid conf is the first byte of the first 16-bit index.
+  switch (af) {
+    case veml6075_af_t::AF_DISABLE:
+    case veml6075_af_t::AF_ENABLE:
+      conf &= ~(VEML6075_AF_MASK);
+      conf |= (((uint8_t) af) << VEML6075_AF_SHIFT);
+      *((uint8_t*) shadows) = conf;
+      if (0 != _write_registers(VEML6075RegId::UV_CONF, 2)) {
+        return VEML6075Err::WRITE;
+      }
+      break;
+    default:
+      return VEML6075Err::UNDEFINED;
   }
-  return static_cast<VEML6075::veml6075_hd_t>((conf & VEML6075_HD_MASK) >> VEML6075_HD_SHIFT);
+  return VEML6075Err::SUCCESS;
 }
 
 
-VEML6075_error_t VEML6075::setTrigger(VEML6075::veml6075_uv_trig_t trig) {
-  veml6075_t conf;
-  VEML6075_error_t err = readI2CRegister(&conf, VEML6075::REG_UV_CONF);
-  if (VEML6075_ERROR_SUCCESS == err) {
-    conf &= ~(VEML6075_TRIG_MASK);
-    conf |= (trig << VEML6075_TRIG_SHIFT);
-    err = writeI2CRegister(conf, VEML6075::REG_UV_CONF);
-    if (VEML6075_ERROR_SUCCESS == err) {
-      _veml_set_flag(VEML6075_FLAG_TRIGGER_ENABLED, (trig == TRIGGER_ONE_OR_UV_TRIG));
-    }
-  }
-  return err;
-}
-
-
-VEML6075::veml6075_uv_trig_t VEML6075::getTrigger() {
-  veml6075_t conf;
-  VEML6075_error_t err = readI2CRegister(&conf, VEML6075::REG_UV_CONF);
-  if (err != VEML6075_ERROR_SUCCESS) {
-    return TRIGGER_INVALID;
-  }
-  return static_cast<VEML6075::veml6075_uv_trig_t>((conf & VEML6075_TRIG_MASK) >> VEML6075_TRIG_SHIFT);
-}
-
-
-VEML6075_error_t VEML6075::setAutoForce(VEML6075::veml6075_af_t af) {
-  veml6075_t conf;
-  VEML6075_error_t err = readI2CRegister(&conf, VEML6075::REG_UV_CONF);
-  if (VEML6075_ERROR_SUCCESS == err) {
-    conf &= ~(VEML6075_AF_MASK);
-    conf |= (af << VEML6075_AF_SHIFT);
-    err = writeI2CRegister(conf, VEML6075::REG_UV_CONF);
-    if (VEML6075_ERROR_SUCCESS == err) {
-      _veml_set_flag(VEML6075_FLAG_AF_ENABLED);
-    }
-  }
-  return err;
-}
-
-
-VEML6075::veml6075_af_t VEML6075::getAutoForce() {
-  veml6075_t conf;
-  VEML6075_error_t err = readI2CRegister(&conf, VEML6075::REG_UV_CONF);
-  if (err != VEML6075_ERROR_SUCCESS) {
-    return AF_INVALID;
-  }
-  return static_cast<VEML6075::veml6075_af_t>((conf & VEML6075_AF_MASK) >> VEML6075_AF_SHIFT);
-}
-
-
-VEML6075_error_t VEML6075::enabled(bool en) {
-  veml6075_t conf;
-  VEML6075_error_t err = readI2CRegister(&conf, VEML6075::REG_UV_CONF);
-  if (VEML6075_ERROR_SUCCESS == err) {
+VEML6075Err VEML6075::enabled(bool en) {
+  uint8_t conf = *((uint8_t*) shadows);  // Valid conf is the first byte of the first 16-bit index.
+  if (en != _veml_flag(VEML6075_FLAG_ENABLED)) {
     conf &= 0xFE; // Clear shutdown bit
     if (!en) {
       conf |= 1;
     }
-    err = writeI2CRegister(conf, VEML6075::REG_UV_CONF);
-    if (VEML6075_ERROR_SUCCESS == err) {
-      _veml_set_flag(VEML6075_FLAG_ENABLED, en);
+    if (0 != _write_registers(VEML6075RegId::UV_CONF, 2)) {
+      return VEML6075Err::WRITE;
     }
   }
-  return err;
+  return VEML6075Err::SUCCESS;
 }
 
 
-VEML6075_error_t VEML6075::trigger() {
-  return setTrigger(TRIGGER_ONE_OR_UV_TRIG);
+VEML6075Err VEML6075::trigger() {
+  return setTrigger(veml6075_uv_trig_t::TRIGGER_ONE_OR_UV_TRIG);
 }
 
 
@@ -283,27 +301,13 @@ float VEML6075::index() {
 /*
 * Encompasses UVA, UVB, UVCOMP1, and UVCOMP2. Stores raw values in shadows.
 */
-VEML6075_error_t VEML6075::_read_data() {
-  VEML6075_error_t err = VEML6075_ERROR_UNDEFINED;
+VEML6075Err VEML6075::_read_data() {
+  VEML6075Err err = VEML6075Err::UNDEFINED;
   if (initialized() && enabled()) {
-    uint8_t buffer[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-    err = readI2CBuffer(&buffer[0], VEML6075::REG_UVA_DATA, 2);
-    if (VEML6075_ERROR_SUCCESS == err) {
-      err = readI2CBuffer(&buffer[2], VEML6075::REG_UVB_DATA, 2);
-      if (VEML6075_ERROR_SUCCESS == err) {
-        err = readI2CBuffer(&buffer[4], VEML6075::REG_UVCOMP1_DATA, 2);
-        if (VEML6075_ERROR_SUCCESS == err) {
-          err = readI2CBuffer(&buffer[6], VEML6075::REG_UVCOMP2_DATA, 2);
-          if (VEML6075_ERROR_SUCCESS == err) {
-            uint16_t new_uva = (buffer[0] & 0x00FF) | ((buffer[1] & 0x00FF) << 8);
-            uint16_t new_uvb = (buffer[2] & 0x00FF) | ((buffer[3] & 0x00FF) << 8);
-            _lastCOMP1 = (buffer[4] & 0x00FF) | ((buffer[5] & 0x00FF) << 8);
-            _lastCOMP2 = (buffer[6] & 0x00FF) | ((buffer[7] & 0x00FF) << 8);
-            _last_read = millis();
-            _lastUVA = ((float) new_uva) - ((UVA_A_COEF * UV_ALPHA * _lastCOMP1) / UV_GAMMA) - ((UVA_B_COEF * UV_ALPHA * _lastCOMP2) / UV_DELTA);
-            _lastUVB = ((float) new_uvb) - ((UVA_C_COEF * UV_BETA  * _lastCOMP1) / UV_GAMMA) - ((UVA_D_COEF * UV_BETA  * _lastCOMP2) / UV_DELTA);
-          }
-        }
+    err = VEML6075Err::READ;
+    if (0 == _read_registers(VEML6075RegId::UVA_DATA, 2)) {
+      if (0 == _read_registers(VEML6075RegId::UVB_DATA, 6)) {
+        err = VEML6075Err::SUCCESS;
       }
     }
   }
@@ -311,61 +315,155 @@ VEML6075_error_t VEML6075::_read_data() {
 }
 
 
-VEML6075_error_t VEML6075::_connected() {
-  veml6075_t devID;
-  VEML6075_error_t err = VEML6075_ERROR_INVALID_ADDRESS;
-  if (VEML6075_ERROR_SUCCESS == readI2CRegister(&devID, VEML6075::REG_ID)) {
-    if (VEML6075_DEVICE_ID == (devID & 0x00FF)) {
-      err = VEML6075_ERROR_SUCCESS;
+int8_t  VEML6075::_read_registers(VEML6075RegId r, uint8_t len) {
+  int8_t ret = -1;
+  switch (r) {
+    case VEML6075RegId::UV_CONF:
+    case VEML6075RegId::UVA_DATA:
+    case VEML6075RegId::UVB_DATA:
+    case VEML6075RegId::UVCOMP1_DATA:
+    case VEML6075RegId::UVCOMP2_DATA:
+    case VEML6075RegId::ID:
+      break;
+    default:
+      return ret;
+  }
+  uint8_t* ptr = (uint8_t*) &shadows[(uint8_t) r];
+  // TODO: Write LSB first. Ensure this on big-endian platforms.
+  I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
+  if (nullptr != op) {
+    ret--;
+    op->dev_addr = _dev_addr;
+    op->sub_addr = _reg_addr_from_id(r);
+    op->setBuffer(ptr, len);
+    if (0 == _bus->queue_io_job(op)) {
+      ret = 0;
     }
   }
-  _veml_set_flag(VEML6075_FLAG_DEVICE_PRESENT, (VEML6075_ERROR_SUCCESS == err));
-  return err;
+  return ret;
 }
 
 
-VEML6075_error_t VEML6075::readI2CBuffer(uint8_t* dest, VEML6075_REGISTER_t startRegister, uint16_t len) {
-  //VEML6075_DEBUGLN((STORAGE("(readI2CBuffer): read ") + String(len) + STORAGE(" @ 0x") + String(startRegister, HEX)));
-  _bus->beginTransmission((uint8_t) VEML6075_ADDRESS);
-  _bus->write(startRegister);
-  if (_bus->endTransmission(false) != 0) {
-    //VEML6075_DEBUGLN(STORAGE("    ERR (readI2CBuffer): End transmission"));
-    return VEML6075_ERROR_READ;
+int8_t  VEML6075::_write_registers(VEML6075RegId r, uint8_t len) {
+  int8_t ret = -1;
+  if (VEML6075RegId::UV_CONF == r) {   // The only writable register.
+    ret--;
+    uint8_t* ptr = (uint8_t*) &shadows[(uint8_t) r];
+    // TODO: Write LSB first. Ensure this on big-endian platforms.
+    I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
+    if (nullptr != op) {
+      ret--;
+      op->dev_addr = _dev_addr;
+      op->sub_addr = _reg_addr_from_id(r);
+      op->setBuffer(ptr, len);
+      if (0 == _bus->queue_io_job(op)) {
+        ret = 0;
+      }
+    }
   }
-
-  _bus->requestFrom((uint8_t) VEML6075_ADDRESS, (uint8_t)len);
-  for (uint16_t i = 0; i < len; i++) {
-    dest[i] = _bus->read();
-    //VEML6075_DEBUGLN((STORAGE("    ") + String(i) + STORAGE(": 0x") + String(dest[i], HEX)));
-  }
-  return VEML6075_ERROR_SUCCESS;
+  return ret;
 }
 
 
-VEML6075_error_t VEML6075::writeI2CBuffer(uint8_t* src, VEML6075_REGISTER_t startRegister, uint16_t len) {
-  _bus->beginTransmission((uint8_t) VEML6075_ADDRESS);
-  _bus->write(startRegister);
-  for (uint16_t i = 0; i < len; i++) {
-    _bus->write(src[i]);
+
+int8_t VEML6075::_process_new_config(uint8_t new_conf) {
+  VEML6075IntTime it = (VEML6075IntTime) ((new_conf & VEML6075_UV_IT_MASK) >> VEML6075_UV_IT_SHIFT);
+  veml6075_hd_t hd = (veml6075_hd_t) ((new_conf & VEML6075_HD_MASK) >> VEML6075_HD_SHIFT);
+  veml6075_uv_trig_t trig = (veml6075_uv_trig_t) ((new_conf & VEML6075_TRIG_MASK) >> VEML6075_TRIG_SHIFT);
+  veml6075_af_t af = (veml6075_af_t) ((new_conf & VEML6075_AF_MASK) >> VEML6075_AF_SHIFT);
+
+  _aResponsivity = UVA_RESPONSIVITY[(uint8_t) it];
+  _bResponsivity = UVB_RESPONSIVITY[(uint8_t) it];
+  switch (it) {
+    case VEML6075IntTime::IT_50MS:   _integrationTime = 50;     break;
+    case VEML6075IntTime::IT_100MS:  _integrationTime = 100;    break;
+    case VEML6075IntTime::IT_200MS:  _integrationTime = 200;    break;
+    case VEML6075IntTime::IT_400MS:  _integrationTime = 400;    break;
+    case VEML6075IntTime::IT_800MS:  _integrationTime = 800;    break;
+    default:                         _integrationTime = 0;      break;
   }
-  return (_bus->endTransmission(true) == 0) ? VEML6075_ERROR_SUCCESS : VEML6075_ERROR_WRITE;
+
+  _veml_set_flag(VEML6075_FLAG_DYNAMIC_HIGH, (hd == veml6075_hd_t::DYNAMIC_HIGH));
+  _veml_set_flag(VEML6075_FLAG_TRIGGER_ENABLED, (trig == veml6075_uv_trig_t::TRIGGER_ONE_OR_UV_TRIG));
+  _veml_set_flag(VEML6075_FLAG_AF_ENABLED, (af == veml6075_af_t::AF_ENABLE));
+  _veml_set_flag(VEML6075_FLAG_ENABLED, (0 == (new_conf & 0x01)));
+  _veml_set_flag(VEML6075_FLAG_INITIALIZED, true);
+  return 0;
 }
 
 
-VEML6075_error_t VEML6075::readI2CRegister(veml6075_t* dest, VEML6075_REGISTER_t registerAddress) {
-  uint8_t tempDest[2];
-  VEML6075_error_t err = readI2CBuffer(tempDest, registerAddress, VEML6075_REGISTER_LENGTH);
-  if (err == VEML6075_ERROR_SUCCESS) {
-    *dest = (tempDest[0]) | ((veml6075_t) tempDest[1] << 8);
+
+/*******************************************************************************
+* ___     _       _                      These members are mandatory overrides
+*  |   / / \ o   | \  _     o  _  _      for implementing I/O callbacks. They
+* _|_ /  \_/ o   |_/ (/_ \/ | (_ (/_     are also implemented by Adapters.
+*******************************************************************************/
+
+/* Transfers always permitted. */
+int8_t VEML6075::io_op_callahead(BusOp* _op) {   return 0;   }
+
+
+/*
+* Register I/O calls back to this function for BOTH devices (MAG/IMU). So we
+*   split the function up into two halves in private scope in the superclass.
+* Bus operations that call back with errors are ignored.
+*/
+int8_t VEML6075::io_op_callback(BusOp* _op) {
+  I2CBusOp* op = (I2CBusOp*) _op;
+  int8_t ret = BUSOP_CALLBACK_NOMINAL;
+
+  if (!op->hasFault()) {
+    uint8_t* buf    = op->buffer();
+    uint     len    = op->bufferLen();
+    VEML6075RegId r = _reg_id_from_addr(op->sub_addr);
+    uint8_t value   = *buf;
+    switch (op->get_opcode()) {
+      case BusOpcode::TX:
+        switch (r) {
+          case VEML6075RegId::UV_CONF:
+            _process_new_config(value);
+            break;
+          default:  // Anything else is an illegal write target.
+            break;
+        }
+        break;
+
+      case BusOpcode::RX:
+        switch (r) {
+          case VEML6075RegId::UV_CONF:
+            _process_new_config(value);
+            break;
+          case VEML6075RegId::UVA_DATA:
+            break;
+          case VEML6075RegId::UVB_DATA:
+            if (6 == len) {
+              _last_read = millis();
+              uint8_t* uva_ptr = ((uint8_t*) &shadows[1]);
+              uint16_t new_uva = ((uint16_t) *(uva_ptr + 0)) | ((uint16_t) *(uva_ptr + 1) << 8);
+              uint16_t new_uvb = ((uint16_t) *(buf + 0)) | ((uint16_t) *(buf + 1) << 8);
+              _lastCOMP1 = ((uint16_t) *(buf + 2)) | ((uint16_t) *(buf + 3) << 8);
+              _lastCOMP2 = ((uint16_t) *(buf + 4)) | ((uint16_t) *(buf + 5) << 8);
+              _lastUVA = ((float) new_uva) - ((UVA_A_COEF * UV_ALPHA * _lastCOMP1) / UV_GAMMA) - ((UVA_B_COEF * UV_ALPHA * _lastCOMP2) / UV_DELTA);
+              _lastUVB = ((float) new_uvb) - ((UVA_C_COEF * UV_BETA  * _lastCOMP1) / UV_GAMMA) - ((UVA_D_COEF * UV_BETA  * _lastCOMP2) / UV_DELTA);
+            }
+            break;
+          case VEML6075RegId::UVCOMP1_DATA:
+          case VEML6075RegId::UVCOMP2_DATA:
+            break;
+          case VEML6075RegId::ID:
+            _veml_set_flag(VEML6075_FLAG_DEVICE_PRESENT, (VEML6075_DEVICE_ID == value));
+            if (!initialized()) {
+              _post_discovery_init();
+            }
+            break;
+          default:
+            break;
+        }
+        break;
+
+      default:
+        break;
+    }
   }
-  return err;
-}
-
-
-VEML6075_error_t VEML6075::writeI2CRegister(veml6075_t data, VEML6075_REGISTER_t registerAddress) {
-  uint8_t d[2] = {   // Write LSB first
-    (uint8_t) (data & 0x00FF),
-    (uint8_t) ((data & 0xFF00) >> 8)
-  };
-  return writeI2CBuffer(d, registerAddress, VEML6075_REGISTER_LENGTH);
+  return ret;
 }

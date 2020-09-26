@@ -27,6 +27,79 @@ limitations under the License.
 #include "LSM9DS1Types.h"
 
 
+/*
+* These are possible error states for the IMU state-machine.
+*/
+enum class IMUFault : int8_t {
+  NO_ERROR               =  0,
+  WRONG_IDENTITY         = -1,
+  INVALID_PARAM          = -2,
+  NOT_CALIBRATED         = -3,
+  NOT_WRITABLE           = -4,  // TODO: Cut. Should no longer be possible.
+  DATA_EXHAUSTED         = -5,
+  NOT_INITIALIZED        = -6,
+  BUS_INSERTION_FAILED   = -7,   // TODO: Cut. Should no longer be possible.
+  BUS_OPERATION_FAILED_R = -8,   // TODO: Cut. Should no longer be possible.
+  BUS_OPERATION_FAILED_W = -9    // TODO: Cut. Should no longer be possible.
+};
+
+/*
+* These are the class states.
+*/
+enum class IMUState : uint8_t {
+  STAGE_0 = 0,  // Undiscovered. Maybe absent.
+  STAGE_1,      // Discovered, but not init'd.
+  STAGE_2,      // Discovered and initiallized, but unknown register values.
+  STAGE_3,      // Fully initialized and sync'd. Un-calibrated.
+  STAGE_4,      // Calibrated and idle.
+  STAGE_5,      // Calibrated and reading.
+  FAULT,        // Fault.
+  UNDEF         // Not a state-machine value. A return code to simplifiy error-checks.
+};
+
+
+/* Different integrated sensors this class supports. */
+enum class IMUSense : uint8_t {
+  ACC = 0,  // Accelerometer
+  GYR,      // Gyroscope
+  MAG,      // Magnetometer
+  THERM     // Temperature
+};
+
+
+/* Sensor capability flags */
+#define IMU_CAP_FLAG_HAVE_ACC_X   0x0001
+#define IMU_CAP_FLAG_HAVE_ACC_Y   0x0002
+#define IMU_CAP_FLAG_HAVE_ACC_Z   0x0004
+#define IMU_CAP_FLAG_HAVE_GYR_X   0x0008
+#define IMU_CAP_FLAG_HAVE_GYR_Y   0x0010
+#define IMU_CAP_FLAG_HAVE_GYR_Z   0x0020
+#define IMU_CAP_FLAG_HAVE_MAG_X   0x0040
+#define IMU_CAP_FLAG_HAVE_MAG_Y   0x0080
+#define IMU_CAP_FLAG_HAVE_MAG_Z   0x0100
+#define IMU_CAP_FLAG_HAVE_THERM   0x0200  // Has a temperature sensor.
+
+#define IMU_CAP_FLAG_3AXIS_ACC    (IMU_CAP_FLAG_HAVE_ACC_X | IMU_CAP_FLAG_HAVE_ACC_Y | IMU_CAP_FLAG_HAVE_ACC_Z)
+#define IMU_CAP_FLAG_3AXIS_GYR    (IMU_CAP_FLAG_HAVE_GYR_X | IMU_CAP_FLAG_HAVE_GYR_Y | IMU_CAP_FLAG_HAVE_GYR_Z)
+#define IMU_CAP_FLAG_3AXIS_MAG    (IMU_CAP_FLAG_HAVE_MAG_X | IMU_CAP_FLAG_HAVE_MAG_Y | IMU_CAP_FLAG_HAVE_MAG_Z)
+#define IMU_CAP_FLAG_9DOF         (IMU_CAP_FLAG_3AXIS_ACC | IMU_CAP_FLAG_3AXIS_GYR | IMU_CAP_FLAG_3AXIS_MAG)
+
+
+class AbstractIMU {
+  public:
+    virtual int8_t   poll() =0;
+
+    virtual uint16_t capabilities() =0;
+    virtual IMUFault lastRead(IMUSense, float*, float*, float*) =0;
+    virtual int8_t   pendingSamples(IMUSense) =0;
+    virtual bool     devFound() =0;
+    virtual bool     initialized() =0;
+    virtual bool     calibrated() =0;
+
+  protected:
+};
+// TODO: Everything above this line should probably be migrated to a separate header.
+
 #define IMU_COMMON_FLAG_VERBOSITY_MASK  0x0007
 #define IMU_COMMON_FLAG_HW_WRITABLE     0x0008
 #define IMU_COMMON_FLAG_PROFILING       0x0010

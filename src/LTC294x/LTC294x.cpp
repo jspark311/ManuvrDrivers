@@ -26,9 +26,6 @@ TODO: It should be noted that this class assumes an LTC2942-1. This should be
 
 #include "LTC294x.h"
 
-#ifdef CONFIG_MANUVR_LTC294X
-
-
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
 *     /       |           |   /   \  |           ||  |  /      |   /       |
@@ -40,38 +37,38 @@ TODO: It should be noted that this class assumes an LTC2942-1. This should be
 * Static members and initializers should be located here.
 *******************************************************************************/
 
-const DatumDef datum_defs[] = {
-  {
-    .desc    = "Shunt temperature",
-    .units   = COMMON_UNITS_C,
-    .type_id = TCode::FLOAT,
-    .flgs    = SENSE_DATUM_FLAG_HARDWARE
-  },
-  {
-    .desc    = "Battery voltage",
-    .units   = COMMON_UNITS_VOLTS,
-    .type_id = TCode::FLOAT,
-    .flgs    = SENSE_DATUM_FLAG_HARDWARE
-  },
-  {
-    .desc    = "Battery charge",
-    .units   = COMMON_UNITS_AMP_HOURS,
-    .type_id = TCode::FLOAT,
-    .flgs    = SENSE_DATUM_FLAG_HARDWARE
-  },
-  {
-    .desc    = "Instantaneous current",
-    .units   = COMMON_UNITS_AMPS,
-    .type_id = TCode::FLOAT,
-    .flgs    = SENSE_DATUM_FLAG_HARDWARE
-  },
-  {
-    .desc    = "Battery percent",
-    .units   = COMMON_UNITS_PERCENT,
-    .type_id = TCode::FLOAT,
-    .flgs    = 0x00
-  }
-};
+//const DatumDef datum_defs[] = {
+//  {
+//    .desc    = "Shunt temperature",
+//    .units   = COMMON_UNITS_C,
+//    .type_id = TCode::FLOAT,
+//    .flgs    = SENSE_DATUM_FLAG_HARDWARE
+//  },
+//  {
+//    .desc    = "Battery voltage",
+//    .units   = COMMON_UNITS_VOLTS,
+//    .type_id = TCode::FLOAT,
+//    .flgs    = SENSE_DATUM_FLAG_HARDWARE
+//  },
+//  {
+//    .desc    = "Battery charge",
+//    .units   = COMMON_UNITS_AMP_HOURS,
+//    .type_id = TCode::FLOAT,
+//    .flgs    = SENSE_DATUM_FLAG_HARDWARE
+//  },
+//  {
+//    .desc    = "Instantaneous current",
+//    .units   = COMMON_UNITS_AMPS,
+//    .type_id = TCode::FLOAT,
+//    .flgs    = SENSE_DATUM_FLAG_HARDWARE
+//  },
+//  {
+//    .desc    = "Battery percent",
+//    .units   = COMMON_UNITS_PERCENT,
+//    .type_id = TCode::FLOAT,
+//    .flgs    = 0x00
+//  }
+//};
 
 
 /*******************************************************************************
@@ -86,12 +83,7 @@ const DatumDef datum_defs[] = {
 /**
 * Constructor. Takes pin numbers as arguments.
 */
-LTC294x::LTC294x(const LTC294xOpts* o, uint16_t bc) : I2CDeviceWithRegisters(LTC294X_I2CADDR, 9, 16), SensorWrapper("LTC294x"), _opts(o), _batt_volume(bc) {
-  define_datum(&datum_defs[0]);
-  define_datum(&datum_defs[1]);
-  define_datum(&datum_defs[2]);
-  define_datum(&datum_defs[3]);
-  define_datum(&datum_defs[4]);
+LTC294x::LTC294x(const LTC294xOpts* o, uint16_t bc) : I2CDevice(LTC294X_I2CADDR), _opts(o), _batt_volume(bc) {
   if (_opts.useAlertPin()) {
     // This is the chip's default configuration.
     pinMode(_opts.pin, GPIOMode::INPUT_PULLUP);
@@ -101,21 +93,16 @@ LTC294x::LTC294x(const LTC294xOpts* o, uint16_t bc) : I2CDeviceWithRegisters(LTC
     //pinMode(_opts.pin, GPIOMode::OUTPUT_OD);
   }
 
-  defineRegister(LTC294X_REG_STATUS,        (uint8_t)  0x00,   false, true,  false);
-  defineRegister(LTC294X_REG_CONTROL,       (uint8_t)  0x3C,   false, false, true);
-  defineRegister(LTC294X_REG_ACC_CHARGE,    (uint16_t) 0x7FFF, false, false, true);
-  defineRegister(LTC294X_REG_CHRG_THRESH_H, (uint16_t) 0xFFFF, false, false, true);
-  defineRegister(LTC294X_REG_CHRG_THRESH_L, (uint16_t) 0x0000, false, false, true);
-  defineRegister(LTC294X_REG_VOLTAGE,       (uint16_t) 0x0000, false, false, false);
-  defineRegister(LTC294X_REG_V_THRESH,      (uint16_t) 0xFF00, false, false, true);
-  defineRegister(LTC294X_REG_TEMP,          (uint16_t) 0x0000, false, false, false);
-  defineRegister(LTC294X_REG_TEMP_THRESH,   (uint16_t) 0xFF00, false, false, true);
-
+  //defineRegister(LTC294xRegID::STATUS,        (uint8_t)  0x00,   false, true,  false);
+  //defineRegister(LTC294xRegID::CONTROL,       (uint8_t)  0x3C,   false, false, true);
+  //defineRegister(LTC294xRegID::ACC_CHARGE,    (uint16_t) 0x7FFF, false, false, true);
+  //defineRegister(LTC294xRegID::CHRG_THRESH_H, (uint16_t) 0xFFFF, false, false, true);
+  //defineRegister(LTC294xRegID::CHRG_THRESH_L, (uint16_t) 0x0000, false, false, true);
+  //defineRegister(LTC294xRegID::VOLTAGE,       (uint16_t) 0x0000, false, false, false);
+  //defineRegister(LTC294xRegID::V_THRESH,      (uint16_t) 0xFF00, false, false, true);
+  //defineRegister(LTC294xRegID::TEMP,          (uint16_t) 0x0000, false, false, false);
+  //defineRegister(LTC294xRegID::TEMP_THRESH,   (uint16_t) 0xFF00, false, false, true);
   _reset_tracking_data();
-
-  #if defined(CONFIG_MANUVR_SENSOR_MGR)
-    platform.sensorManager()->addSensor(this);
-  #endif
 }
 
 
@@ -129,8 +116,8 @@ LTC294x::~LTC294x() {
 /*
 * Here, we will compare options and set them as defaults.
 */
-SensorError LTC294x::init() {
-  uint8_t val = regValue(LTC294X_REG_CONTROL);
+int8_t LTC294x::init() {
+  uint8_t val = (uint8_t) _get_shadow_value(LTC294xRegID::CONTROL);
   uint8_t dps = _derive_prescaler();
   uint8_t rewrite = (val & 0xC7) | (dps << 3);  // Set the prescalar if it isn't already...
 
@@ -160,36 +147,45 @@ SensorError LTC294x::init() {
   // This is a conservative range for the 'C' variant. The 'I' variant range is
   //   -65C to 85C.
   // NOTE: That's 'f' for float. These values are Celcius.
-  setTemperatureThreshold(0.0f, 70.0f);
+  int8_t ret = setTemperatureThreshold(0.0f, 70.0f);
 
-  return (0 == writeDirtyRegisters()) ? SensorError::NO_ERROR : SensorError::BUS_ERROR;
+  return ret;
 }
 
 
-SensorError LTC294x::readSensor() {
-  if (isActive() && initComplete()) {
-    if (I2C_ERR_SLAVE_NO_ERROR == readRegister(LTC294X_REG_ACC_CHARGE)) {
-      if (I2C_ERR_SLAVE_NO_ERROR == readRegister(LTC294X_REG_VOLTAGE)) {
-        if (I2C_ERR_SLAVE_NO_ERROR == readRegister(LTC294X_REG_TEMP)) {
-          return SensorError::NO_ERROR;
+int8_t LTC294x::poll() {
+  int8_t ret = -1;
+  if (initComplete()) {
+    ret--;
+    if (0 == _read_registers(LTC294xRegID::ACC_CHARGE, 2)) {
+      if (0 == _read_registers(LTC294xRegID::VOLTAGE, 2)) {
+        if (0 == _read_registers(LTC294xRegID::TEMP, 2)) {
+          ret = 0;
         }
       }
     }
   }
-  return SensorError::BUS_ERROR;
+  return ret;
 }
 
-SensorError LTC294x::setParameter(uint16_t reg, int len, uint8_t *data) {
-  switch (reg) {
-    default:
-      break;
+
+
+/*******************************************************************************
+* Functions specific to this class....                                         *
+*******************************************************************************/
+
+int8_t LTC294x::_post_discovery_init() {
+  int8_t ret = -1;
+  // Check for clean registers and mark them as init'd.
+  //_set_shadow_value((uint8_t) BQ24155RegID::STATUS,    0x00);
+  //_set_shadow_value((uint8_t) BQ24155RegID::LIMITS,    0x30);
+  //_set_shadow_value((uint8_t) BQ24155RegID::BATT_REGU, 0x0A);
+  //_set_shadow_value((uint8_t) BQ24155RegID::FAST_CHRG, 0x89);
+
+  if (initComplete()) {
+    ret = 0;
   }
-  return SensorError::INVALID_PARAM_ID;
-}
-
-
-SensorError LTC294x::getParameter(uint16_t reg, int len, uint8_t*) {
-  return SensorError::INVALID_PARAM_ID;
+  return ret;
 }
 
 
@@ -199,109 +195,138 @@ SensorError LTC294x::getParameter(uint16_t reg, int len, uint8_t*) {
 * _|_ /  \_/ o   |_/ (/_ \/ | (_ (/_     are also implemented by Adapters.
 *******************************************************************************/
 
-int8_t LTC294x::register_write_cb(DeviceRegister* reg) {
-  switch (reg->addr) {
-    case LTC294X_REG_CONTROL:
-      _flags |= LTC294X_FLAG_INIT_CTRL;
-      isActive(_is_monitoring());   // We might-should set this flag.
-      break;
-    case LTC294X_REG_ACC_CHARGE:    // The accumulated charge register.
-      _flags |= LTC294X_FLAG_INIT_AC;
-      isCalibrated(true);
-      break;
-    case LTC294X_REG_CHRG_THRESH_H:
-      _flags |= LTC294X_FLAG_INIT_THRESH_CH;
-      break;
-    case LTC294X_REG_CHRG_THRESH_L:
-      _flags |= LTC294X_FLAG_INIT_THRESH_CL;
-      break;
-    case LTC294X_REG_V_THRESH:
-      _flags |= LTC294X_FLAG_INIT_THRESH_V;
-      break;
-    case LTC294X_REG_TEMP_THRESH:
-      _flags |= LTC294X_FLAG_INIT_THRESH_T;
-      break;
-    default:
-      return -1;
+/* Transfers always permitted. */
+int8_t LTC294x::io_op_callahead(BusOp* _op) {   return 0;   }
+
+
+/*
+* Register I/O calls back to this function for BOTH devices (MAG/IMU). So we
+*   split the function up into two halves in private scope in the superclass.
+* Bus operations that call back with errors are ignored.
+*/
+int8_t LTC294x::io_op_callback(BusOp* _op) {
+  I2CBusOp* op = (I2CBusOp*) _op;
+  int8_t ret = BUSOP_CALLBACK_NOMINAL;
+
+  if (!op->hasFault()) {
+    uint8_t* buf     = op->buffer();
+    uint     len     = op->bufferLen();
+    uint8_t  reg_idx = (uint8_t) _reg_id_from_addr(op->sub_addr);
+    bool run_post_init_fxn = false;
+    switch (op->get_opcode()) {
+      case BusOpcode::TX:
+        for (uint i = 0; i < len; i++) {
+          switch ((LTC294xRegID) reg_idx) {
+            case LTC294xRegID::CONTROL:
+              _flags |= LTC294X_FLAG_INIT_CTRL;
+              break;
+            case LTC294xRegID::ACC_CHARGE:    // The accumulated charge register.
+              _flags |= LTC294X_FLAG_INIT_AC;
+              break;
+            case LTC294xRegID::CHRG_THRESH_H:
+              _flags |= LTC294X_FLAG_INIT_THRESH_CH;
+              break;
+            case LTC294xRegID::CHRG_THRESH_L:
+              _flags |= LTC294X_FLAG_INIT_THRESH_CL;
+              break;
+            case LTC294xRegID::V_THRESH:
+              _flags |= LTC294X_FLAG_INIT_THRESH_V;
+              break;
+            case LTC294xRegID::TEMP_THRESH:
+              _flags |= LTC294X_FLAG_INIT_THRESH_T;
+              break;
+            default:  // Illegal. A bad mistake was made somewhere.
+              break;
+          }
+          reg_idx++;
+        }
+        break;
+
+      case BusOpcode::RX:
+        for (uint i = 0; i < len; i++) {
+          uint16_t val = _get_shadow_value((LTC294xRegID) reg_idx);
+          switch ((LTC294xRegID) reg_idx) {
+            case LTC294xRegID::STATUS:
+              if (val & 0x01) {   // Undervoltage lockout.
+                //Kernel::log("LTC294X: undervoltage.\n");
+                _reset_tracking_data();
+              }
+              if (val & 0x02) {   // One of the battery voltage limits was exceeded.
+                //Kernel::log("LTC294X: battery voltage.\n");
+              }
+              if (val & 0x04) {   // Charge alert low
+                //Kernel::log("LTC294X: Charge alert low.\n");
+              }
+              if (val & 0x08) {   // Charge alert high
+                //Kernel::log("LTC294X: Charge alert high.\n");
+              }
+              if (val & 0x10) {   // Temperature alert
+                //Kernel::log("LTC294X: Temperature\n");
+              }
+              if (val & 0x20) {   // AccCharge over/underflow.
+                //_reset_tracking_data();
+                //Kernel::log("LTC294X: AccCharge over/underflow.\n");
+              }
+              break;
+            case LTC294xRegID::CHRG_THRESH_H:
+              // TODO: This will need auditing after the endianness filter in the superclass.
+              _thrsh_h_chrg = val;
+              break;
+            case LTC294xRegID::CHRG_THRESH_L:
+              // TODO: This will need auditing after the endianness filter in the superclass.
+              _thrsh_l_chrg = val;
+              break;
+            case LTC294xRegID::V_THRESH:
+              { // TODO: This will need auditing after the endianness filter in the superclass.
+                _thrsh_l_volt = val & 0xFF;
+                _thrsh_h_volt = (val >> 8) & 0xFF;
+              }
+              break;
+            case LTC294xRegID::TEMP_THRESH:
+              { // TODO: This will need auditing after the endianness filter in the superclass.
+                _thrsh_l_temp = val & 0xFF;
+                _thrsh_h_temp = (val >> 8) & 0xFF;
+              }
+              break;
+
+            // These registers are data from the sensor.
+            // We read in groups, but only note the time on LTC294xRegID::ACC_CHARGE,
+            //   because it is first in the order, and therefore, closer to the actual
+            //   timestamp of the measurement (neglecting bus latency).
+            case LTC294xRegID::ACC_CHARGE:   // Note the time.
+              if (_is_monitoring()) {
+                uint32_t now = millis();
+                _sample_dt = wrap_accounted_delta(now, _sample_time);
+                _sample_time = now;
+                _read_registers(LTC294xRegID::VOLTAGE, 2);
+              }
+              break;
+
+            case LTC294xRegID::VOLTAGE:  // Nothing needs doing here.
+              break;
+
+            case LTC294xRegID::TEMP:  // Final data register. Refresh the tracking data.
+              if (_is_monitoring()) {
+                _update_tracking();
+              }
+              break;
+
+            case LTC294xRegID::CONTROL:
+            default:  // Illegal. A bad mistake was made somewhere.
+              break;
+          }
+          reg_idx++;
+        }
+        if (run_post_init_fxn) {
+          _post_discovery_init();
+        }
+        break;
+
+      default:
+        break;
+    }
   }
-  reg->dirty = false;
-  return 0;
-}
-
-
-int8_t LTC294x::register_read_cb(DeviceRegister* reg) {
-  uint16_t val = (uint16_t) reg->getVal();
-  switch (reg->addr) {
-    case LTC294X_REG_STATUS:
-      if (val & 0x01) {   // Undervoltage lockout.
-        Kernel::log("LTC294X: undervoltage.\n");
-        _reset_tracking_data();
-      }
-      if (val & 0x02) {   // One of the battery voltage limits was exceeded.
-        Kernel::log("LTC294X: battery voltage.\n");
-      }
-      if (val & 0x04) {   // Charge alert low
-        Kernel::log("LTC294X: Charge alert low.\n");
-      }
-      if (val & 0x08) {   // Charge alert high
-        Kernel::log("LTC294X: Charge alert high.\n");
-      }
-      if (val & 0x10) {   // Temperature alert
-        Kernel::log("LTC294X: Temperature\n");
-      }
-      if (val & 0x20) {   // AccCharge over/underflow.
-        //_reset_tracking_data();
-        Kernel::log("LTC294X: AccCharge over/underflow.\n");
-      }
-      break;
-    case LTC294X_REG_CHRG_THRESH_H:
-      // TODO: This will need auditing after the endianness filter in the superclass.
-      _thrsh_h_chrg = val;
-      break;
-    case LTC294X_REG_CHRG_THRESH_L:
-      // TODO: This will need auditing after the endianness filter in the superclass.
-      _thrsh_l_chrg = val;
-      break;
-    case LTC294X_REG_V_THRESH:
-      { // TODO: This will need auditing after the endianness filter in the superclass.
-        _thrsh_l_volt = val & 0xFF;
-        _thrsh_h_volt = (val >> 8) & 0xFF;
-      }
-      break;
-    case LTC294X_REG_TEMP_THRESH:
-      { // TODO: This will need auditing after the endianness filter in the superclass.
-        _thrsh_l_temp = val & 0xFF;
-        _thrsh_h_temp = (val >> 8) & 0xFF;
-      }
-      break;
-
-    // These registers are data from the sensor.
-    // We read in groups, but only note the time on LTC294X_REG_ACC_CHARGE,
-    //   because it is first in the order, and therefore, closer to the actual
-    //   timestamp of the measurement (neglecting bus latency).
-    case LTC294X_REG_ACC_CHARGE:   // Note the time.
-      if (_is_monitoring()) {
-        uint32_t now = millis();
-        _sample_dt = wrap_accounted_delta(now, _sample_time);
-        _sample_time = now;
-      }
-      break;
-
-    case LTC294X_REG_VOLTAGE: // Do nothing on the voltage refresh.
-      break;
-
-    case LTC294X_REG_TEMP:  // Final data register. Refresh the tracking data.
-      if (_is_monitoring()) {
-        _update_tracking();
-      }
-      break;
-
-    case LTC294X_REG_CONTROL:
-    default:
-      break;
-  }
-  reg->unread = false;
-  return 0;
+  return ret;
 }
 
 
@@ -453,10 +478,10 @@ void LTC294x::_update_tracking() {
   _chrg_reading_0 = c;  // Shift the new values into place.
   _volt_reading_0 = v;
   _temp_reading_0 = t;
-  updateDatum(0, _temp_reading_0);
-  updateDatum(1, _volt_reading_0);
-  updateDatum(3, _chrg_dt);
-  updateDatum(4, batteryPercent());
+  //updateDatum(0, _temp_reading_0);
+  //updateDatum(1, _volt_reading_0);
+  //updateDatum(3, _chrg_dt);
+  //updateDatum(4, batteryPercent());
 }
 
 
@@ -470,13 +495,13 @@ int8_t LTC294x::_adc_mode(LTC294xADCModes m) {
     case LTC294xADCModes::AUTO:
       break;
   }
-  uint8_t val = regValue(LTC294X_REG_CONTROL);
+  uint8_t val = (uint8_t) _get_shadow_value(LTC294xRegID::CONTROL);
   val = (val & ~LTC294X_OPT_MASK_ADC_MODE) | (uint8_t) m;
   return _write_control_reg(val);
 }
 
 int8_t LTC294x::sleep(bool x) {
-  uint8_t val = regValue(LTC294X_REG_CONTROL);
+  uint8_t val = (uint8_t) _get_shadow_value(LTC294xRegID::CONTROL);
   val = (val & 0xFE);
   if (x) {
     //_reset_tracking_data();
@@ -499,7 +524,7 @@ float LTC294x::_c_to_mA(uint16_t chrg) {
 */
 float LTC294x::batteryPercent() {
   // If the charge boundaries look sane, use charge register.
-  return (_derive_prescaler() * 0.06640625f * regValue(LTC294X_REG_ACC_CHARGE));
+  return (_derive_prescaler() * 0.06640625f * _get_shadow_value(LTC294xRegID::ACC_CHARGE));
 }
 
 /**
@@ -520,14 +545,14 @@ float LTC294x::batteryPercentVoltage() {
 * @return The battery voltage.
 */
 float LTC294x::batteryVoltage() {
-  return (regValue(LTC294X_REG_VOLTAGE) * 0.00009155f);
+  return (_get_shadow_value(LTC294xRegID::VOLTAGE) * 0.00009155f);
 }
 
 /**
 * @return The chip's temperature in degrees Celcius.
 */
 float LTC294x::temperature() {
-  return ((regValue(LTC294X_REG_TEMP) * 0.009155f) - DEG_K_C_OFFSET);
+  return ((_get_shadow_value(LTC294xRegID::TEMP) * 0.009155f) - DEG_K_C_OFFSET);
 }
 
 int8_t LTC294x::setChargeThresholds(uint16_t low, uint16_t high) {
@@ -541,35 +566,44 @@ int8_t LTC294x::setVoltageThreshold(float low, float high) {
   // NOTE: 0.0234368 == (0.00009155f >> 8)  // single byte register
   _thrsh_l_volt = (uint8_t) (low  / 0.0234368f);
   _thrsh_h_volt = (uint8_t) (high / 0.0234368f);
-  return _set_thresh_reg_voltage(_thrsh_l_volt, _thrsh_h_volt);
+  uint16_t val = ((uint16_t) _thrsh_l_volt) | ((uint16_t) _thrsh_h_volt << 8);
+  _set_shadow_value(LTC294xRegID::V_THRESH, val);
+  return _write_registers(LTC294xRegID::V_THRESH, 2);
 }
 
 int8_t LTC294x::setTemperatureThreshold(float low, float high) {
   // NOTE: 2.34368 == (0.009155f >> 8)  // single byte register
   _thrsh_l_temp = (uint8_t) (low  / 2.34368f);
   _thrsh_h_temp = (uint8_t) (high / 2.34368f);
-  return _set_thresh_reg_temperature(_thrsh_l_temp, _thrsh_h_temp);
+  uint16_t val = ((uint16_t) _thrsh_l_temp) | ((uint16_t) _thrsh_h_temp << 8);
+  _set_shadow_value(LTC294xRegID::TEMP_THRESH, val);
+  return _write_registers(LTC294xRegID::TEMP_THRESH, 2);
 }
 
 /*
 * Set the accumulated charge register.
 */
-int8_t LTC294x::_set_charge_register(uint16_t x) {
+int8_t LTC294x::_set_charge_register(uint16_t val) {
   if (initComplete() && !asleep()) {
     // We need to shut down the analog section before setting this register.
     return -1;
   }
-  return writeIndirect(LTC294X_REG_ACC_CHARGE, x);
-};
+  _set_shadow_value(LTC294xRegID::ACC_CHARGE, val);
+  return _write_registers(LTC294xRegID::ACC_CHARGE, 2);
+}
 
 
 int8_t LTC294x::_set_thresh_reg_charge(uint16_t l, uint16_t h) {
-  int8_t r0 = writeIndirect(LTC294X_REG_CHRG_THRESH_H, h, true);
-  if (I2C_ERR_SLAVE_NO_ERROR == r0) {
-    return writeIndirect(LTC294X_REG_CHRG_THRESH_L, l);
-  }
-  return r0;
-};
+  _set_shadow_value(LTC294xRegID::CHRG_THRESH_H, h);
+  _set_shadow_value(LTC294xRegID::CHRG_THRESH_L, l);
+  return _write_registers(LTC294xRegID::CHRG_THRESH_H, 4);
+}
+
+
+int8_t LTC294x::_write_control_reg(uint8_t v) {
+  _set_shadow_value(LTC294xRegID::CONTROL, v);
+  return _write_registers(LTC294xRegID::CONTROL, 1);
+}
 
 
 /**
@@ -586,7 +620,4 @@ uint8_t LTC294x::_derive_prescaler() {
   if (res < 2)  { ret--; }
   if (res < 1)  { ret--; }
   return ret;
-};
-
-
-#endif  // CONFIG_MANUVR_LTC294X
+}

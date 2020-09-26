@@ -10,6 +10,9 @@
 * Encapsulated data is now condensed and aligned.
 * Added a temporal read marker so that polling-generated I/O can be minimized..
 *                                                  ---J. Ian Lindsay  2020.02.03
+* Converted typedefs to enum classes. Converted to async via CppPotpourri.
+* TODO: This driver still makes the assumption of the host being little-endian.
+*                                                  ---J. Ian Lindsay  2020.09.26
 */
 
 /*
@@ -65,13 +68,55 @@
 typedef uint16_t veml6075_t;
 
 /* VEML6075 error code returns */
-typedef enum {
-    VEML6075_ERROR_READ            = -4,
-    VEML6075_ERROR_WRITE           = -3,
-    VEML6075_ERROR_INVALID_ADDRESS = -2,
-    VEML6075_ERROR_UNDEFINED       = -1,
-    VEML6075_ERROR_SUCCESS         = 1
-} VEML6075_error_t;
+enum class VEML6075Err : int8_t {
+  READ            = -4,
+  WRITE           = -3,
+  INVALID_ADDRESS = -2,
+  UNDEFINED       = -1,
+  SUCCESS         = 0
+};
+
+
+enum class VEML6075IntTime : uint8_t {
+  IT_50MS         = 0,
+  IT_100MS        = 1,
+  IT_200MS        = 2,
+  IT_400MS        = 3,
+  IT_800MS        = 4,
+  IT_RESERVED_0   = 5,
+  IT_RESERVED_1   = 6,
+  IT_RESERVED_2   = 7,
+  IT_INVALID      = 8
+};
+
+enum class veml6075_hd_t : uint8_t {
+  DYNAMIC_NORMAL  = 0,
+  DYNAMIC_HIGH    = 1,
+  HD_INVALID      = 2
+};
+
+enum class veml6075_uv_trig_t : uint8_t {
+  NO_TRIGGER,
+  TRIGGER_ONE_OR_UV_TRIG,
+  TRIGGER_INVALID
+};
+
+enum class veml6075_af_t : uint8_t {
+  AF_DISABLE,
+  AF_ENABLE,
+  AF_INVALID
+};
+
+/* VEML6075 registers. These are indicies, and not addresses. */
+enum class VEML6075RegId : uint8_t {
+  UV_CONF      = 0x00,
+  UVA_DATA     = 0x01,
+  UVB_DATA     = 0x02,
+  UVCOMP1_DATA = 0x03,
+  UVCOMP2_DATA = 0x04,
+  ID           = 0x05,
+  INVALID      = 0x06
+};
 
 
 /*******************************************************************************
@@ -79,60 +124,43 @@ typedef enum {
 *******************************************************************************/
 class VEML6075  : public I2CDevice {
   public:
-    typedef enum {
-        IT_50MS,
-        IT_100MS,
-        IT_200MS,
-        IT_400MS,
-        IT_800MS,
-        IT_RESERVED_0,
-        IT_RESERVED_1,
-        IT_RESERVED_2,
-        IT_INVALID
-    } veml6075_uv_it_t;
-
-    typedef enum {
-        DYNAMIC_NORMAL,
-        DYNAMIC_HIGH,
-        HD_INVALID
-    } veml6075_hd_t;
-
-    typedef enum {
-        NO_TRIGGER,
-        TRIGGER_ONE_OR_UV_TRIG,
-        TRIGGER_INVALID
-    } veml6075_uv_trig_t;
-
-    typedef enum {
-        AF_DISABLE,
-        AF_ENABLE,
-        AF_INVALID
-    } veml6075_af_t;
-
     VEML6075();
+    ~VEML6075() {};
 
-    VEML6075_error_t init();
+    /* Overrides from I2CDevice... */
+    int8_t io_op_callahead(BusOp*);
+    int8_t io_op_callback(BusOp*);
+
+    int8_t init();
     int8_t poll();
 
     inline bool devFound() {        return _veml_flag(VEML6075_FLAG_DEVICE_PRESENT);  };
     inline bool initialized() {     return _veml_flag(VEML6075_FLAG_INITIALIZED);     };
     inline bool enabled() {         return _veml_flag(VEML6075_FLAG_ENABLED);         };
-    VEML6075_error_t enabled(bool);
+    VEML6075Err enabled(bool);
 
 
     // Configuration controls
-    VEML6075_error_t setIntegrationTime(veml6075_uv_it_t it);
-    veml6075_uv_it_t getIntegrationTime();
+    VEML6075Err setIntegrationTime(VEML6075IntTime it);
+    inline uint16_t getIntegrationTime() {
+      return _integrationTime;
+    };
 
-    VEML6075_error_t setHighDynamic(veml6075_hd_t hd);
-    veml6075_hd_t getHighDynamic();
+    VEML6075Err setHighDynamic(veml6075_hd_t hd);
+    inline veml6075_hd_t getHighDynamic() {
+      return _veml_flag(VEML6075_FLAG_DYNAMIC_HIGH) ? veml6075_hd_t::DYNAMIC_HIGH : veml6075_hd_t::DYNAMIC_NORMAL;
+    };
 
-    VEML6075_error_t setTrigger(veml6075_uv_trig_t trig);
-    veml6075_uv_trig_t getTrigger();
-    VEML6075_error_t trigger();
+    VEML6075Err setTrigger(veml6075_uv_trig_t trig);
+    inline veml6075_uv_trig_t getTrigger() {
+      return _veml_flag(VEML6075_FLAG_TRIGGER_ENABLED) ? veml6075_uv_trig_t::TRIGGER_ONE_OR_UV_TRIG : veml6075_uv_trig_t::NO_TRIGGER;
+    };
+    VEML6075Err trigger();
 
-    VEML6075_error_t setAutoForce(veml6075_af_t af);
-    veml6075_af_t getAutoForce();
+    VEML6075Err setAutoForce(veml6075_af_t af);
+    inline veml6075_af_t getAutoForce() {
+      return _veml_flag(VEML6075_FLAG_AF_ENABLED) ? veml6075_af_t::AF_ENABLE : veml6075_af_t::AF_DISABLE;
+    };
 
     inline float uva() {    return _lastUVA;     };
     inline float uvb() {    return _lastUVB;     };
@@ -144,32 +172,22 @@ class VEML6075  : public I2CDevice {
   private:
     uint16_t  _flags           = 0;
     uint16_t  _integrationTime = 0;
-    uint32_t  _last_read       = 0;
     uint16_t  _lastCOMP1       = 0;
     uint16_t  _lastCOMP2       = 0;
+    uint16_t  shadows[6]       = {0, 0, 0, 0, 0, 0};
+    uint32_t  _last_read       = 0;
     float     _lastUVA         = 0.0;
     float     _lastUVB         = 0.0;
     float     _lastIndex       = 0.0;
     float     _aResponsivity   = UVA_RESPONSIVITY_100MS_UNCOVERED;
     float     _bResponsivity   = UVB_RESPONSIVITY_100MS_UNCOVERED;
-    // VEML6075 registers:
-    typedef enum {
-        REG_UV_CONF = 0x00,
-        REG_UVA_DATA = 0x07,
-        REG_UVB_DATA = 0x09,
-        REG_UVCOMP1_DATA = 0x0A,
-        REG_UVCOMP2_DATA = 0x0B,
-        REG_ID = 0x0C
-    } VEML6075_REGISTER_t;
 
-    VEML6075_error_t _read_data();
-    VEML6075_error_t _connected();
+    VEML6075Err _read_data();
+    int8_t _post_discovery_init();
+    int8_t _process_new_config(uint8_t);
 
-    // I2C Read/Write
-    VEML6075_error_t readI2CBuffer(uint8_t* dest, VEML6075_REGISTER_t startRegister, uint16_t len);
-    VEML6075_error_t writeI2CBuffer(uint8_t* src, VEML6075_REGISTER_t startRegister, uint16_t len);
-    VEML6075_error_t readI2CRegister(veml6075_t* dest, VEML6075_REGISTER_t registerAddress);
-    VEML6075_error_t writeI2CRegister(veml6075_t data, VEML6075_REGISTER_t registerAddress);
+    int8_t  _read_registers(VEML6075RegId, uint8_t);
+    int8_t  _write_registers(VEML6075RegId, uint8_t);
 
     /* Flag manipulation inlines */
     inline uint16_t _veml_flags() {                return _flags;           };
@@ -180,6 +198,9 @@ class VEML6075  : public I2CDevice {
       if (nu) _flags |= _flag;
       else    _flags &= ~_flag;
     };
+
+    static VEML6075RegId _reg_id_from_addr(const uint8_t addr);
+    static uint8_t      _reg_addr_from_id(const VEML6075RegId);
 };
 
 

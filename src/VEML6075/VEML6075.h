@@ -48,24 +48,12 @@
 
 /* Class flags */
 #define VEML6075_FLAG_DEVICE_PRESENT   0x0001  // Part was found.
-#define VEML6075_FLAG_PINS_CONFIGURED  0x0002  // Low-level pin setup is complete.
-#define VEML6075_FLAG_INITIALIZED      0x0004  // Registers are initialized.
-#define VEML6075_FLAG_ENABLED          0x0008  // Device is measuring.
-#define VEML6075_FLAG_AF_ENABLED       0x0010  //
-#define VEML6075_FLAG_TRIGGER_ENABLED  0x0020  //
-#define VEML6075_FLAG_DYNAMIC_HIGH     0x0040  //
+#define VEML6075_FLAG_INITIALIZED      0x0002  // Registers are initialized.
+#define VEML6075_FLAG_ENABLED          0x0004  // Device is measuring.
+#define VEML6075_FLAG_AF_ENABLED       0x0008  //
+#define VEML6075_FLAG_TRIGGER_ENABLED  0x0010  //
+#define VEML6075_FLAG_DYNAMIC_HIGH     0x0020  //
 
-
-/*
-* Responsivity converts a raw 16-bit UVA/UVB reading to a relative irradiance (W/m^2).
-* These values will need to be adjusted as either integration time or dynamic settings are modififed.
-* These values are recommended by the "Designing the VEML6075 into an application" app note for 100ms IT
-*/
-#define UVA_RESPONSIVITY_100MS_UNCOVERED    0.001111
-#define UVB_RESPONSIVITY_100MS_UNCOVERED    0.00125
-
-
-typedef uint16_t veml6075_t;
 
 /* VEML6075 error code returns */
 enum class VEML6075Err : int8_t {
@@ -75,7 +63,6 @@ enum class VEML6075Err : int8_t {
   UNDEFINED       = -1,
   SUCCESS         = 0
 };
-
 
 enum class VEML6075IntTime : uint8_t {
   IT_50MS         = 0,
@@ -89,13 +76,13 @@ enum class VEML6075IntTime : uint8_t {
   IT_INVALID      = 8
 };
 
-enum class veml6075_hd_t : uint8_t {
+enum class VEML6075DynamicMode : uint8_t {
   DYNAMIC_NORMAL  = 0,
   DYNAMIC_HIGH    = 1,
   HD_INVALID      = 2
 };
 
-enum class veml6075_uv_trig_t : uint8_t {
+enum class VEML6075Trigger : uint8_t {
   NO_TRIGGER,
   TRIGGER_ONE_OR_UV_TRIG,
   TRIGGER_INVALID
@@ -138,6 +125,7 @@ class VEML6075  : public I2CDevice {
     inline bool initialized() {     return _veml_flag(VEML6075_FLAG_INITIALIZED);     };
     inline bool enabled() {         return _veml_flag(VEML6075_FLAG_ENABLED);         };
     VEML6075Err enabled(bool);
+    void printDebug(StringBuilder*);
 
 
     // Configuration controls
@@ -146,14 +134,14 @@ class VEML6075  : public I2CDevice {
       return _integrationTime;
     };
 
-    VEML6075Err setHighDynamic(veml6075_hd_t hd);
-    inline veml6075_hd_t getHighDynamic() {
-      return _veml_flag(VEML6075_FLAG_DYNAMIC_HIGH) ? veml6075_hd_t::DYNAMIC_HIGH : veml6075_hd_t::DYNAMIC_NORMAL;
+    VEML6075Err setHighDynamic(VEML6075DynamicMode hd);
+    inline VEML6075DynamicMode getHighDynamic() {
+      return _veml_flag(VEML6075_FLAG_DYNAMIC_HIGH) ? VEML6075DynamicMode::DYNAMIC_HIGH : VEML6075DynamicMode::DYNAMIC_NORMAL;
     };
 
-    VEML6075Err setTrigger(veml6075_uv_trig_t trig);
-    inline veml6075_uv_trig_t getTrigger() {
-      return _veml_flag(VEML6075_FLAG_TRIGGER_ENABLED) ? veml6075_uv_trig_t::TRIGGER_ONE_OR_UV_TRIG : veml6075_uv_trig_t::NO_TRIGGER;
+    VEML6075Err setTrigger(VEML6075Trigger trig);
+    inline VEML6075Trigger getTrigger() {
+      return _veml_flag(VEML6075_FLAG_TRIGGER_ENABLED) ? VEML6075Trigger::TRIGGER_ONE_OR_UV_TRIG : VEML6075Trigger::NO_TRIGGER;
     };
     VEML6075Err trigger();
 
@@ -162,8 +150,8 @@ class VEML6075  : public I2CDevice {
       return _veml_flag(VEML6075_FLAG_AF_ENABLED) ? veml6075_af_t::AF_ENABLE : veml6075_af_t::AF_DISABLE;
     };
 
-    inline float uva() {    return _lastUVA;     };
-    inline float uvb() {    return _lastUVB;     };
+    inline float uva() {                      return _lastUVA;     };
+    inline float uvb() {                      return _lastUVB;     };
     inline uint16_t visibleCompensation() {   return _lastCOMP1;   };
     inline uint16_t irCompensation() {        return _lastCOMP2;   };
     float index();
@@ -179,8 +167,8 @@ class VEML6075  : public I2CDevice {
     float     _lastUVA         = 0.0;
     float     _lastUVB         = 0.0;
     float     _lastIndex       = 0.0;
-    float     _aResponsivity   = UVA_RESPONSIVITY_100MS_UNCOVERED;
-    float     _bResponsivity   = UVB_RESPONSIVITY_100MS_UNCOVERED;
+    float     _aResponsivity   = 0.0;
+    float     _bResponsivity   = 0.0;
 
     VEML6075Err _read_data();
     int8_t _post_discovery_init();

@@ -49,8 +49,6 @@
 #define VEML6075_AF_MASK  0x02
 #define VEML6075_AF_SHIFT 1
 
-#define VEML6075_MASK(reg, mask, shift) ((reg & mask) >> shift)
-
 const float HD_SCALAR = 2.0;
 
 // Calibration constants:
@@ -67,6 +65,14 @@ const float UVA_B_COEF = 1.33;  // IR
 const float UVA_C_COEF = 2.95;  // Visible
 const float UVA_D_COEF = 1.75;  // IR
 
+
+/*
+* Responsivity converts a raw 16-bit UVA/UVB reading to a relative irradiance (W/m^2).
+* These values will need to be adjusted as either integration time or dynamic settings are modififed.
+* These values are recommended by the "Designing the VEML6075 into an application" app note for 100ms IT
+*/
+#define UVA_RESPONSIVITY_100MS_UNCOVERED    0.001111
+#define UVB_RESPONSIVITY_100MS_UNCOVERED    0.00125
 
 const float UVA_RESPONSIVITY[NUM_INTEGRATION_TIMES] = {
   UVA_RESPONSIVITY_100MS_UNCOVERED / 0.5016286645, // 50ms
@@ -180,7 +186,7 @@ int8_t VEML6075::poll() {
 int8_t VEML6075::_post_discovery_init() {
   int8_t ret = -1;
   *((uint8_t*) shadows) = 0x10;
-  if (0 != _write_registers(VEML6075RegId::UV_CONF, 2)) {
+  if (0 == _write_registers(VEML6075RegId::UV_CONF, 2)) {
     ret = 0;
   }
   return ret;
@@ -210,11 +216,11 @@ VEML6075Err VEML6075::setIntegrationTime(VEML6075IntTime it) {
 }
 
 
-VEML6075Err VEML6075::setHighDynamic(veml6075_hd_t hd) {
+VEML6075Err VEML6075::setHighDynamic(VEML6075DynamicMode hd) {
   uint8_t conf = *((uint8_t*) shadows);  // Valid conf is the first byte of the first 16-bit index.
   switch (hd) {
-    case veml6075_hd_t::DYNAMIC_NORMAL:
-    case veml6075_hd_t::DYNAMIC_HIGH:
+    case VEML6075DynamicMode::DYNAMIC_NORMAL:
+    case VEML6075DynamicMode::DYNAMIC_HIGH:
       conf &= ~(VEML6075_HD_MASK);
       conf |= (((uint8_t) hd) << VEML6075_HD_SHIFT);
       *((uint8_t*) shadows) = conf;
@@ -229,11 +235,11 @@ VEML6075Err VEML6075::setHighDynamic(veml6075_hd_t hd) {
 }
 
 
-VEML6075Err VEML6075::setTrigger(veml6075_uv_trig_t trig) {
+VEML6075Err VEML6075::setTrigger(VEML6075Trigger trig) {
   uint8_t conf = *((uint8_t*) shadows);  // Valid conf is the first byte of the first 16-bit index.
   switch (trig) {
-    case veml6075_uv_trig_t::NO_TRIGGER:
-    case veml6075_uv_trig_t::TRIGGER_ONE_OR_UV_TRIG:
+    case VEML6075Trigger::NO_TRIGGER:
+    case VEML6075Trigger::TRIGGER_ONE_OR_UV_TRIG:
       conf &= ~(VEML6075_TRIG_MASK);
       conf |= (((uint8_t) trig) << VEML6075_TRIG_SHIFT);
       *((uint8_t*) shadows) = conf;
@@ -282,8 +288,28 @@ VEML6075Err VEML6075::enabled(bool en) {
 }
 
 
+/*
+* Dump this item to the dev log.
+*/
+void VEML6075::printDebug(StringBuilder* output) {
+  output->concatf("-- VEML6075 %sinitialized\n", (initialized() ? "" : "un"));
+  output->concatf("\tPowered:        %c\n", (_veml_flag(VEML6075_FLAG_ENABLED) ? 'y' : 'n'));
+  output->concatf("\tAF enabled:     %c\n", (_veml_flag(VEML6075_FLAG_AF_ENABLED) ? 'y' : 'n'));
+  output->concatf("\tTrig enabled:   %c\n", (_veml_flag(VEML6075_FLAG_TRIGGER_ENABLED) ? 'y' : 'n'));
+  output->concatf("\tDynamic mode:   %s\n", (_veml_flag(VEML6075_FLAG_DYNAMIC_HIGH) ? "HIGH" : "NORM"));
+  output->concatf("\tCONF:           0x%04x\n", shadows[0]);
+  output->concatf("\t_lastCOMP1:     0x%04x\n", _lastCOMP1);
+  output->concatf("\t_lastCOMP2:     0x%04x\n", _lastCOMP2);
+  output->concatf("\t_last_read:     %u\n", _last_read);
+  output->concatf("\t_lastUVA:       %.2f\n", _lastUVA);
+  output->concatf("\t_lastUVB:       %.2f\n", _lastUVB);
+  output->concatf("\t_lastIndex:     %.2f\n", _lastIndex);
+  I2CDevice::printDebug(output);
+}
+
+
 VEML6075Err VEML6075::trigger() {
-  return setTrigger(veml6075_uv_trig_t::TRIGGER_ONE_OR_UV_TRIG);
+  return setTrigger(VEML6075Trigger::TRIGGER_ONE_OR_UV_TRIG);
 }
 
 
@@ -306,8 +332,12 @@ VEML6075Err VEML6075::_read_data() {
   if (initialized() && enabled()) {
     err = VEML6075Err::READ;
     if (0 == _read_registers(VEML6075RegId::UVA_DATA, 2)) {
-      if (0 == _read_registers(VEML6075RegId::UVB_DATA, 6)) {
-        err = VEML6075Err::SUCCESS;
+      if (0 == _read_registers(VEML6075RegId::UVB_DATA, 2)) {
+        if (0 == _read_registers(VEML6075RegId::UVCOMP1_DATA, 2)) {
+          if (0 == _read_registers(VEML6075RegId::UVCOMP2_DATA, 2)) {
+            err = VEML6075Err::SUCCESS;
+          }
+        }
       }
     }
   }
@@ -368,8 +398,8 @@ int8_t  VEML6075::_write_registers(VEML6075RegId r, uint8_t len) {
 
 int8_t VEML6075::_process_new_config(uint8_t new_conf) {
   VEML6075IntTime it = (VEML6075IntTime) ((new_conf & VEML6075_UV_IT_MASK) >> VEML6075_UV_IT_SHIFT);
-  veml6075_hd_t hd = (veml6075_hd_t) ((new_conf & VEML6075_HD_MASK) >> VEML6075_HD_SHIFT);
-  veml6075_uv_trig_t trig = (veml6075_uv_trig_t) ((new_conf & VEML6075_TRIG_MASK) >> VEML6075_TRIG_SHIFT);
+  VEML6075DynamicMode hd = (VEML6075DynamicMode) ((new_conf & VEML6075_HD_MASK) >> VEML6075_HD_SHIFT);
+  VEML6075Trigger trig = (VEML6075Trigger) ((new_conf & VEML6075_TRIG_MASK) >> VEML6075_TRIG_SHIFT);
   veml6075_af_t af = (veml6075_af_t) ((new_conf & VEML6075_AF_MASK) >> VEML6075_AF_SHIFT);
 
   _aResponsivity = UVA_RESPONSIVITY[(uint8_t) it];
@@ -383,8 +413,8 @@ int8_t VEML6075::_process_new_config(uint8_t new_conf) {
     default:                         _integrationTime = 0;      break;
   }
 
-  _veml_set_flag(VEML6075_FLAG_DYNAMIC_HIGH, (hd == veml6075_hd_t::DYNAMIC_HIGH));
-  _veml_set_flag(VEML6075_FLAG_TRIGGER_ENABLED, (trig == veml6075_uv_trig_t::TRIGGER_ONE_OR_UV_TRIG));
+  _veml_set_flag(VEML6075_FLAG_DYNAMIC_HIGH, (hd == VEML6075DynamicMode::DYNAMIC_HIGH));
+  _veml_set_flag(VEML6075_FLAG_TRIGGER_ENABLED, (trig == VEML6075Trigger::TRIGGER_ONE_OR_UV_TRIG));
   _veml_set_flag(VEML6075_FLAG_AF_ENABLED, (af == veml6075_af_t::AF_ENABLE));
   _veml_set_flag(VEML6075_FLAG_ENABLED, (0 == (new_conf & 0x01)));
   _veml_set_flag(VEML6075_FLAG_INITIALIZED, true);
@@ -417,6 +447,7 @@ int8_t VEML6075::io_op_callback(BusOp* _op) {
     uint     len    = op->bufferLen();
     VEML6075RegId r = _reg_id_from_addr(op->sub_addr);
     uint8_t value   = *buf;
+
     switch (op->get_opcode()) {
       case BusOpcode::TX:
         switch (r) {
@@ -436,19 +467,20 @@ int8_t VEML6075::io_op_callback(BusOp* _op) {
           case VEML6075RegId::UVA_DATA:
             break;
           case VEML6075RegId::UVB_DATA:
-            if (6 == len) {
+            break;
+          case VEML6075RegId::UVCOMP1_DATA:
+            break;
+          case VEML6075RegId::UVCOMP2_DATA:
+            {
               _last_read = millis();
               uint8_t* uva_ptr = ((uint8_t*) &shadows[1]);
               uint16_t new_uva = ((uint16_t) *(uva_ptr + 0)) | ((uint16_t) *(uva_ptr + 1) << 8);
-              uint16_t new_uvb = ((uint16_t) *(buf + 0)) | ((uint16_t) *(buf + 1) << 8);
-              _lastCOMP1 = ((uint16_t) *(buf + 2)) | ((uint16_t) *(buf + 3) << 8);
-              _lastCOMP2 = ((uint16_t) *(buf + 4)) | ((uint16_t) *(buf + 5) << 8);
+              uint16_t new_uvb = ((uint16_t) *(uva_ptr + 2)) | ((uint16_t) *(uva_ptr + 3) << 8);
+              _lastCOMP1 = ((uint16_t) *(uva_ptr + 4)) | ((uint16_t) *(uva_ptr + 5) << 8);
+              _lastCOMP2 = ((uint16_t) *(uva_ptr + 6)) | ((uint16_t) *(uva_ptr + 7) << 8);
               _lastUVA = ((float) new_uva) - ((UVA_A_COEF * UV_ALPHA * _lastCOMP1) / UV_GAMMA) - ((UVA_B_COEF * UV_ALPHA * _lastCOMP2) / UV_DELTA);
               _lastUVB = ((float) new_uvb) - ((UVA_C_COEF * UV_BETA  * _lastCOMP1) / UV_GAMMA) - ((UVA_D_COEF * UV_BETA  * _lastCOMP2) / UV_DELTA);
             }
-            break;
-          case VEML6075RegId::UVCOMP1_DATA:
-          case VEML6075RegId::UVCOMP2_DATA:
             break;
           case VEML6075RegId::ID:
             _veml_set_flag(VEML6075_FLAG_DEVICE_PRESENT, (VEML6075_DEVICE_ID == value));

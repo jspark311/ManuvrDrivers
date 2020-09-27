@@ -254,11 +254,11 @@ VEML6075Err VEML6075::setTrigger(VEML6075Trigger trig) {
 }
 
 
-VEML6075Err VEML6075::setAutoForce(veml6075_af_t af) {
+VEML6075Err VEML6075::setAutoForce(veml6075ActiveForce af) {
   uint8_t conf = *((uint8_t*) shadows);  // Valid conf is the first byte of the first 16-bit index.
   switch (af) {
-    case veml6075_af_t::AF_DISABLE:
-    case veml6075_af_t::AF_ENABLE:
+    case veml6075ActiveForce::AF_DISABLE:
+    case veml6075ActiveForce::AF_ENABLE:
       conf &= ~(VEML6075_AF_MASK);
       conf |= (((uint8_t) af) << VEML6075_AF_SHIFT);
       *((uint8_t*) shadows) = conf;
@@ -400,7 +400,7 @@ int8_t VEML6075::_process_new_config(uint8_t new_conf) {
   VEML6075IntTime it = (VEML6075IntTime) ((new_conf & VEML6075_UV_IT_MASK) >> VEML6075_UV_IT_SHIFT);
   VEML6075DynamicMode hd = (VEML6075DynamicMode) ((new_conf & VEML6075_HD_MASK) >> VEML6075_HD_SHIFT);
   VEML6075Trigger trig = (VEML6075Trigger) ((new_conf & VEML6075_TRIG_MASK) >> VEML6075_TRIG_SHIFT);
-  veml6075_af_t af = (veml6075_af_t) ((new_conf & VEML6075_AF_MASK) >> VEML6075_AF_SHIFT);
+  veml6075ActiveForce af = (veml6075ActiveForce) ((new_conf & VEML6075_AF_MASK) >> VEML6075_AF_SHIFT);
 
   _aResponsivity = UVA_RESPONSIVITY[(uint8_t) it];
   _bResponsivity = UVB_RESPONSIVITY[(uint8_t) it];
@@ -415,7 +415,7 @@ int8_t VEML6075::_process_new_config(uint8_t new_conf) {
 
   _veml_set_flag(VEML6075_FLAG_DYNAMIC_HIGH, (hd == VEML6075DynamicMode::DYNAMIC_HIGH));
   _veml_set_flag(VEML6075_FLAG_TRIGGER_ENABLED, (trig == VEML6075Trigger::TRIGGER_ONE_OR_UV_TRIG));
-  _veml_set_flag(VEML6075_FLAG_AF_ENABLED, (af == veml6075_af_t::AF_ENABLE));
+  _veml_set_flag(VEML6075_FLAG_AF_ENABLED, (af == veml6075ActiveForce::AF_ENABLE));
   _veml_set_flag(VEML6075_FLAG_ENABLED, (0 == (new_conf & 0x01)));
   _veml_set_flag(VEML6075_FLAG_INITIALIZED, true);
   return 0;

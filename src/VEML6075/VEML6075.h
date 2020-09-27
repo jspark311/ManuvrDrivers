@@ -88,7 +88,7 @@ enum class VEML6075Trigger : uint8_t {
   TRIGGER_INVALID
 };
 
-enum class veml6075_af_t : uint8_t {
+enum class veml6075ActiveForce : uint8_t {
   AF_DISABLE,
   AF_ENABLE,
   AF_INVALID
@@ -145,9 +145,9 @@ class VEML6075  : public I2CDevice {
     };
     VEML6075Err trigger();
 
-    VEML6075Err setAutoForce(veml6075_af_t af);
-    inline veml6075_af_t getAutoForce() {
-      return _veml_flag(VEML6075_FLAG_AF_ENABLED) ? veml6075_af_t::AF_ENABLE : veml6075_af_t::AF_DISABLE;
+    VEML6075Err setAutoForce(veml6075ActiveForce af);
+    inline veml6075ActiveForce getAutoForce() {
+      return _veml_flag(VEML6075_FLAG_AF_ENABLED) ? veml6075ActiveForce::AF_ENABLE : veml6075ActiveForce::AF_DISABLE;
     };
 
     inline float uva() {                      return _lastUVA;     };

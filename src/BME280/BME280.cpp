@@ -64,16 +64,17 @@ courtesy of Brian McNoldy at http://andrew.rsmas.miami.edu.
 BME280::BME280(const BME280Settings& settings) : m_settings(settings) {}
 
 
+/*
+* This function of the base class is the bus-agnostic set of initializations.
+*/
 bool BME280::_priv_init() {
-  bool ret = false;
-  if (0 == _read_chip_id()) {
-    if (ReadTrim()) {
-      ret = WriteSettings();
-      _baro_set_flag(BME280_FLAG_INITIALIZED, ret);
-      _baro_set_flag(BME280_FLAG_ENABLED, ret);
-    }
+  if (!devFound()) {
+    _baro_clear_flag(BME280_FLAG_HAS_HUMIDITY);
+    return (0 == _read_registers(ID_ADDR, &_shadow_id, 1));
   }
-  return ret;
+  else {
+    return WriteSettings();
+  }
 }
 
 
@@ -101,29 +102,17 @@ int8_t BME280::poll() {
 }
 
 
-int8_t BME280::_read_chip_id() {
-  int8_t ret = -1;
-  _baro_clear_flag(BME280_FLAG_HAS_HUMIDITY);
-  uint8_t id = 0;
-  _read_registers(ID_ADDR, &id, 1);
-  switch (id) {  // No breaks
-    case 0x60:  _baro_set_flag(BME280_FLAG_HAS_HUMIDITY);  // BME280 (With humidity)
-    case 0x58:  ret = 0;      // BMP280 (No humidity)
-    default:    break;
-  }
-  _baro_set_flag(BME280_FLAG_DEVICE_PRESENT, (0 == ret));
-  return ret;
-}
-
-
 bool BME280::WriteSettings() {
   bool ret = false;
-  uint8_t ctrlHum, ctrlMeas, config;
-
-  CalculateRegisters(ctrlHum, ctrlMeas, config);
-  if (_write_register(CTRL_HUM_ADDR, ctrlHum)) {
-    if (_write_register(CTRL_MEAS_ADDR, ctrlMeas)) {
-      if (_write_register(CONFIG_ADDR, config)) {
+  // ctrl_hum register. (ctrl_hum[2:0] = Humidity oversampling rate.)
+  _shadow_ctrl_hum = (uint8_t)m_settings.humOSR;
+  // ctrl_meas register. (ctrl_meas[7:5] = temperature oversampling rate, ctrl_meas[4:2] = pressure oversampling rate, ctrl_meas[1:0] = mode.)
+  _shadow_ctrl_mea = ((uint8_t)m_settings.tempOSR << 5) | ((uint8_t)m_settings.presOSR << 2) | (uint8_t)m_settings.mode;
+  // config register. (config[7:5] = standby time, config[4:2] = filter, ctrl_meas[0] = spi enable.)
+  _shadow_ctrl = ((uint8_t)m_settings.standbyTime << 5) | ((uint8_t)m_settings.filter << 2) | _useSPI() ? 1 : 0;
+  if (0 == _write_register(CTRL_HUM_ADDR, &_shadow_ctrl_hum)) {
+    if (0 == _write_register(CTRL_MEAS_ADDR, &_shadow_ctrl_mea)) {
+      if (0 == _write_register(CONFIG_ADDR, &_shadow_ctrl)) {
         ret = true;
       }
     }
@@ -132,24 +121,8 @@ bool BME280::WriteSettings() {
 }
 
 
-bool BME280::setSettings(const BME280Settings& settings) {
-  m_settings = settings;
-  return WriteSettings();
-}
-
-
 const BME280Settings& BME280::getSettings() const {
   return m_settings;
-}
-
-
-void BME280::CalculateRegisters(uint8_t& ctrlHum, uint8_t& ctrlMeas, uint8_t& config) {
-  // ctrl_hum register. (ctrl_hum[2:0] = Humidity oversampling rate.)
-  ctrlHum = (uint8_t)m_settings.humOSR;
-  // ctrl_meas register. (ctrl_meas[7:5] = temperature oversampling rate, ctrl_meas[4:2] = pressure oversampling rate, ctrl_meas[1:0] = mode.)
-  ctrlMeas = ((uint8_t)m_settings.tempOSR << 5) | ((uint8_t)m_settings.presOSR << 2) | (uint8_t)m_settings.mode;
-  // config register. (config[7:5] = standby time, config[4:2] = filter, ctrl_meas[0] = spi enable.)
-  config = ((uint8_t)m_settings.standbyTime << 5) | ((uint8_t)m_settings.filter << 2) | _useSPI() ? 1 : 0;
 }
 
 
@@ -158,29 +131,29 @@ bool BME280::ReadTrim() {
    bool success = true;
 
    // Temp. Dig
-   success &= _read_registers(TEMP_DIG_ADDR, &m_dig[ord], TEMP_DIG_LENGTH);
+   success &= (0 == _read_registers(TEMP_DIG_ADDR, &m_dig[ord], TEMP_DIG_LENGTH));
    ord += TEMP_DIG_LENGTH;
 
    // Pressure Dig
-   success &= _read_registers(PRESS_DIG_ADDR, &m_dig[ord], PRESS_DIG_LENGTH);
+   success &= (0 == _read_registers(PRESS_DIG_ADDR, &m_dig[ord], PRESS_DIG_LENGTH));
    ord += PRESS_DIG_LENGTH;
 
    // Humidity Dig 1
-   success &= _read_registers(HUM_DIG_ADDR1, &m_dig[ord], HUM_DIG_ADDR1_LENGTH);
+   success &= (0 == _read_registers(HUM_DIG_ADDR1, &m_dig[ord], HUM_DIG_ADDR1_LENGTH));
    ord += HUM_DIG_ADDR1_LENGTH;
 
    // Humidity Dig 2
-   success &= _read_registers(HUM_DIG_ADDR2, &m_dig[ord], HUM_DIG_ADDR2_LENGTH);
+   success &= (0 == _read_registers(HUM_DIG_ADDR2, &m_dig[ord], HUM_DIG_ADDR2_LENGTH));
    ord += HUM_DIG_ADDR2_LENGTH;
 
-   return success && ord == DIG_LENGTH;
+   return (success & (ord == DIG_LENGTH));
 }
 
 
 float BME280::CalculateTemperature(int32_t raw, int32_t& t_fine) {
   // Code based on calibration algorthim provided by Bosch.
   int32_t var1, var2, final;
-  uint16_t dig_T1 = (m_dig[1] << 8) | m_dig[0];
+  uint16_t dig_T1  = (m_dig[1] << 8) | m_dig[0];
   int16_t   dig_T2 = (m_dig[3] << 8) | m_dig[2];
   int16_t   dig_T3 = (m_dig[5] << 8) | m_dig[4];
   var1 = ((((raw >> 3) - ((int32_t)dig_T1 << 1))) * ((int32_t)dig_T2)) >> 11;
@@ -194,12 +167,12 @@ float BME280::CalculateTemperature(int32_t raw, int32_t& t_fine) {
 float BME280::CalculateHumidity(int32_t raw, int32_t t_fine) {
    // Code based on calibration algorthim provided by Bosch.
    int32_t var1;
-   uint8_t   dig_H1 =   m_dig[24];
+   uint8_t dig_H1 = m_dig[24];
    int16_t dig_H2 = (m_dig[26] << 8) | m_dig[25];
-   uint8_t   dig_H3 =   m_dig[27];
+   uint8_t dig_H3 = m_dig[27];
    int16_t dig_H4 = (m_dig[28] << 4) | (0x0F & m_dig[29]);
    int16_t dig_H5 = (m_dig[30] << 4) | ((m_dig[29] >> 4) & 0x0F);
-   int8_t   dig_H6 =   m_dig[31];
+   int8_t  dig_H6 = m_dig[31];
 
    var1 = (t_fine - ((int32_t)76800));
    var1 = (((((raw << 14) - (((int32_t)dig_H4) << 20) - (((int32_t)dig_H5) * var1)) +
@@ -270,27 +243,13 @@ float BME280::CalculatePressure(int32_t raw, int32_t t_fine) {
 
 
 bool BME280::_refresh_data() {
-  int32_t data[8];
-  uint8_t buffer[SENSOR_DATA_LENGTH];
-  int32_t t_fine;
   // For forced mode we need to write the mode to BME280 register before reading
+  // TODO: This was never converted to async. Single-shot mode won't work as expected.
   bool ret = (m_settings.mode == BME280Mode::Forced) ? WriteSettings() : true;
 
   // Registers are in order. So we can start at the pressure register and read 8 bytes.
   if (ret) {
-    ret = _read_registers(PRESS_ADDR, buffer, SENSOR_DATA_LENGTH);
-    for(int i = 0; i < SENSOR_DATA_LENGTH; ++i) {
-      data[i] = static_cast<int32_t>(buffer[i]);
-    }
-    if (ret) {
-      _last_read = millis();
-      uint32_t rawPressure = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
-      uint32_t rawTemp     = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
-      uint32_t rawHumidity = (data[6] << 8)  | data[7];
-      _air_temp = CalculateTemperature(rawTemp,  t_fine);
-      _pressure = CalculatePressure(rawPressure, t_fine);
-      _humidity = CalculateHumidity(rawHumidity, t_fine);
-    }
+    ret = (0 == _read_registers(PRESS_ADDR, _shadow_sdat, SENSOR_DATA_LENGTH));
   }
   return ret;
 }
@@ -347,18 +306,18 @@ BME280I2C::BME280I2C(const BME280Settings& settings) : BME280(settings), I2CDevi
 /**
 *
 */
-int8_t BME280I2C::_write_register(uint8_t addr, uint8_t data) {
+int8_t BME280I2C::_write_register(uint8_t addr, uint8_t* data) {
   int8_t ret = -2;
   if (devFound()) {
-    //I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
-    //if (nullptr != op) {
-    //  op->dev_addr = _dev_addr;
-    //  op->sub_addr = addr;
-    //  op->setBuffer(&_shadows[reg_idx], 2);
-    //  if (0 == queue_io_job(op)) {
-    //    ret = 0;
-    //  }
-    //}
+    I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
+    if (nullptr != op) {
+      op->dev_addr = _dev_addr;
+      op->sub_addr = addr;
+      op->setBuffer(data, 1);
+      if (0 == queue_io_job(op)) {
+        ret = 0;
+      }
+    }
   }
   return ret;
 }
@@ -370,7 +329,7 @@ int8_t BME280I2C::_write_register(uint8_t addr, uint8_t data) {
 int8_t BME280I2C::_read_registers(uint8_t addr, uint8_t* data, uint8_t length) {
   int8_t ret = -2;
   if (nullptr != _bus) {
-    I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
+    I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
     if (nullptr != op) {
       op->dev_addr = _dev_addr;
       op->sub_addr = addr;
@@ -392,6 +351,22 @@ int8_t BME280I2C::init() {
     ret = _priv_init() ? 0 : -2;
   }
   return ret;
+}
+
+
+/*
+* Dump this item to the dev log.
+*/
+void BME280I2C::printDebug(StringBuilder* output) {
+  output->concatf("-- BM%c280 %sinitialized\n", (hasHumidity()?'E':'P'), (initialized() ? "" : "un"));
+  I2CDevice::printDebug(output);
+  output->concatf("\tPowered:        %c\n", (_baro_flag(BME280_FLAG_ENABLED) ? 'y' : 'n'));
+  output->concatf("\tFound:          %c\n", (devFound() ? 'y' : 'n'));
+  output->concatf("\tCalibrated:     %c\n", (_baro_flag(BME280_FLAG_CAL_DATA_READ) ? 'y' : 'n'));
+  output->concatf("\t_last_read:     %u\n", _last_read);
+  output->concatf("\t_air_temp:      %.2f\n", _air_temp);
+  output->concatf("\t_humidity:      %.2f\n", _humidity);
+  output->concatf("\t_pressure:      %.2f\n", _pressure);
 }
 
 
@@ -417,12 +392,78 @@ int8_t BME280I2C::io_op_callback(BusOp* _op) {
 
   if (!op->hasFault()) {
     uint8_t* buf     = op->buffer();
-    uint     len     = op->bufferLen();
+    //uint     len     = op->bufferLen();
+    uint8_t  r       = op->sub_addr;
     switch (op->get_opcode()) {
       case BusOpcode::TX:
+        switch (r) {
+          case CTRL_MEAS_ADDR:
+            break;
+          case CONFIG_ADDR:
+            _baro_set_flag(BME280_FLAG_INITIALIZED);
+            _baro_set_flag(BME280_FLAG_ENABLED);
+            break;
+          case CTRL_HUM_ADDR:
+            break;
+          default:   // All other registers are read-only.
+            break;
+        }
         break;
 
+
       case BusOpcode::RX:
+        switch (r) {
+          case TEMP_DIG_ADDR:
+            break;
+          case PRESS_DIG_ADDR:
+            break;
+          case HUM_DIG_ADDR1:
+            break;
+          case HUM_DIG_ADDR2:
+            _baro_set_flag(BME280_FLAG_CAL_DATA_READ);
+            if (!initialized()) {
+              WriteSettings();
+            }
+            break;
+          case CTRL_HUM_ADDR:
+            break;
+          case ID_ADDR:
+            switch (*buf) {  // No breaks
+              case 0x60:  _baro_set_flag(BME280_FLAG_HAS_HUMIDITY);  // BME280 (With humidity)
+              case 0x58:  _baro_set_flag(BME280_FLAG_DEVICE_PRESENT);  // BMP280 (No humidity)
+              default:    break;
+            }
+            if (devFound() && !calibrated()) {
+              ReadTrim();
+            }
+            break;
+          case CTRL_MEAS_ADDR:
+            break;
+          case CONFIG_ADDR:
+            break;
+          case PRESS_ADDR:
+            if (devFound() && calibrated()) {
+              int32_t data[8];
+              int32_t t_fine;
+              for(int i = 0; i < SENSOR_DATA_LENGTH; ++i) {
+                data[i] = static_cast<int32_t>(_shadow_sdat[i]);
+              }
+              _last_read = millis();
+              uint32_t rawPressure = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
+              uint32_t rawTemp     = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
+              uint32_t rawHumidity = (data[6] << 8)  | data[7];
+              _air_temp = CalculateTemperature(rawTemp,  t_fine);
+              _pressure = CalculatePressure(rawPressure, t_fine);
+              _humidity = CalculateHumidity(rawHumidity, t_fine);
+            }
+            break;
+          case TEMP_ADDR:
+            break;
+          case HUM_ADDR:
+            break;
+          default:
+            break;
+        }
         break;
 
       default:

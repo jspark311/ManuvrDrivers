@@ -71,6 +71,7 @@ courtesy of Brian McNoldy at http://andrew.rsmas.miami.edu.
 #define BME280_FLAG_INITIALIZED      0x0004  // Registers are initialized.
 #define BME280_FLAG_ENABLED          0x0008  // Device is measuring.
 #define BME280_FLAG_USE_SPI          0x0010  // Enable the SPI interface.
+#define BME280_FLAG_CAL_DATA_READ    0x0020  // Calibration data read.
 
 
 enum class PhysicalUnits : uint8_t {
@@ -170,6 +171,8 @@ class BME280 {
     inline bool  enabled() {        return _baro_flag(BME280_FLAG_ENABLED);         };
     inline bool  initialized() {    return _baro_flag(BME280_FLAG_INITIALIZED);     };
     inline bool  hasHumidity() {    return _baro_flag(BME280_FLAG_HAS_HUMIDITY);    };
+    inline bool  calibrated() {     return _baro_flag(BME280_FLAG_CAL_DATA_READ);   };
+
 
     int8_t poll();
 
@@ -197,22 +200,38 @@ class BME280 {
     // humidity with the specified units.
     float DewPoint(float temp, float hum);
 
-    bool setSettings(const BME280Settings& settings);
     const BME280Settings& getSettings() const;
 
 
   protected:
     BME280Settings m_settings;   // Main grouping of operational settings.
+    uint8_t    m_dig[32];
+    uint8_t    _shadow_sdat[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    uint8_t    _shadow_id       = 0;
+    uint8_t    _shadow_ctrl_hum = 0;
+    uint8_t    _shadow_ctrl_mea = 0;
+    uint8_t    _shadow_ctrl     = 0;
+
+    float      _air_temp    = 0.0;
+    float      _pressure    = 0.0;
+    float      _humidity    = 0.0;
+    float      _altitude    = 0.0;
+    float      _dew_point   = 0.0;
+    float      _esl_pres    = 0.0;
+    uint32_t   _last_read   = 0;
+    uint16_t   _flags       = 0;
+    LengthUnit _unit_length = LengthUnit::Meters;
+    TempUnit   _unit_temp   = TempUnit::Celsius;
+    PresUnit   _unit_pres   = PresUnit::Pa;
 
     /* This constructor is only a delegate to an extending class. */
     BME280(const BME280Settings& settings);
 
+    /* Mandatory overrides for register access. */
+    virtual int8_t _write_register(uint8_t addr, uint8_t* data) =0;
+    virtual int8_t _read_registers(uint8_t addr, uint8_t* data, uint8_t length) =0;
+
     bool _priv_init();  // Write configuration to BME280, return true if successful.
-    //uint8_t&  getMode();
-    //uint8_t*  getDig();
-    //uint8_t&  getControlHumidity();
-    //uint8_t&  getControlMeasure();
-    //uint8_t&  getConfig();
 
     /* Flag manipulation inlines */
     inline uint16_t _baro_flags() {                return _flags;           };
@@ -227,37 +246,11 @@ class BME280 {
     inline bool _useSPI() {     return _baro_flag(BME280_FLAG_USE_SPI);     };
 
 
-  private:
-    uint8_t m_dig[32];
-    float      _air_temp    = 0.0;
-    float      _pressure    = 0.0;
-    float      _humidity    = 0.0;
-    float      _altitude    = 0.0;
-    float      _dew_point   = 0.0;
-    float      _esl_pres    = 0.0;
-    uint32_t   _last_read   = 0;
-    uint16_t   _flags       = 0;
-    LengthUnit _unit_length = LengthUnit::Meters;
-    TempUnit   _unit_temp   = TempUnit::Celsius;
-    PresUnit   _unit_pres   = PresUnit::Pa;
-    uint8_t    PADDING      = 0;
-
-    /* Mandatory overrides for register access. */
-    virtual int8_t _write_register(uint8_t addr, uint8_t data) =0;
-    virtual int8_t _read_registers(uint8_t addr, uint8_t* data, uint8_t length) =0;
-
     // Read the data from the BME280 in the specified unit.
     bool _refresh_data();
 
-    // Calculates registers based on settings.
-    void CalculateRegisters(uint8_t& ctrlHum, uint8_t& ctrlMeas, uint8_t& config);
-
     // Write the settings to the chip.
     bool WriteSettings();
-
-    // Read the the chip id data from the BME280, return true if
-    // successful and the id matches a known value.
-    int8_t _read_chip_id();
 
     // Read the the trim data from the BME280, return true if
     // successful.
@@ -279,6 +272,7 @@ class BME280I2C: public BME280, public I2CDevice {
     BME280I2C(const BME280Settings& settings);
 
     int8_t init();     // Method used to initialize the class.
+    void printDebug(StringBuilder*);
 
     /* Overrides from I2CDevice... */
     int8_t io_op_callahead(BusOp*);
@@ -287,7 +281,7 @@ class BME280I2C: public BME280, public I2CDevice {
 
   private:
     // Write values to BME280 registers.
-    virtual int8_t _write_register(uint8_t addr, uint8_t data);
+    virtual int8_t _write_register(uint8_t addr, uint8_t* data);
     // Read values from BME280 registers.
     virtual int8_t _read_registers(uint8_t addr, uint8_t* data, uint8_t length);
 };

@@ -7,3 +7,4 @@
 #include "MCP356x/MCP356x.h"
 #include "SX1503/SX1503.h"
 #include "TMP102/TMP102.h"
+#include "VL53L0X/VL53L0X.h"

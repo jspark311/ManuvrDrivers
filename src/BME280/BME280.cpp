@@ -359,7 +359,6 @@ int8_t BME280I2C::init() {
 */
 void BME280I2C::printDebug(StringBuilder* output) {
   output->concatf("-- BM%c280 %sinitialized\n", (hasHumidity()?'E':'P'), (initialized() ? "" : "un"));
-  I2CDevice::printDebug(output);
   output->concatf("\tPowered:        %c\n", (_baro_flag(BME280_FLAG_ENABLED) ? 'y' : 'n'));
   output->concatf("\tFound:          %c\n", (devFound() ? 'y' : 'n'));
   output->concatf("\tCalibrated:     %c\n", (_baro_flag(BME280_FLAG_CAL_DATA_READ) ? 'y' : 'n'));
@@ -367,6 +366,7 @@ void BME280I2C::printDebug(StringBuilder* output) {
   output->concatf("\t_air_temp:      %.2f\n", _air_temp);
   output->concatf("\t_humidity:      %.2f\n", _humidity);
   output->concatf("\t_pressure:      %.2f\n", _pressure);
+  I2CDevice::printDebug(output);
 }
 
 

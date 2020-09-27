@@ -11,7 +11,6 @@
 * Added a temporal read marker so that polling-generated I/O can be minimized..
 *                                                  ---J. Ian Lindsay  2020.02.03
 * Converted typedefs to enum classes. Converted to async via CppPotpourri.
-* TODO: This driver still makes the assumption of the host being little-endian.
 *                                                  ---J. Ian Lindsay  2020.09.26
 */
 

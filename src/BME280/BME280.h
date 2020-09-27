@@ -74,11 +74,6 @@ courtesy of Brian McNoldy at http://andrew.rsmas.miami.edu.
 #define BME280_FLAG_CAL_DATA_READ    0x0020  // Calibration data read.
 
 
-enum class PhysicalUnits : uint8_t {
-  UNKNOWN         = 0x00
-  // TODO: Migrate all the unit enums into this.
-};
-
 enum class TempUnit : uint8_t {
   Celsius,
   Fahrenheit

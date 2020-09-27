@@ -37,6 +37,7 @@
 #define TSL2561_FLAG_ENABLED          0x0008  // Device is measuring.
 #define TSL2561_FLAG_AUTOGAIN         0x0010  // Class will adjust hardware gain automatically.
 #define TSL2561_FLAG_GAIN_16X         0x0020  // Is the low-light setting on?
+
 #define TSL2561_FLAG_INTEGRATION_MASK 0x00C0  // Integration time mask.
 
 /* I2C address options */
@@ -70,7 +71,7 @@ enum class TSLIntegrationTime : uint8_t {
   MS_13    = 0x00,    // 13.7ms
   MS_101   = 0x01,    // 101ms
   MS_402   = 0x02,    // 402ms
-  INVALID  = 0x03     // INVALID
+  MANUAL   = 0x03     // Measurement by request only.
 };
 
 
@@ -86,6 +87,7 @@ class TSL2561 : public I2CDevice {
     int8_t init();
     int8_t poll();
     int8_t enabled(bool);
+    void printDebug(StringBuilder*);
 
     /* TSL2561 Functions */
     int8_t integrationTime(TSLIntegrationTime);
@@ -111,9 +113,9 @@ class TSL2561 : public I2CDevice {
 
   private:
     const uint8_t _IRQ_PIN;
-    uint8_t  _reg_devid  = 0;
-    uint8_t  _reg_timing = 0;
     uint8_t  _reg_ctrl   = 0;
+    uint8_t  _reg_timing = 0;
+    uint8_t  _reg_devid  = 0;
     uint16_t _flags      = 0;
     uint16_t _broadband  = 0;
     uint16_t _infrared   = 0;
@@ -131,7 +133,6 @@ class TSL2561 : public I2CDevice {
     /* Flag manipulation inlines */
     inline uint16_t _tsl_flags() {                return _flags;           };
     inline bool _tsl_flag(uint16_t _flag) {       return (_flags & _flag); };
-    inline void _tsl_flip_flag(uint16_t _flag) {  _flags ^= _flag;         };
     inline void _tsl_clear_flag(uint16_t _flag) { _flags &= ~_flag;        };
     inline void _tsl_set_flag(uint16_t _flag) {   _flags |= _flag;         };
     inline void _tsl_set_flag(uint16_t _flag, bool nu) {

@@ -150,18 +150,18 @@ TSL2561::~TSL2561() {}
 * @returns 0 if sensor is found and initialized, negative otherwise.
 */
 int8_t TSL2561::init() {
-  int8_t ret = -2;
+  int8_t ret = -1;
   _ll_pin_init();
   _tsl_clear_flag(TSL2561_FLAG_INITIALIZED);
   /* Make sure we're actually connected */
-  uint8_t x = _read8(TSL2561Reg::ID, &_reg_devid);
-  _tsl_set_flag(TSL2561_FLAG_DEVICE_PRESENT, !(x & 0x05)); // ID code for TSL2561. Excludes TSL2560.
-  if (devFound()) {
-    ret = highGain(false);
-    if (0 == ret) {   // Set default integration time and gain.
-      ret = enabled(true);
-      _tsl_set_flag(TSL2561_FLAG_INITIALIZED, (0 == ret));
+  if (!devFound()) {
+    ret--;
+    if (0 == _read8(TSL2561Reg::ID, &_reg_devid)) {
+      ret = 0;
     }
+  }
+  else {
+    ret = 0;
   }
   return ret;
 }
@@ -184,20 +184,38 @@ int8_t TSL2561::poll() {
       uint32_t now = millis();
       uint32_t r_interval = 403;
       switch (integrationTime()) {
-        case TSLIntegrationTime::MS_13:    r_interval -= 88;   // No break
-        case TSLIntegrationTime::MS_101:   r_interval -= 301;  // No break
+        case TSLIntegrationTime::MS_13:    r_interval -= 14;   // No break
+        case TSLIntegrationTime::MS_101:   r_interval -= 101;  // No break
         case TSLIntegrationTime::MS_402:
-          if ((now - _last_read) >= r_interval) {
+          if (wrap_accounted_delta(now, _last_read) >= r_interval) {
             ret = (0 <= _read_data_registers()) ? 1 : -1;
           }
           break;
-        case TSLIntegrationTime::INVALID:
+        case TSLIntegrationTime::MANUAL:
           ret = -2;
           break;
       }
     }
   }
   return ret;
+}
+
+
+/*
+* Dump this item to the dev log.
+*/
+void TSL2561::printDebug(StringBuilder* output) {
+  output->concatf("-- TSL2561 %sinitialized\n", (initialized() ? "" : "un"));
+  output->concatf("\tPowered:        %c\n", (enabled() ? 'y' : 'n'));
+  output->concatf("\tFound:          %c\n", (devFound() ? 'y' : 'n'));
+  output->concatf("\tPins confd:     %c\n", (_tsl_flag(TSL2561_FLAG_PINS_CONFIGURED) ? 'y' : 'n'));
+  output->concatf("\tAutogain:       %c\n", (autogain() ? 'y' : 'n'));
+  output->concatf("\t16x gain:       %c\n", (highGain() ? 'y' : 'n'));
+  output->concatf("\t_last_read:     %u\n", _last_read);
+  output->concatf("\t_broadband:     0x%04x\n", _broadband);
+  output->concatf("\t_infrared:      0x%04x\n", _infrared);
+  output->concatf("\t_lux:           %u\n", _lux);
+  I2CDevice::printDebug(output);
 }
 
 
@@ -219,12 +237,10 @@ int8_t TSL2561::integrationTime(TSLIntegrationTime time) {
         val |= (uint8_t) time;
         _reg_timing = val;
         if (0 == _write8(TSL2561Reg::TIMING, &_reg_timing)) {
-          _tsl_clear_flag(TSL2561_FLAG_INTEGRATION_MASK);
-          _tsl_set_flag(((uint8_t) time) << 6);
           ret = 0;
         }
         break;
-      case TSLIntegrationTime::INVALID:
+      case TSLIntegrationTime::MANUAL:
         ret = -2;
         break;
     }
@@ -244,7 +260,6 @@ int8_t TSL2561::highGain(bool x) {
     _reg_timing = (x ? 0x10 : 0x00) | ((_flags >> 6) & 0x03);
     if (0 == _write8(TSL2561Reg::TIMING, &_reg_timing)) {
       ret = 0;
-      _tsl_set_flag(TSL2561_FLAG_GAIN_16X, x);
     }
   }
   return ret;
@@ -254,10 +269,6 @@ int8_t TSL2561::highGain(bool x) {
 /*!
 * @brief  Gets the broadband (mixed lighting) and IR only values from
 *         the TSL2561, adjusting gain if auto-gain is enabled
-* @param  broadband Pointer to a uint16_t we will fill with a sensor
-*                   reading from the IR+visible light diode.
-* @param  ir Pointer to a uint16_t we will fill with a sensor the
-*            IR-only light diode.
 */
 int8_t TSL2561::getLuminosity() {
   int8_t ret = -1;
@@ -270,6 +281,7 @@ int8_t TSL2561::getLuminosity() {
     }
     else {
       /* Read data until we find a valid range */
+      // TODO: This needs to be moved to the io callback function.
       bool _agcCheck = false;
       do {
         uint16_t _b = 0;
@@ -349,9 +361,6 @@ int8_t TSL2561::enabled(bool x) {
   if (devFound()) {
     _reg_ctrl = x ? 0x03 : 0x00;
     ret = _write8(TSL2561Reg::CONTROL, &_reg_ctrl);
-    if (0 == ret) {
-      _tsl_set_flag(TSL2561_FLAG_ENABLED, x);
-    }
   }
   return ret;
 }
@@ -464,12 +473,13 @@ int8_t TSL2561::_ll_pin_init() {
 * @param  value The 8-bit value we're writing to the register
 */
 int8_t TSL2561::_write8(TSL2561Reg reg, uint8_t* val_ptr) {
-  int8_t ret = -2;
+  int8_t ret = -1;
   if (nullptr != _bus) {
     uint8_t reg_idx = (uint8_t) reg;
     I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
-    ret++;
+    ret--;
     if (nullptr != op) {
+      ret--;
       op->dev_addr = _dev_addr;
       op->sub_addr = 0x80 | reg_idx;
       op->setBuffer(val_ptr, 1);
@@ -488,14 +498,15 @@ int8_t TSL2561::_write8(TSL2561Reg reg, uint8_t* val_ptr) {
 * @returns 8-bit value containing single byte data read
 */
 int8_t TSL2561::_read8(TSL2561Reg reg, uint8_t* val_ptr) {
-  int8_t ret = -2;
+  int8_t ret = -1;
   if (nullptr != _bus) {
     uint8_t reg_idx = (uint8_t) reg;
-    ret++;
+    ret--;
     I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
     if (nullptr != op) {
+      ret--;
       op->dev_addr = _dev_addr;
-      op->sub_addr = reg_idx;
+      op->sub_addr = 0x80 | reg_idx;
       op->setBuffer(val_ptr, 1);
       if (0 == _bus->queue_io_job(op)) {
         ret = 0;
@@ -511,11 +522,12 @@ int8_t TSL2561::_read8(TSL2561Reg reg, uint8_t* val_ptr) {
 * Read luminosity on both channels.
 */
 int8_t TSL2561::_read_data_registers() {
-  int8_t ret = -2;
-  if (nullptr != _bus) {
+  int8_t ret = -1;
+  if (devFound() && enabled() && initialized()) {
     I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
-    ret++;
+    ret--;
     if (nullptr != op) {
+      ret--;
       op->dev_addr = _dev_addr;
       op->sub_addr = (0x80 | TSL2561_WORD_BIT | (uint8_t) TSL2561Reg::CHAN0_LOW);
       op->setBuffer((uint8_t*) _data_shadow, 4);
@@ -566,11 +578,20 @@ int8_t TSL2561::io_op_callback(BusOp* _op) {
     return BUSOP_CALLBACK_ERROR;
   }
 
+  uint8_t* buf     = op->buffer();
+  uint     len     = op->bufferLen();
+
   switch (op->get_opcode()) {
     case BusOpcode::TX:
-      switch ((TSL2561Reg) op->sub_addr) {
+      switch ((TSL2561Reg) (op->sub_addr & 0x0F)) {
         case TSL2561Reg::CONTROL:            // Control/power register
+          _tsl_set_flag(TSL2561_FLAG_ENABLED, (0x03 == (*buf & 0x03)));
+          break;
         case TSL2561Reg::TIMING:             // Set integration time register
+          _flags = ((uint16_t) (TSL2561_FLAG_INTEGRATION_MASK & (*buf << 6))) | (_flags & ~(TSL2561_FLAG_INTEGRATION_MASK));
+          _tsl_set_flag(TSL2561_FLAG_GAIN_16X, (0 != (*buf & 0x10)));
+          _tsl_set_flag(TSL2561_FLAG_INITIALIZED);
+          break;
         case TSL2561Reg::THRESHHOLDL_LOW:    // Interrupt low threshold low-byte
         case TSL2561Reg::THRESHHOLDL_HIGH:   // Interrupt low threshold high-byte
         case TSL2561Reg::THRESHHOLDH_LOW:    // Interrupt high threshold low-byte
@@ -581,16 +602,28 @@ int8_t TSL2561::io_op_callback(BusOp* _op) {
       }
       break;
     case BusOpcode::RX:
-      switch ((TSL2561Reg) op->sub_addr) {
+      switch ((TSL2561Reg) (op->sub_addr & 0x0F)) {
         case TSL2561Reg::CONTROL:            // Control/power register
+          _tsl_set_flag(TSL2561_FLAG_ENABLED, (0x03 == (*buf & 0x03)));
+          break;
         case TSL2561Reg::TIMING:             // Set integration time register
+          _flags = ((uint16_t) (TSL2561_FLAG_INTEGRATION_MASK & (*buf << 6))) | (_flags & ~(TSL2561_FLAG_INTEGRATION_MASK));
+          _tsl_set_flag(TSL2561_FLAG_GAIN_16X, (0 != (*buf & 0x10)));
+          break;
         case TSL2561Reg::THRESHHOLDL_LOW:    // Interrupt low threshold low-byte
         case TSL2561Reg::THRESHHOLDL_HIGH:   // Interrupt low threshold high-byte
         case TSL2561Reg::THRESHHOLDH_LOW:    // Interrupt high threshold low-byte
         case TSL2561Reg::THRESHHOLDH_HIGH:   // Interrupt high threshold high-byte
         case TSL2561Reg::INTERRUPT:          // Interrupt settings
         case TSL2561Reg::CRC:                // Factory use only
+          break;
         case TSL2561Reg::ID:                 // TSL2561 identification setting
+          _tsl_set_flag(TSL2561_FLAG_DEVICE_PRESENT, !(*buf & 0x05)); // ID code for TSL2561. Excludes TSL2560.
+          if (devFound() && !initialized()) {
+            // Set default integration time and gain.
+            highGain(false);
+            enabled(true);
+          }
           break;
         case TSL2561Reg::CHAN0_LOW:          // Light data channel 0, low byte
           // We read all 4 of these registers at once.

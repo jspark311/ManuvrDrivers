@@ -184,8 +184,8 @@ int8_t TSL2561::poll() {
       uint32_t now = millis();
       uint32_t r_interval = 403;
       switch (integrationTime()) {
-        case TSLIntegrationTime::MS_13:    r_interval -= 14;   // No break
-        case TSLIntegrationTime::MS_101:   r_interval -= 101;  // No break
+        case TSLIntegrationTime::MS_13:    r_interval -= 88;   // No break
+        case TSLIntegrationTime::MS_101:   r_interval -= 301;  // No break
         case TSLIntegrationTime::MS_402:
           if (wrap_accounted_delta(now, _last_read) >= r_interval) {
             ret = (0 <= _read_data_registers()) ? 1 : -1;
@@ -622,6 +622,8 @@ int8_t TSL2561::io_op_callback(BusOp* _op) {
           if (devFound() && !initialized()) {
             // Set default integration time and gain.
             highGain(false);
+            _reg_timing = 0x11;    // 101ms integration, 1x gain.
+            _write8(TSL2561Reg::TIMING, &_reg_timing);
             enabled(true);
           }
           break;

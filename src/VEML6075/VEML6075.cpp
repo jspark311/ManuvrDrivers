@@ -417,7 +417,9 @@ int8_t VEML6075::_process_new_config(uint8_t new_conf) {
   _veml_set_flag(VEML6075_FLAG_TRIGGER_ENABLED, (trig == VEML6075Trigger::TRIGGER_ONE_OR_UV_TRIG));
   _veml_set_flag(VEML6075_FLAG_AF_ENABLED, (af == veml6075ActiveForce::AF_ENABLE));
   _veml_set_flag(VEML6075_FLAG_ENABLED, (0 == (new_conf & 0x01)));
-  _veml_set_flag(VEML6075_FLAG_INITIALIZED, true);
+  if (!initialized()) {
+    _veml_set_flag(VEML6075_FLAG_INITIALIZED, true);
+  }
   return 0;
 }
 

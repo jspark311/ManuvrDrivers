@@ -3,6 +3,10 @@ I have hard-forked this driver in preparation for changing it.
 The original library can be found here:
 https://github.com/pololu/vl53l0x-arduino
 
+A crowd-sources register manifest was developed, which helped organize this
+driver. It is located here:
+https://github.com/GrimbiXcode/VL53L0X-Register-Map
+
 Original license text is reproduced below.
                                                 ---J. Ian Lindsay
 -----------------------------------------------------------------
@@ -78,18 +82,86 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 
-
-#ifndef VL53L0X_h
-#define VL53L0X_h
-
-#include <Arduino.h>
+#include <AbstractPlatform.h>
+#include <I2CAdapter.h>
 #include <Wire.h>
 
-class VL53L0X {
+
+#ifndef __VL53L0X_DRIVER_H_
+#define __VL53L0X_DRIVER_H_
+
+#define ADDRESS_DEFAULT 0x29
+
+
+/* Registers that exist in hardware */
+enum class VL53L0XRegID : uint8_t {
+  SYSRANGE_START                              = 0x00,
+  SYSTEM_SEQUENCE_CONFIG                      = 0x01,
+  SYSTEM_INTERMEASUREMENT_PERIOD              = 0x02,
+  SYSTEM_RANGE_CONFIG                         = 0x03,
+  SYSTEM_INTERRUPT_CONFIG_GPIO                = 0x04,
+  SYSTEM_INTERRUPT_CLEAR                      = 0x05,
+  SYSTEM_THRESH_HIGH                          = 0x06,
+  SYSTEM_THRESH_LOW                           = 0x07,
+  RESULT_INTERRUPT_STATUS                     = 0x08,
+  RESULT_RANGE_STATUS                         = 0x09,
+  CROSSTALK_COMPENSATION_PEAK_RATE_MCPS       = 0x0A,
+  PRE_RANGE_CONFIG_MIN_SNR                    = 0x0B,
+  ALGO_PART_TO_PART_RANGE_OFFSET_MM           = 0x0C,
+  ALGO_PHASECAL_LIM                           = 0x0D,  // These two have the same address (0x30)?
+  ALGO_PHASECAL_CONFIG_TIMEOUT                = 0x0E,  // These two have the same address (0x30)?
+  GLOBAL_CONFIG_VCSEL_WIDTH                   = 0x0F,
+  HISTOGRAM_CONFIG_INITIAL_PHASE_SELECT       = 0x10,
+  FINAL_RANGE_CONFIG_MIN_COUNT_RATE_RTN_LIMIT = 0x11,
+  MSRC_CONFIG_TIMEOUT_MACROP                  = 0x12,
+  FINAL_RANGE_CONFIG_VALID_PHASE_LOW          = 0x13,
+  FINAL_RANGE_CONFIG_VALID_PHASE_HIGH         = 0x14,
+  DYNAMIC_SPAD_NUM_REQUESTED_REF_SPAD         = 0x15,
+  DYNAMIC_SPAD_REF_EN_START_OFFSET            = 0x16,
+  PRE_RANGE_CONFIG_VCSEL_PERIOD               = 0x17,
+  PRE_RANGE_CONFIG_TIMEOUT_MACROP_HI          = 0x18,
+  PRE_RANGE_CONFIG_TIMEOUT_MACROP_LO          = 0x19,
+  HISTOGRAM_CONFIG_READOUT_CTRL               = 0x1A,
+  PRE_RANGE_CONFIG_VALID_PHASE_LOW            = 0x1B,
+  PRE_RANGE_CONFIG_VALID_PHASE_HIGH           = 0x1C,
+  MSRC_CONFIG_CONTROL                         = 0x1D,
+  PRE_RANGE_CONFIG_SIGMA_THRESH_HI            = 0x1E,
+  PRE_RANGE_CONFIG_SIGMA_THRESH_LO            = 0x1F,
+  PRE_RANGE_MIN_COUNT_RATE_RTN_LIMIT          = 0x20,
+  FINAL_RANGE_CONFIG_MIN_SNR                  = 0x21,
+  FINAL_RANGE_CONFIG_VCSEL_PERIOD             = 0x22,
+  FINAL_RANGE_CONFIG_TIMEOUT_MACROP_HI        = 0x23,
+  FINAL_RANGE_CONFIG_TIMEOUT_MACROP_LO        = 0x24,
+  POWER_MANAGEMENT_GO1_POWER_FORCE            = 0x25,
+  SYSTEM_HISTOGRAM_BIN                        = 0x26,
+  GPIO_HV_MUX_ACTIVE_HIGH                     = 0x27,
+  VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV           = 0x28,
+  I2C_SLAVE_DEVICE_ADDRESS                    = 0x29,
+  GLOBAL_CONFIG_SPAD_ENABLES_REF_0            = 0x2A,
+  GLOBAL_CONFIG_SPAD_ENABLES_REF_1            = 0x2B,
+  GLOBAL_CONFIG_SPAD_ENABLES_REF_2            = 0x2C,
+  GLOBAL_CONFIG_SPAD_ENABLES_REF_3            = 0x2D,
+  GLOBAL_CONFIG_SPAD_ENABLES_REF_4            = 0x2E,
+  GLOBAL_CONFIG_SPAD_ENABLES_REF_5            = 0x2F,
+  RESULT_PEAK_SIGNAL_RATE_REF                 = 0x30,  // These two have the same address (0xB6)?
+  GLOBAL_CONFIG_REF_EN_START_SELECT           = 0x31,  // These two have the same address (0xB6)?
+  RESULT_CORE_AMBIENT_WINDOW_EVENTS_RTN       = 0x32,
+  SOFT_RESET_GO2_SOFT_RESET_N                 = 0x33,
+  RESULT_CORE_RANGING_TOTAL_EVENTS_RTN        = 0x34,  // These two have the same address (0xC0)?
+  IDENTIFICATION_MODEL_ID                     = 0x35,  // These two have the same address (0xC0)?
+  IDENTIFICATION_REVISION_ID                  = 0x36,
+  RESULT_CORE_AMBIENT_WINDOW_EVENTS_REF       = 0x37,
+  RESULT_CORE_RANGING_TOTAL_EVENTS_REF        = 0x38,
+  OSC_CALIBRATE_VAL                           = 0x39,
+  INVALID                                     = 0x3A
+};
+
+
+
+class VL53L0X : public I2CDevice {
   public:
     // register addresses from API vl53l0x_device.h (ordered as listed there)
-    enum regAddr
-    {
+    enum regAddr {
       SYSRANGE_START                              = 0x00,
 
       SYSTEM_THRESH_HIGH                          = 0x0C,
@@ -176,22 +248,15 @@ class VL53L0X {
     enum vcselPeriodType { VcselPeriodPreRange, VcselPeriodFinalRange };
     uint8_t last_status; // status of last I2C transmission
 
-    VL53L0X();
+    VL53L0X(uint8_t addr = ADDRESS_DEFAULT);
+    ~VL53L0X() {};
+
+    inline bool devFound() {        return true;  };   // TODO
 
     void setAddress(uint8_t new_addr);
-    inline uint8_t getAddress() { return address; }
+    inline uint8_t getAddress() { return _dev_addr; }
 
-    bool init(TwoWire* bus, bool io_2v8 = true);
-
-    void writeReg(uint8_t reg, uint8_t value);
-    void writeReg16Bit(uint8_t reg, uint16_t value);
-    void writeReg32Bit(uint8_t reg, uint32_t value);
-    uint8_t readReg(uint8_t reg);
-    uint16_t readReg16Bit(uint8_t reg);
-    uint32_t readReg32Bit(uint8_t reg);
-
-    void writeMulti(uint8_t reg, uint8_t const * src, uint8_t count);
-    void readMulti(uint8_t reg, uint8_t * dst, uint8_t count);
+    bool init(bool io_2v8 = true);
 
     bool setSignalRateLimit(float limit_Mcps);
     float getSignalRateLimit();
@@ -210,6 +275,10 @@ class VL53L0X {
     inline void setTimeout(uint16_t timeout) { io_timeout = timeout; }
     inline uint16_t getTimeout() { return io_timeout; }
     bool timeoutOccurred();
+
+    /* Overrides from the I2CDevice */
+    int8_t io_op_callahead(BusOp*);
+    int8_t io_op_callback(BusOp*);
 
 
   private:
@@ -232,12 +301,11 @@ class VL53L0X {
       uint32_t final_range_us;
     };
 
-    TwoWire*      _bus       = nullptr;
     uint32_t measurement_timing_budget_us;
     uint16_t io_timeout;
     uint16_t timeout_start_ms;
     uint8_t stop_variable; // read by init and used when starting measurement; is StopVariable field of VL53L0X_DevData_t structure in API
-    uint8_t address;
+    uint8_t shadows[256] = {0, };
     bool did_timeout;
     //bool _operation_running;
 
@@ -267,6 +335,20 @@ class VL53L0X {
       return (((period_pclks) >> 1) - 1);
     };
 
+    /* Shadow value manipulation functions. */
+    int8_t   _set_shadow_value(uint8_t, uint32_t);
+    uint     _get_shadow_value(uint8_t);
+    uint8_t* _get_reg_ptr(uint8_t reg_addr);
+
+    /* Lowest-level register manipulation functions before I/O. */
+    int8_t _read_registers(uint8_t, uint8_t reg_count = 1);
+    int8_t _write_register(uint8_t, uint32_t val);
+
+    /* All I/O is concentrated into these two functions. */
+    int8_t _read_buffer(uint8_t, uint8_t* buf, uint8_t len);
+    int8_t _write_buffer(uint8_t, uint8_t* buf, uint8_t len);
+
+
     // Calculate macro period in *nanoseconds* from VCSEL period in PCLKs
     // based on VL53L0X_calc_macro_period_ps()
     // PLL_period_ps = 1655; macro_period_vclks = 2304
@@ -274,10 +356,11 @@ class VL53L0X {
       return ((((uint32_t)2304 * (vcsel_period_pclks) * 1655) + 500) / 1000);
     };
 
+
     static uint16_t decodeTimeout(uint16_t value);
     static uint16_t encodeTimeout(uint32_t timeout_mclks);
     static uint32_t timeoutMclksToMicroseconds(uint16_t timeout_period_mclks, uint8_t vcsel_period_pclks);
     static uint32_t timeoutMicrosecondsToMclks(uint32_t timeout_period_us, uint8_t vcsel_period_pclks);
 };
 
-#endif
+#endif   // __VL53L0X_DRIVER_H_

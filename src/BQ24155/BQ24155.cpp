@@ -77,7 +77,7 @@ BQ24155RegID BQ24155::_reg_id_from_addr(const uint8_t reg_addr) {
 * Constructors/destructors, class initialization functions and so-forth...
 *******************************************************************************/
 /*
-* Constructor. Takes pin numbers as arguments.
+* Constructor.
 */
 BQ24155::BQ24155(const BQ24155Opts* o) : I2CDevice(BQ24155_I2CADDR), _opts(o) {
   _flgs = _opts._flgs_initial;

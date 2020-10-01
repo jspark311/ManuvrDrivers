@@ -84,7 +84,6 @@ DAMAGE.
 
 #include <AbstractPlatform.h>
 #include <I2CAdapter.h>
-#include <Wire.h>
 
 
 #ifndef __VL53L0X_DRIVER_H_

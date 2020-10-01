@@ -41,7 +41,7 @@ static uint8_t _reg_addr_from_id(const VL53L0XRegID r) {
 }
 
 static VL53L0XRegID _reg_id_from_addr(const uint8_t addr) {
-  // TODO
+  // TODO: Need to cope with apparent repeat addresses in FSM.
   return VL53L0XRegID::INVALID;
 }
 
@@ -264,11 +264,9 @@ bool VL53L0X::init(bool io_2v8) {
 
   // "Set interrupt config to new sample ready"
   // -- VL53L0X_SetGpioConfig() begin
-
   _write_register(VL53L0XRegID::SYSTEM_INTERRUPT_CONFIG_GPIO, 0x04);
   _write_register(VL53L0XRegID::GPIO_HV_MUX_ACTIVE_HIGH, _read_registers(VL53L0XRegID::GPIO_HV_MUX_ACTIVE_HIGH) & ~0x10); // active low
   _write_register(VL53L0XRegID::SYSTEM_INTERRUPT_CLEAR, 0x01);
-
   // -- VL53L0X_SetGpioConfig() end
 
   measurement_timing_budget_us = getMeasurementTimingBudget();

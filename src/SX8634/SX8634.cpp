@@ -31,7 +31,7 @@ limitations under the License.
 *
 * Static members and initializers should be located here.
 *******************************************************************************/
-volatile static bool isr_fired = false;
+volatile static bool sx8634_isr_fired = false;
 
 /* Offsets of off-limits values in the SPM */
 static const uint8_t _reserved_spm_offsets[31] = {
@@ -108,7 +108,7 @@ int8_t SX8634::render_stripped_spm(uint8_t* buf) {
 /*
 * This is the ISR. Flags the class for attention in idle time.
 */
-void sx8634_isr() {  isr_fired = true;  }
+void sx8634_isr() {  sx8634_isr_fired = true;  }
 
 
 int8_t SX8634::read_irq_registers() {
@@ -889,9 +889,9 @@ int8_t SX8634::_proc_waiting_pwm_changes() {
 uint8_t SX8634::poll() {
   uint8_t ret = 0;
   if (devFound()) {
-    if (isr_fired) {
+    if (sx8634_isr_fired) {
       ret = (uint8_t) read_irq_registers();
-      isr_fired = !(readPin(_opts.irq_pin));
+      sx8634_isr_fired = !(readPin(_opts.irq_pin));
     }
     _last_poll = millis();
     for (uint8_t i = 0; i < 12; i++) {

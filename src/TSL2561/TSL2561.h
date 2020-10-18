@@ -57,7 +57,7 @@ enum class TSL2561Reg : uint8_t {
   THRESHHOLDL_HIGH = 0x03, // Interrupt low threshold high-byte
   THRESHHOLDH_LOW  = 0x04, // Interrupt high threshold low-byte
   THRESHHOLDH_HIGH = 0x05, // Interrupt high threshold high-byte
-  INTERRUPT        = 0x06, // Interrupt settings
+  INTRPT_CONF      = 0x06, // Interrupt settings
   CRC              = 0x08, // Factory use only
   ID               = 0x0A, // TSL2561 identification setting
   CHAN0_LOW        = 0x0C, // Light data channel 0, low byte

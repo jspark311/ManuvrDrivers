@@ -138,6 +138,7 @@ class LTC294x : public I2CDevice {
     int8_t io_op_callahead(BusOp*);
     int8_t io_op_callback(BusOp*);
     void printDebug(StringBuilder*);
+    void printRegisters(StringBuilder*);
 
     /* Returns temperature in Celcius. */
     float temperature();

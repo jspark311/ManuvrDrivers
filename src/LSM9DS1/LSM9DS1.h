@@ -210,8 +210,8 @@ class LSM9DS1 : public AbstractIMU {
     inline const char* getErrorString() {    return getErrorString(error_condition);  }
 
     static IMUState getStateByIndex(uint8_t state_idx);
-    static const char* getStateString(IMUState);
-    static const char* getErrorString(IMUFault);
+    static const char* getStateString(const IMUState);
+    static const char* getErrorString(const IMUFault);
 
 
     static const float max_range_vect_mag;
@@ -307,11 +307,11 @@ class LSM9DS1 : public AbstractIMU {
 
     static const uint8_t _imu_reg_defaults[];
     static const char*   _reg_name_str(const LSM9DS1RegID);
-    static const uint8_t _reg_addr(const LSM9DS1RegID);
-    static const uint8_t _get_shadow_offset(const LSM9DS1RegID);
-    static const uint8_t _reg_width(const LSM9DS1RegID);
-    static const bool    _reg_writable(const LSM9DS1RegID);
-    static const bool    _reg_is_for_mag(const LSM9DS1RegID);
+    static uint8_t _reg_addr(const LSM9DS1RegID);
+    static uint8_t _get_shadow_offset(const LSM9DS1RegID);
+    static uint8_t _reg_width(const LSM9DS1RegID);
+    static bool    _reg_writable(const LSM9DS1RegID);
+    static bool    _reg_is_for_mag(const LSM9DS1RegID);
     static LSM9DS1RegID  _reg_id_from_addr_mag(const uint8_t reg_addr);
     static LSM9DS1RegID  _reg_id_from_addr_imu(const uint8_t reg_addr);
 };

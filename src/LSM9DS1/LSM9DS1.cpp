@@ -137,7 +137,7 @@ const bool _imu_register_writable_map[] = {
 
 
 /* The string representations of the registers named in the enum class LSM9DS1RegID. */
-const char* _imu_register_names[] = {
+const char* const _imu_register_names[] = {
   "M_OFFSET_X", "M_OFFSET_Y", "M_OFFSET_Z",
   "M_WHO_AM_I", "M_CTRL_REG1",
   "M_CTRL_REG2", "M_CTRL_REG3", "M_CTRL_REG4", "M_CTRL_REG5", "M_STATUS_REG",
@@ -243,24 +243,24 @@ const char* LSM9DS1::_reg_name_str(const LSM9DS1RegID id) {
   return _imu_register_names[(const uint8_t) id];
 }
 
-const uint8_t LSM9DS1::_reg_addr(const LSM9DS1RegID id) {
+uint8_t LSM9DS1::_reg_addr(const LSM9DS1RegID id) {
   return LSM9DS1_ADDR_MAP[(const uint8_t) id];
 }
 
-const uint8_t LSM9DS1::_get_shadow_offset(const LSM9DS1RegID id) {
+uint8_t LSM9DS1::_get_shadow_offset(const LSM9DS1RegID id) {
   return LSM9DS1_SHADOW_OFFSETS[(const uint8_t) id];
 }
 
-const uint8_t LSM9DS1::_reg_width(const LSM9DS1RegID id) {
+uint8_t LSM9DS1::_reg_width(const LSM9DS1RegID id) {
   return _imu_register_width_map[(const uint8_t) id];
 }
 
-const bool LSM9DS1::_reg_writable(const LSM9DS1RegID id) {
+bool LSM9DS1::_reg_writable(const LSM9DS1RegID id) {
   return _imu_register_writable_map[(const uint8_t) id];
 }
 
 
-const bool LSM9DS1::_reg_is_for_mag(const LSM9DS1RegID id) {
+bool LSM9DS1::_reg_is_for_mag(const LSM9DS1RegID id) {
   switch (id) {
     case LSM9DS1RegID::M_INT_TSH:
     case LSM9DS1RegID::M_OFFSET_X:
@@ -396,7 +396,7 @@ IMUState LSM9DS1::getStateByIndex(uint8_t state_idx) {
 *
 * @return const char*
 */
-const char* LSM9DS1::getErrorString(IMUFault fault_code) {
+const char* LSM9DS1::getErrorString(const IMUFault fault_code) {
   switch (fault_code) {
     case IMUFault::NO_ERROR               :  return "NO_ERROR";
     case IMUFault::WRONG_IDENTITY         :  return "WRONG_IDENTITY";
@@ -418,7 +418,7 @@ const char* LSM9DS1::getErrorString(IMUFault fault_code) {
 *
 * @return const char*
 */
-const char* LSM9DS1::getStateString(IMUState state) {
+const char* LSM9DS1::getStateString(const IMUState state) {
   switch (state) {
     case IMUState::UNDEF:    return "UNDEF";
     case IMUState::FAULT:    return "FAULT";

@@ -15,8 +15,8 @@ local, and you've found our code helpful, please buy us a round!
 
 Distributed as-is; no warranty is given.
 ******************************************************************************/
-#include <Arduino.h>
-#include <Wire.h>
+#include <AbstractPlatform.h>
+#include <I2CAdapter.h>
 
 #ifndef __TMP102_DRIVER_H_
 #define __TMP102_DRIVER_H_
@@ -40,12 +40,12 @@ enum class TMP102DataRate : uint8_t {
 
 
 
-class TMP102 {
+class TMP102 : public I2CDevice {
   public:
     TMP102(uint8_t addr, uint8_t alert_pin);
     ~TMP102();
 
-    int8_t init(TwoWire* bus = &Wire);
+    int8_t init(I2CAdapter* bus);
     int8_t poll();
 
     inline bool  devFound() {         return _tmp_flag(TMP102_FLAG_DEVICE_PRESENT);  };
@@ -96,7 +96,6 @@ class TMP102 {
     const uint8_t _ADDR;        // 0x48, 0x49, 0x4A, 0x4B
     const uint8_t _ALRT_PIN;
     uint16_t      _flags     = 0;
-    TwoWire*      _bus       = nullptr;
     uint32_t      _last_read = 0;
     float         _temp      = 0.0;   // Stored as Celcius.
 

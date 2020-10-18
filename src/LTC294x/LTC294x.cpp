@@ -71,6 +71,21 @@ TODO: It should be noted that this class assumes an LTC2942-1. This should be
 //};
 
 
+LTC294xRegID LTC294x::_reg_id_from_addr(const uint8_t reg_addr) {
+  switch (reg_addr & 0x3F) {
+    case 0x00:   return LTC294xRegID::STATUS;
+    case 0x01:   return LTC294xRegID::CONTROL;
+    case 0x02:   return LTC294xRegID::ACC_CHARGE;
+    case 0x04:   return LTC294xRegID::CHRG_THRESH_H;
+    case 0x06:   return LTC294xRegID::CHRG_THRESH_L;
+    case 0x08:   return LTC294xRegID::VOLTAGE;
+    case 0x0A:   return LTC294xRegID::V_THRESH;
+    case 0x0C:   return LTC294xRegID::TEMP;
+    case 0x0E:   return LTC294xRegID::TEMP_THRESH;
+  }
+  return LTC294xRegID::INVALID;
+}
+
 /*******************************************************************************
 *   ___ _              ___      _ _              _      _
 *  / __| |__ _ ______ | _ ) ___(_) |___ _ _ _ __| |__ _| |_ ___
@@ -334,6 +349,7 @@ int8_t LTC294x::io_op_callback(BusOp* _op) {
 * Dump this item to the dev log.
 */
 void LTC294x::printDebug(StringBuilder* output) {
+  I2CDevice::printDebug(output);
   uint8_t dsp = _derive_prescaler();
   output->concatf("-- LTC294%c-1 %sinitialized\n", (_is_2942() ? '2' : '1'), (initComplete() ? "" : "un"));
   if (_opts.useAlertPin()) {
@@ -407,6 +423,15 @@ void LTC294x::printDebug(StringBuilder* output) {
   }
 }
 
+
+/*
+* Dump the contents of this device to the logger.
+*/
+void LTC294x::printRegisters(StringBuilder* output) {
+  output->concat("-- LTC294x shadow registers\n----------------------------------\n");
+  StringBuilder::printBuffer(output, shadows, sizeof(shadows), "\t");
+  output->concat("\n");
+}
 
 
 /*******************************************************************************
@@ -600,6 +625,7 @@ int8_t LTC294x::_set_thresh_reg_charge(uint16_t l, uint16_t h) {
 }
 
 
+
 int8_t LTC294x::_write_control_reg(uint8_t v) {
   _set_shadow_value(LTC294xRegID::CONTROL, v);
   return _write_registers(LTC294xRegID::CONTROL, 1);
@@ -619,5 +645,87 @@ uint8_t LTC294x::_derive_prescaler() {
   if (res < 4)  { ret--; }
   if (res < 2)  { ret--; }
   if (res < 1)  { ret--; }
+  return ret;
+}
+
+
+int8_t LTC294x::_set_shadow_value(LTC294xRegID r, uint16_t val) {
+  int8_t  ret = 0;
+  uint8_t msb = (uint8_t) (val >> 8);
+  uint8_t lsb = (uint8_t) (val & 0xFF);
+  switch (r) {
+    case LTC294xRegID::TEMP_THRESH:
+      shadows[14] = msb;
+      shadows[15] = lsb;
+      break;
+    case LTC294xRegID::V_THRESH:
+      shadows[10] = msb;
+      shadows[11] = lsb;
+      break;
+    case LTC294xRegID::CHRG_THRESH_L:
+      shadows[6] = msb;
+      shadows[7] = lsb;
+      break;
+    case LTC294xRegID::CHRG_THRESH_H:
+      shadows[4] = msb;
+      shadows[5] = lsb;
+      break;
+    case LTC294xRegID::ACC_CHARGE:
+      shadows[2] = msb;
+      shadows[3] = lsb;
+      break;
+    case LTC294xRegID::CONTROL:
+      shadows[1] = lsb;
+      break;
+    default:
+      ret = -1;
+      break;
+  }
+  return ret;
+}
+
+
+uint16_t LTC294x::_get_shadow_value(LTC294xRegID r) {
+  uint8_t msb = 0;
+  uint8_t lsb = 0;
+  switch (r) {
+    case LTC294xRegID::TEMP_THRESH:
+      msb = shadows[14];
+      lsb = shadows[15];
+      break;
+    case LTC294xRegID::V_THRESH:
+      msb = shadows[10];
+      lsb = shadows[11];
+      break;
+    case LTC294xRegID::CHRG_THRESH_L:
+      msb = shadows[6];
+      lsb = shadows[7];
+      break;
+    case LTC294xRegID::CHRG_THRESH_H:
+      msb = shadows[4];
+      lsb = shadows[5];
+      break;
+    case LTC294xRegID::ACC_CHARGE:
+      msb = shadows[2];
+      lsb = shadows[3];
+      break;
+    case LTC294xRegID::CONTROL:
+      lsb = shadows[1];
+      break;
+    default:
+      break;
+  }
+  return (((uint16_t) msb) << 8) | ((uint16_t) lsb);
+}
+
+
+int8_t LTC294x::_read_registers(LTC294xRegID r, uint8_t len) {
+  int8_t  ret = -1;
+  return ret;
+}
+
+
+int8_t LTC294x::_write_registers(LTC294xRegID r, uint8_t len) {
+  int8_t  ret = -1;
   return ret;
 }

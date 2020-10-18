@@ -152,6 +152,7 @@ class BQ24155 : public I2CDevice {
     int8_t io_op_callback(BusOp*);
 
     void printDebug(StringBuilder*);
+    void printRegisters(StringBuilder*);
 
     int8_t init();
     int8_t refresh();

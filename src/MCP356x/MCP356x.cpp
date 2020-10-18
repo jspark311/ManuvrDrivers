@@ -1020,8 +1020,7 @@ float MCP356x::getTemperature() {
 
 
 int8_t MCP356x::calibrate() {
-  int8_t ret = -1;
-
+  int8_t ret = _calibrate_offset();
   return ret;
 }
 
@@ -1169,7 +1168,7 @@ int8_t MCP356x::_recalculate_settling_time() {
 int8_t MCP356x::_calibrate_offset() {
   int8_t ret = _set_scan_channels(0x0000E000);
   if (0 == ret) {
-    _mcp356x_clear_flag(MCP356X_FLAG_CALIBRATED);
+    _mcp356x_clear_flag(MCP356X_FLAG_CALIBRATED | MCP356X_FLAG_ALL_CAL_MASK);
   }
   return ret;
 }
@@ -1340,6 +1339,7 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
     case MCP356xRegister::SCAN:
     case MCP356xRegister::TIMER:
       break;
+
     case MCP356xRegister::OFFSETCAL:
       if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
         _mark_calibrated();

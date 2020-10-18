@@ -596,7 +596,7 @@ int8_t TSL2561::io_op_callback(BusOp* _op) {
         case TSL2561Reg::THRESHHOLDL_HIGH:   // Interrupt low threshold high-byte
         case TSL2561Reg::THRESHHOLDH_LOW:    // Interrupt high threshold low-byte
         case TSL2561Reg::THRESHHOLDH_HIGH:   // Interrupt high threshold high-byte
-        case TSL2561Reg::INTERRUPT:          // Interrupt settings
+        case TSL2561Reg::INTRPT_CONF:        // Interrupt settings
         default:   // Anything else is an illegal write target.
           break;
       }
@@ -614,7 +614,7 @@ int8_t TSL2561::io_op_callback(BusOp* _op) {
         case TSL2561Reg::THRESHHOLDL_HIGH:   // Interrupt low threshold high-byte
         case TSL2561Reg::THRESHHOLDH_LOW:    // Interrupt high threshold low-byte
         case TSL2561Reg::THRESHHOLDH_HIGH:   // Interrupt high threshold high-byte
-        case TSL2561Reg::INTERRUPT:          // Interrupt settings
+        case TSL2561Reg::INTRPT_CONF:        // Interrupt settings
         case TSL2561Reg::CRC:                // Factory use only
           break;
         case TSL2561Reg::ID:                 // TSL2561 identification setting

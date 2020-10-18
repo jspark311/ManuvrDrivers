@@ -41,7 +41,6 @@ const char* BQ24155_STATE_STR[] = {
   "FAULT"
 };
 
-
 const char* BQ24155_FAULT_STR[] = {
   "NOMINAL",
   "VBUS_OVP",
@@ -606,4 +605,13 @@ void BQ24155::printDebug(StringBuilder* output) {
       (double) terminateChargeCurrent(i)
     );
   }
+}
+
+/*
+* Dump the contents of this device to the logger.
+*/
+void BQ24155::printRegisters(StringBuilder* output) {
+  output->concat("-- BQ24155 shadow registers\n----------------------------------\n");
+  StringBuilder::printBuffer(output, shadows, sizeof(shadows), "\t");
+  output->concat("\n");
 }

@@ -24,12 +24,12 @@ Distributed as-is; no warranty is given.
 
 
 
-TMP102::TMP102(uint8_t addr, uint8_t alrt_pin) : _ADDR(addr), _ALRT_PIN(alrt_pin) {}
+TMP102::TMP102(uint8_t addr, uint8_t alrt_pin) : I2CDevice(addr), _ALRT_PIN(alrt_pin) {}
 
 TMP102::~TMP102() {}
 
 
-int8_t TMP102::init(TwoWire* b) {
+int8_t TMP102::init(I2CAdapter* b) {
   int8_t ret = _ll_pin_init();
   if (nullptr != b) {
     _bus = b;
@@ -37,21 +37,16 @@ int8_t TMP102::init(TwoWire* b) {
       // Here (and only here) we replicate the code for _open_ptr_register and
       //   write a formed config byte. Since this part doesn't have an identity
       //   register, we cope by basing our idea of its presence on success here.
-      _bus->beginTransmission(_ADDR);  // Connect to TMP102
-      _bus->write(CONFIG_REGISTER);    // Open config register
-      ret = _bus->endTransmission();   // Did someone answer?
-      if (0 == ret) {
-        _tmp_set_flag(TMP102_FLAG_DEVICE_PRESENT);
-        uint8_t registerByte[2] = {0, 0};   // Default (bit-cleared) state is enabled.
-        registerByte[1] |= ((uint8_t) TMP102DataRate::RATE_4_HZ) << 6;  // Conversion rate
-        registerByte[1] |= 1 << 4;  // Exentended mode
-        _bus->beginTransmission(_ADDR);  // Set configuration registers
-        _bus->write(CONFIG_REGISTER);    // Point to configuration register
-        _bus->write(registerByte[0]);    // Write first byte
-        _bus->write(registerByte[1]);    // Write second byte
-        ret = _bus->endTransmission();   // Close communication with TMP102
+      if (ping_device()) {
+        // uint8_t registerByte[2] = {0, 0};   // Default (bit-cleared) state is enabled.
+        // registerByte[1] |= ((uint8_t) TMP102DataRate::RATE_4_HZ) << 6;  // Conversion rate
+        // registerByte[1] |= 1 << 4;  // Exentended mode
+        ret = _write_registers(CONFIG_REGISTER, 2);
         if (0 == ret) {
-          _tmp_set_flag(TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
+          _tmp_set_flag(TMP102_FLAG_DEVICE_PRESENT);
+          if (0 == ret) {
+            _tmp_set_flag(TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
+          }
         }
       }
       else {
@@ -96,9 +91,9 @@ int8_t TMP102::poll() {
 int8_t TMP102::_open_ptr_register(uint8_t pointerReg) {
   int8_t ret = -1;
   if (devFound()) {
-    _bus->beginTransmission(_ADDR); // Connect to TMP102
-    _bus->write(pointerReg); // Open specified register
-    ret = _bus->endTransmission(); // Close communication with TMP102
+    //_bus->beginTransmission(_ADDR); // Connect to TMP102
+    //_bus->write(pointerReg); // Open specified register
+    //ret = _bus->endTransmission(); // Close communication with TMP102
   }
   return ret;
 }
@@ -107,13 +102,28 @@ int8_t TMP102::_open_ptr_register(uint8_t pointerReg) {
 uint8_t TMP102::_read_register(bool registerNumber){
   uint8_t registerByte[2] = {0, 0};
   // Read current configuration register value
-  _bus->requestFrom((uint8_t) _ADDR, (uint8_t) 2);   // Read two bytes from TMP102
-  if (_bus->available()) {
-    registerByte[0] = (_bus->read());  // Read first byte
-    registerByte[1] = (_bus->read());  // Read second byte
-  }
+  //_bus->requestFrom((uint8_t) _ADDR, (uint8_t) 2);   // Read two bytes from TMP102
+  //if (_bus->available()) {
+  //  registerByte[0] = (_bus->read());  // Read first byte
+  //  registerByte[1] = (_bus->read());  // Read second byte
+  //}
   return registerByte[registerNumber];
 }
+
+
+int8_t TMP102::_write_register(uint8_t reg, uint16_t val) {
+  int8_t ret = -1;
+  return ret;
+}
+
+
+int8_t TMP102::_write_registers(uint8_t reg, uint8_t len) {
+  int8_t ret = -1;
+  return ret;
+}
+
+
+
 
 
 int8_t TMP102::_read_temp() {
@@ -182,11 +192,11 @@ int8_t TMP102::conversionRate(TMP102DataRate r) {
       registerByte[1] |= rate << 6;  // Shift in new conversion rate
 
       // Set configuration registers
-      _bus->beginTransmission(_ADDR);
-      _bus->write(CONFIG_REGISTER);   // Point to configuration register
-      _bus->write(registerByte[0]);  // Write first byte
-      _bus->write(registerByte[1]);  // Write second byte
-      ret = _bus->endTransmission();      // Close communication with TMP102
+      //_bus->beginTransmission(_ADDR);
+      //_bus->write(CONFIG_REGISTER);   // Point to configuration register
+      //_bus->write(registerByte[0]);  // Write first byte
+      //_bus->write(registerByte[1]);  // Write second byte
+      //ret = _bus->endTransmission();      // Close communication with TMP102
       if (0 == ret) {
         _tmp_clear_flag(TMP102_FLAG_DATA_RATE_MASK);
         _tmp_set_flag((uint16_t)(rate << 6));
@@ -212,11 +222,11 @@ int8_t TMP102::extendedMode(bool mode) {
     registerByte[1] |= mode<<4;  // Shift in new exentended mode bit
 
     // Set configuration registers
-    _bus->beginTransmission(_ADDR);
-    _bus->write(CONFIG_REGISTER);    // Point to configuration register
-    _bus->write(registerByte[0]);    // Write first byte
-    _bus->write(registerByte[1]);    // Write second byte
-    ret = _bus->endTransmission();   // Close communication with TMP102
+    //_bus->beginTransmission(_ADDR);
+    //_bus->write(CONFIG_REGISTER);    // Point to configuration register
+    //_bus->write(registerByte[0]);    // Write first byte
+    //_bus->write(registerByte[1]);    // Write second byte
+    //ret = _bus->endTransmission();   // Close communication with TMP102
     if (0 == ret) {
       _tmp_set_flag(TMP102_FLAG_EXTENDED_MODE, mode);
     }
@@ -234,10 +244,10 @@ int8_t TMP102::enabled(bool x) {
       uint8_t registerByte = _read_register(0);
       registerByte = x ? (registerByte &= 0xFE) : (registerByte |= 0x01);
 
-      _bus->beginTransmission(_ADDR);  // ...and re-write it.
-      _bus->write(CONFIG_REGISTER);    // Point to configuration register.
-      _bus->write(registerByte);       // Write first byte.
-      ret = _bus->endTransmission();   // Close communication with TMP102.
+      //_bus->beginTransmission(_ADDR);  // ...and re-write it.
+      //_bus->write(CONFIG_REGISTER);    // Point to configuration register.
+      //_bus->write(registerByte);       // Write first byte.
+      //ret = _bus->endTransmission();   // Close communication with TMP102.
       if (0 == ret) {       // Only change the flag if the write worked.
         _tmp_set_flag(TMP102_FLAG_ENABLED, x);
       }
@@ -262,10 +272,10 @@ int8_t TMP102::alertPolarity(bool polarity) {
     registerByte |= polarity<<2;  // Shift in new POL bit
 
     // Set configuration register
-    _bus->beginTransmission(_ADDR);
-    _bus->write(CONFIG_REGISTER);  // Point to configuration register
-    _bus->write(registerByte);      // Write first byte
-    ret = _bus->endTransmission();       // Close communication with TMP102
+    //_bus->beginTransmission(_ADDR);
+    //_bus->write(CONFIG_REGISTER);  // Point to configuration register
+    //_bus->write(registerByte);      // Write first byte
+    //ret = _bus->endTransmission();       // Close communication with TMP102
     if (0 == ret) {
       _tmp_set_flag(TMP102_FLAG_ALRT_ACTIVE_HIGH, polarity);
     }
@@ -304,11 +314,11 @@ int8_t TMP102::setLowTemp(float degrees) {
     }
 
     // Write to T_LOW Register
-    _bus->beginTransmission(_ADDR);
-    _bus->write(T_LOW_REGISTER);   // Point to T_LOW
-    _bus->write(registerByte[0]);  // Write first byte
-    _bus->write(registerByte[1]);  // Write second byte
-    ret = _bus->endTransmission();      // Close communication with TMP102
+    //_bus->beginTransmission(_ADDR);
+    //_bus->write(T_LOW_REGISTER);   // Point to T_LOW
+    //_bus->write(registerByte[0]);  // Write first byte
+    //_bus->write(registerByte[1]);  // Write second byte
+    //ret = _bus->endTransmission();      // Close communication with TMP102
   }
   return ret;
 }
@@ -332,11 +342,11 @@ int8_t TMP102::setHighTemp(float degrees) {
     }
 
     // Write to T_HIGH Register
-    _bus->beginTransmission(_ADDR);
-    _bus->write(T_HIGH_REGISTER);      // Point to T_HIGH register
-    _bus->write(registerByte[0]);      // Write first byte
-    _bus->write(registerByte[1]);      // Write second byte
-    ret = _bus->endTransmission();    // Close communication with TMP102
+    //_bus->beginTransmission(_ADDR);
+    //_bus->write(T_HIGH_REGISTER);      // Point to T_HIGH register
+    //_bus->write(registerByte[0]);      // Write first byte
+    //_bus->write(registerByte[1]);      // Write second byte
+    //ret = _bus->endTransmission();    // Close communication with TMP102
   }
   return ret;
 }
@@ -420,10 +430,10 @@ int8_t TMP102::setFault(uint8_t faultSetting) {
     registerByte |= faultSetting<<3;  // Shift new fault setting
 
     // Set configuration registers
-    _bus->beginTransmission(_ADDR);
-    _bus->write(CONFIG_REGISTER);   // Point to configuration register
-    _bus->write(registerByte);     // Write byte to register
-    ret = _bus->endTransmission();       // Close communication with TMP102
+    //_bus->beginTransmission(_ADDR);
+    //_bus->write(CONFIG_REGISTER);   // Point to configuration register
+    //_bus->write(registerByte);     // Write byte to register
+    //ret = _bus->endTransmission();       // Close communication with TMP102
   }
   return ret;
 }
@@ -442,10 +452,10 @@ int8_t TMP102::setAlertMode(bool mode) {
     registerByte |= mode<<1;  // Shift in new TM bit
 
     // Set configuration registers
-    _bus->beginTransmission(_ADDR);
-    _bus->write(CONFIG_REGISTER);   // Point to configuration register
-    _bus->write(registerByte);     // Write byte to register
-    ret = _bus->endTransmission();       // Close communication with TMP102
+    //_bus->beginTransmission(_ADDR);
+    //_bus->write(CONFIG_REGISTER);   // Point to configuration register
+    //_bus->write(registerByte);     // Write byte to register
+    //ret = _bus->endTransmission();       // Close communication with TMP102
   }
   return ret;
 }
@@ -485,7 +495,7 @@ int8_t TMP102::_ll_pin_init() {
   int8_t ret = 0;
   if (!_tmp_flag(TMP102_FLAG_PINS_CONFIGURED)) {
     if (255 != _ALRT_PIN) {
-      pinMode(_ALRT_PIN, INPUT);
+      pinMode(_ALRT_PIN, GPIOMode::INPUT);
       //attachInterrupt(digitalPinToInterrupt(_ALRT_PIN), tmp102_isr_fxn, FALLING);
     }
     _tmp_set_flag(TMP102_FLAG_PINS_CONFIGURED);

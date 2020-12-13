@@ -112,7 +112,7 @@ void amg_isr_fxn() {   amg_irq_fired = true;   }
 */
 GridEYE::GridEYE(uint8_t addr, uint8_t irq) :
   I2CDevice(addr), _IRQ_PIN(irq),
-  _frame_read(BusOpcode::RX, addr, TEMPERATURE_REGISTER_START, (uint8_t*) _frame, 128) {}
+  _frame_read(BusOpcode::RX, addr, TEMPERATURE_REGISTER_START, _frame, 128) {}
 
 /*
 * Destructor
@@ -155,7 +155,7 @@ int8_t GridEYE::reset() {
   int8_t ret = -2;
   _flags = _flags & GRIDEYE_FLAG_RESET_MASK;
   if (nullptr != _bus) {
-    for (uint8_t i = 0; i < 64; i++) {
+    for (uint8_t i = 0; i < 128; i++) {
       _frame[i] = 0;   // Zero the local framebuffer.
     }
     for (uint8_t i = 0; i < 16; i++) {
@@ -769,6 +769,44 @@ int16_t GridEYE::_native_float_to_dev_int16(float DegreesC) {
 }
 
 
+int16_t GridEYE::getPixelRaw(uint8_t pixel) {
+  uint8_t  idx = pixel << 1;
+  uint16_t msb = (uint16_t) _frame[idx];
+  uint16_t ret = (uint16_t) _frame[idx+1];
+  msb = ((msb & 0x0008) ? (msb | 0x00F0) : (msb & 0x000F));
+  ret |= msb;
+  return (int16_t) ret;
+}
+
+
+void GridEYE::printDebug(StringBuilder* output) {
+  I2CDevice::printDebug(output);
+  for (int i = 0; i < 8; i++) {
+    int n = i << 3;
+    output->concatf(
+      "%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+      _frame[n+0], _frame[n+1], _frame[n+2], _frame[n+3], _frame[n+4], _frame[n+5], _frame[n+6], _frame[n+7],
+      _frame[n+8], _frame[n+9], _frame[n+10], _frame[n+11], _frame[n+12], _frame[n+13], _frame[n+14], _frame[n+15]
+    );
+  }
+  for (int i = 0; i < 8; i++) {
+    int n = i << 3;
+    output->concatf(
+      "%5d %5d %5d %5d %5d %5d %5d %5d\n",
+      getPixelRaw(n+0), getPixelRaw(n+1), getPixelRaw(n+2), getPixelRaw(n+3),
+      getPixelRaw(n+4), getPixelRaw(n+5), getPixelRaw(n+6), getPixelRaw(n+7)
+    );
+  }
+  for (int i = 0; i < 8; i++) {
+    int n = i << 3;
+    output->concatf(
+      "%.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f\n",
+      getPixelTemperature(n+0), getPixelTemperature(n+1), getPixelTemperature(n+2), getPixelTemperature(n+3),
+      getPixelTemperature(n+4), getPixelTemperature(n+5), getPixelTemperature(n+6), getPixelTemperature(n+7)
+    );
+  }
+  output->concat("\n");
+}
 
 
 /*******************************************************************************

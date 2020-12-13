@@ -144,7 +144,7 @@ class GridEYE : public I2CDevice {
     inline void unitsFahrenheit(bool x) {  _amg_set_flag(GRIDEYE_FLAG_FREEDOM_UNITS, x); };
 
     float   getPixelTemperature(uint8_t pixel);
-    inline int16_t getPixelRaw(uint8_t pixel) {   return (pixel < 64) ? _frame[pixel] : 0;  };
+    int16_t getPixelRaw(uint8_t pixel);
 
     float   getDeviceTemperature();
     int16_t getDeviceTemperatureRaw();
@@ -189,12 +189,14 @@ class GridEYE : public I2CDevice {
     float   getInterruptHysteresis();
     int16_t getInterruptHysteresisRaw();
 
+    void printDebug(StringBuilder*);
+
 
   private:
     const uint8_t _IRQ_PIN;
     uint16_t      _flags     = 0;
     uint32_t      _last_read = 0;
-    int16_t       _frame[64];
+    uint8_t       _frame[128];
     uint8_t       _shadows[16];
     uint8_t       _pixel_interrupts[8];
     I2CBusOp      _frame_read;

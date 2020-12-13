@@ -1,5 +1,4 @@
 #include <AbstractPlatform.h>
-#include <CommonConstants.h>
 #include <EnumeratedTypeCodes.h>
 #include <SPIAdapter.h>
 

@@ -39,7 +39,6 @@ enum class TMP102DataRate : uint8_t {
 };
 
 
-
 class TMP102 : public I2CDevice {
   public:
     TMP102(uint8_t addr, uint8_t alert_pin);
@@ -95,16 +94,18 @@ class TMP102 : public I2CDevice {
   private:
     const uint8_t _ADDR;        // 0x48, 0x49, 0x4A, 0x4B
     const uint8_t _ALRT_PIN;
-    uint16_t      _flags     = 0;
-    uint32_t      _last_read = 0;
-    float         _temp      = 0.0;   // Stored as Celcius.
+    uint16_t      _flags      = 0;
+    uint32_t      _last_read  = 0;
+    float         _temp       = 0.0;   // Stored as Celcius.
+    uint8_t       _shadows[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
     int8_t  _open_ptr_register(uint8_t pointerReg); // Changes the pointer register
     uint8_t _read_register(bool registerNumber);  // reads 1 byte of from register
     int8_t  _read_temp();
 
     int8_t   _ll_pin_init();
-    int8_t   _write_register(uint8_t reg, uint8_t val);
+    int8_t   _write_register(uint8_t reg, uint16_t val);
+    int8_t   _write_registers(uint8_t reg, uint8_t len);
     int8_t   _read_registers(uint8_t reg, uint8_t len);
     float    _normalize_units_accepted(float deg);
     float    _normalize_units_returned(float deg);

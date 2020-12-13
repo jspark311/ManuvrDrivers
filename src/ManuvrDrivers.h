@@ -6,6 +6,7 @@
 #include "AMG88xx/AMG88xx.h"
 #include "TSL2561/TSL2561.h"
 #include "MCP356x/MCP356x.h"
+#include "MCP4728/MCP4728.h"
 #include "SX1276/SX1276.h"
 #include "SX1503/SX1503.h"
 #include "SX8634/SX8634.h"

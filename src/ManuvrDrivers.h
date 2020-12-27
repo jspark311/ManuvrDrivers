@@ -10,5 +10,7 @@
 #include "SX1276/SX1276.h"
 #include "SX1503/SX1503.h"
 #include "SX8634/SX8634.h"
+#include "DS1881/DS1881.h"
+#include "ADG2128/ADG2128.h"
 #include "TMP102/TMP102.h"
 #include "VL53L0X/VL53L0X.h"

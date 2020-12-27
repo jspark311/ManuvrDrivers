@@ -11,6 +11,8 @@
 
 #include "AbstractPlatform.h"
 #include "I2CAdapter.h"
+#ifndef __MCP4728_DRIVER_H__
+#define __MCP4728_DRIVER_H__
 
 /*
 * Class flags.
@@ -106,3 +108,6 @@ class MCP4728 : public I2CDevice {
       else    _flags &= ~_flag;
     };
 };
+
+
+#endif // __MCP4728_DRIVER_H__

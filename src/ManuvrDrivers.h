@@ -1,5 +1,6 @@
 // This header file is meant to work around Arduino's strange inclusion behavior.
 #include "SSD13xx/SSD13xx.h"
+#include "I2CEEPROM/I2CEEPROM.h"
 #include "ShiftRegister/ShiftRegister.h"
 #include "VEML6075/VEML6075.h"
 #include "BME280/BME280.h"

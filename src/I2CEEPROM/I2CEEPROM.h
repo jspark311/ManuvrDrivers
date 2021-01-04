@@ -4,6 +4,16 @@
 *
 * Data conventions for this class:
 *   A page is considered empty if it has a next_block pointer equal to -1 (unsigned).
+*
+* TODO: An allocation-tracking table would take up 64 bytes for a 32K EEPROM.
+*   It might be worth it to save the burdensome I/O seeking for free blocks
+*   everytime we want to store data. It might also allow us to select
+*   blocks more intelligently.
+* Possible block selection strategy: Blocks holding record metadata (the
+*   first block of any record) starts at low addresses and grows upward.
+*   Strictly data blocks stored at the rear and grows downward. But data is
+*   still stored in ascending order such that access is kept as non-random
+*   as fragmentation allows.
 */
 
 #ifndef __I2C_EEPROM_H_
@@ -27,10 +37,9 @@ enum class I2CEEPROMFSM : uint8_t {
 };
 
 
-/*******************************************************************************
-*
-*******************************************************************************/
-
+/*
+* Concrete Storage implementation for an i2c EEPROM.
+*/
 class I2CEEPROM : public Storage, public I2CDevice {
   public:
     I2CEEPROM(const uint32_t bits, const uint16_t page_size, const uint8_t addr = 0x50);
@@ -58,9 +67,9 @@ class I2CEEPROM : public Storage, public I2CDevice {
     const uint16_t PAYLOAD_SIZE_BYTES;   // This many bytes left over per page.
 
     uint32_t     _op_len_rem     = 0;  // Used to track remaining length in self-generated I/O.
-    uint32_t     _nxt_open_block = 0;  // The next address with free space (page-aligned).
     uint8_t      _addr_ptr[4]    = {0, };  // The current value of the address pointer in the chip.
     uint8_t*     _page_buffer    = nullptr;
+    uint8_t*     _alloc_table    = nullptr;  // Tracks allocation of blocks. 1-bit per block.
     DataRecord*  _current_record = nullptr;  // The object currently using the driver for I/O.
     I2CEEPROMFSM _fsm_pos        = I2CEEPROMFSM::UNINIT;
     I2CEEPROMFSM _fsm_pos_prior  = I2CEEPROMFSM::UNINIT;
@@ -68,7 +77,9 @@ class I2CEEPROM : public Storage, public I2CDevice {
     I2CBusOp _addr_ptr_op;    // A commonly-used bus operation.
     I2CBusOp _data_io_op;     // A commonly-used bus operation.
 
-    int8_t  _write_tracking_block();
+    inline const uint _allocation_table_size();
+    void _mark_block_allocated(const uint32_t BLKADDR, const bool allocd);
+    bool _is_block_allocated(const uint32_t BLKADDR);
 
     uint32_t _address_ptr();
     int8_t   _set_address_ptr(uint32_t);

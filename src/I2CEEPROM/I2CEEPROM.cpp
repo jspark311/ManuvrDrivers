@@ -7,7 +7,9 @@
 I2CEEPROM::I2CEEPROM(const uint32_t bits, const uint16_t page_size, const uint8_t addr)
   : Storage(bits >> 3, page_size), I2CDevice(addr),
     OVERHEAD_SIZE_BYTES(DEV_ADDR_SIZE_BYTES << 1),
-    PAYLOAD_SIZE_BYTES(page_size - OVERHEAD_SIZE_BYTES)
+    PAYLOAD_SIZE_BYTES(page_size - OVERHEAD_SIZE_BYTES),
+    _addr_ptr_op(BusOpcode::TX, (I2CDevice*) this),
+    _data_io_op(BusOpcode::RX, (I2CDevice*) this)
 {
   _pl_set_flag(PL_FLAG_MEDIUM_WRITABLE | PL_FLAG_MEDIUM_READABLE | PL_FLAG_MEDIUM_MOUNTED);
 }
@@ -15,7 +17,16 @@ I2CEEPROM::I2CEEPROM(const uint32_t bits, const uint16_t page_size, const uint8_
 /**
 * Destructor
 */
-I2CEEPROM::~I2CEEPROM() {}
+I2CEEPROM::~I2CEEPROM() {
+  if (nullptr != _page_buffer) {
+    free(_page_buffer);
+    _page_buffer = nullptr;
+  }
+  if (nullptr != _alloc_table) {
+    free(_alloc_table);
+    _alloc_table = nullptr;
+  }
+}
 
 
 /*******************************************************************************
@@ -32,7 +43,7 @@ StorageErr I2CEEPROM::wipe(uint32_t offset, uint32_t range) {
   }
   if (0 == _busy_check()) {
     ret = StorageErr::HW_FAULT;
-    for (uint i = 0; i < DEV_BLOCK_SIZE; i++) {  *(_page_buffer + i) = (i < DEV_ADDR_SIZE_BYTES) ? 0xFF : 0;  }
+    for (uint i = 0; i < DEV_BLOCK_SIZE; i++) {  *(_page_buffer + i) = 0xFF;  }
     _op_len_rem = strict_min(range, (DEV_SIZE_BYTES - offset));  // Constrain.
     if (0 == _set_address_ptr(offset)) {
       _data_io_op.set_opcode(BusOpcode::TX);
@@ -148,6 +159,13 @@ int8_t I2CEEPROM::init(I2CAdapter* b) {
     _page_buffer = (uint8_t*) malloc(DEV_BLOCK_SIZE);
     if (nullptr == _page_buffer) return ret;
   }
+  if (nullptr == _alloc_table) {
+    const uint ALLOC_TABLE_SIZE = _allocation_table_size();
+    _alloc_table = (uint8_t*) malloc(ALLOC_TABLE_SIZE);
+    if (nullptr == _alloc_table) return ret;
+    for (uint i = 0; i < ALLOC_TABLE_SIZE; i++) {  *(_alloc_table + i) = 0;  }
+  }
+
   _addr_ptr_op.shouldReap(false);
   _addr_ptr_op.sub_addr = -1;
   _addr_ptr_op.dev_addr = _dev_addr;
@@ -170,17 +188,24 @@ int8_t I2CEEPROM::init(I2CAdapter* b) {
 void I2CEEPROM::printDebug(StringBuilder* output) {
   Storage::printStorage(output);
   output->concatf("\t op_len_rem:\t %u\n", _op_len_rem);
-  output->concatf("\t nxt_open_block:\t %u\n", _nxt_open_block);
   output->concatf("\t Locked by DataRecord: %c\n", (nullptr != _current_record) ? 'y':'n');
   output->concatf("\t address_ptr:\t %u\n", _address_ptr());
   output->concatf("\t fsm_pos/prior:\t %u / %u\n", (uint8_t) _fsm_pos, (uint8_t) _fsm_pos_prior);
-  StringBuilder::printBuffer(output, _page_buffer, DEV_BLOCK_SIZE, "");
+
+  if (nullptr != _page_buffer) {
+    output->concat("\t Page buffer:\n");
+    StringBuilder::printBuffer(output, _page_buffer, DEV_BLOCK_SIZE, "\t\t");
+  }
+
+  if (nullptr != _alloc_table) {
+    output->concat("\t Allocation table:\n");
+    StringBuilder::printBuffer(output, _alloc_table, _allocation_table_size(), "\t\t");
+  }
 }
 
 
-
 /**
-* One of the most ocmmon things to do in this driver is to set the internal
+* One of the most common things to do in this driver is to set the internal
 *   address pointer.
 * This function immediately changes the value of the address pointer shadow.
 *
@@ -212,7 +237,6 @@ int8_t I2CEEPROM::_increment_address_ptr(uint32_t x) {
 }
 
 int8_t I2CEEPROM::_store_address_ptr(uint32_t x) {
-  uint32_t tmp = 0;
   if (DEV_SIZE_BYTES > x) {
     for (uint8_t i = 0; i < DEV_ADDR_SIZE_BYTES; i++) {
       _addr_ptr[i] = (uint8_t) (x >> (i << 3)) & 0xFF;
@@ -258,6 +282,33 @@ int8_t I2CEEPROM::_set_fsm_position(I2CEEPROMFSM new_state) {
 
 
 /*******************************************************************************
+* Allocation table functions
+*******************************************************************************/
+
+const uint I2CEEPROM::_allocation_table_size() {
+  return ((DEV_TOTAL_BLOCKS >> 3) + ((DEV_TOTAL_BLOCKS & 0x07) ? 1:0));
+}
+
+void I2CEEPROM::_mark_block_allocated(const uint32_t BLKADDR, const bool allocd) {
+  if (nullptr != _alloc_table) {
+    const uint INDEX_COMPONENT = BLKADDR >> 3;
+    const uint SHIFT_COMPONENT = BLKADDR & 0x07;
+    const uint8_t BIT_MASK    = 1 << SHIFT_COMPONENT;
+    const uint8_t CURRENT_VAL = *(_alloc_table + INDEX_COMPONENT) & ~BIT_MASK;
+    *(_alloc_table + INDEX_COMPONENT) = CURRENT_VAL | (allocd ? BIT_MASK:0);
+  }
+}
+
+bool I2CEEPROM::_is_block_allocated(const uint32_t BLKADDR) {
+  const uint INDEX_COMPONENT = BLKADDR >> 3;
+  const uint SHIFT_COMPONENT = BLKADDR & 0x07;
+  return ((*(_alloc_table + INDEX_COMPONENT) >> SHIFT_COMPONENT) & 0x01);
+}
+
+
+
+
+/*******************************************************************************
 * ___     _       _                      These members are mandatory overrides
 *  |   / / \ o   | \  _     o  _  _      for implementing I/O callbacks. They
 * _|_ /  \_/ o   |_/ (/_ \/ | (_ (/_     are also implemented by Adapters.
@@ -288,9 +339,7 @@ int8_t I2CEEPROM::io_op_callback(BusOp* _op) {
       //   we should begin reading the data region.
       _data_io_op.set_opcode(BusOpcode::RX);
       _data_io_op.setBuffer(_page_buffer, DEV_BLOCK_SIZE);
-      if (0 != queue_io_job(&_data_io_op)) {
-        _set_fsm_position(I2CEEPROMFSM::FAULT);
-      }
+      _set_fsm_position((0 != queue_io_job(&_data_io_op)) ? I2CEEPROMFSM::FAULT : I2CEEPROMFSM::ALLOCATING);
     }
   }
   else {
@@ -309,6 +358,7 @@ int8_t I2CEEPROM::io_op_callback(BusOp* _op) {
           // It is safe to assume the operation length will be the full size
           //   of the page buffer.
           _op_len_rem = _op_len_rem - op->bufferLen();
+          _mark_block_allocated(THIS_BLOCK_ADDR, false);
           if (0 < _op_len_rem) {
             ret = BUSOP_CALLBACK_RECYCLE;
           }
@@ -342,12 +392,15 @@ int8_t I2CEEPROM::io_op_callback(BusOp* _op) {
             empty_val = (empty_val << 8) | 0xFF;
             buf_addr  = (buf_addr << 8)  | *(_page_buffer + 1);
           }
-          if (buf_addr == empty_val) {
+          bool allocd = (buf_addr != empty_val);
+
+          if (!allocd) {
             // We just found a free block.
             // Take the payload size out of the remaining bytes to allocate.
             const uint BYTES_AVAILABLE = DEV_BLOCK_SIZE - DEV_ADDR_SIZE_BYTES;
             if (nullptr != _current_record) {
               _current_record->append_block_to_list(THIS_BLOCK_ADDR);
+              _mark_block_allocated(THIS_BLOCK_ADDR, true);
             }
             if (_op_len_rem > BYTES_AVAILABLE) {
               // Not all bytes allocated. Keep looking.
@@ -364,6 +417,7 @@ int8_t I2CEEPROM::io_op_callback(BusOp* _op) {
             }
           }
           else {
+            _mark_block_allocated(THIS_BLOCK_ADDR, true);
             // Block is in-use. Advance to next block if possible.
             if ((THIS_BLOCK_ADDR + DEV_BLOCK_SIZE) < DEV_SIZE_BYTES) {
               _set_address_ptr(THIS_BLOCK_ADDR + DEV_BLOCK_SIZE);

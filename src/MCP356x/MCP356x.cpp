@@ -139,6 +139,9 @@ int8_t MCP356x::init(SPIAdapter* b) {
       _busop_irq_read.shouldReap(false);
       _busop_irq_read.setParams((uint8_t) _get_reg_addr(MCP356xRegister::IRQ) | 0x01);
       _busop_irq_read.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) MCP356xRegister::IRQ], 1);
+      _busop_irq_read.maxFreq(19000000);
+      _busop_irq_read.cpol(false);
+      _busop_irq_read.cpha(false);
 
       if (0 == reset()) {
         ret = 0;
@@ -1549,5 +1552,9 @@ int8_t MCP356x::queue_io_job(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   op->setCSPin(_CS_PIN);
   op->csActiveHigh(false);
+  op->bitsPerFrame(SPIFrameSize::BITS_8);
+  op->maxFreq(19000000);
+  op->cpol(false);
+  op->cpha(false);
   return _BUS->queue_io_job(op);
 }

@@ -290,6 +290,10 @@ int8_t SSD13xx::queue_io_job(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   op->setCSPin(_opts.cs);
   op->csActiveHigh(false);
+  op->bitsPerFrame(SPIFrameSize::BITS_8);
+  op->maxFreq(10000000);
+  op->cpol(false);
+  op->cpha(false);
   return _BUS->queue_io_job(op);
 }
 
@@ -353,6 +357,10 @@ int8_t SSD13xx::init(SPIAdapter* b) {
     _initd    = false;
     _fb_data_op.setAdapter(_BUS);
     _fb_data_op.shouldReap(false);
+    _fb_data_op.maxFreq(10000000);
+    _fb_data_op.bitsPerFrame(SPIFrameSize::BITS_8);
+    _fb_data_op.cpol(false);
+    _fb_data_op.cpha(false);
     if (0 == _ll_pin_init()) {
       ret--;
       if (reallocate()) {
@@ -364,6 +372,26 @@ int8_t SSD13xx::init(SPIAdapter* b) {
         _send_command(SSD13XX_CMD_DISPLAYOFF);    // 0xAE
         arg_buf[0] = 0x72; // RGB Color
         if (0 == _send_command(SSD13XX_CMD_SETREMAP, arg_buf, 1)) {
+          ret = 0;
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+
+int8_t SSD13xx::setBrightness(float percentage) {
+  int8_t ret = -1;
+  if ((percentage <= 1.0) && (percentage >= 0.0)) {
+    uint8_t arg_buf[3] = {
+      (uint8_t) (percentage * 255.0),
+      (uint8_t) (percentage * 255.0),
+      (uint8_t) (percentage * 255.0)
+    };
+    if (0 == _send_command(SSD13XX_CMD_CONTRASTA, &arg_buf[0], 1)) {
+      if (0 == _send_command(SSD13XX_CMD_CONTRASTB, &arg_buf[1], 1)) {
+        if (0 == _send_command(SSD13XX_CMD_CONTRASTC, &arg_buf[2], 1)) {
           ret = 0;
         }
       }

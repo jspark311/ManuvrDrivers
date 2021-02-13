@@ -4,14 +4,13 @@
 /**
 * Constructor
 */
-I2CEEPROM::I2CEEPROM(const uint32_t bits, const uint16_t page_size, const uint8_t addr)
-  : Storage(bits >> 3, page_size), I2CDevice(addr),
-    OVERHEAD_SIZE_BYTES(DEV_ADDR_SIZE_BYTES << 1),
-    PAYLOAD_SIZE_BYTES(page_size - OVERHEAD_SIZE_BYTES),
+I2CEEPROM::I2CEEPROM(const uint32_t bytes, const uint16_t page_size, const uint8_t addr)
+  : Storage(bytes, page_size), I2CDevice(addr),
+    PAYLOAD_SIZE_BYTES(page_size - DEV_ADDR_SIZE_BYTES),
     _addr_ptr_op(BusOpcode::TX, (I2CDevice*) this),
     _data_io_op(BusOpcode::RX, (I2CDevice*) this)
 {
-  _pl_set_flag(PL_FLAG_MEDIUM_WRITABLE | PL_FLAG_MEDIUM_READABLE | PL_FLAG_MEDIUM_MOUNTED);
+  _pl_set_flag(PL_FLAG_MEDIUM_WRITABLE | PL_FLAG_MEDIUM_READABLE);
 }
 
 /**
@@ -65,10 +64,105 @@ StorageErr I2CEEPROM::wipe(uint32_t offset, uint32_t range) {
 int8_t I2CEEPROM::allocateBlocksForLength(uint32_t len, DataRecord* rec) {
   int8_t ret = -1;
   if (0 == _busy_check()) {
-    _op_len_rem = len;
-    _current_record = rec;
-    _set_fsm_position(I2CEEPROMFSM::ALLOCATING);
+    const uint BLOCKS_NEEDED = (len / PAYLOAD_SIZE_BYTES) + ((0 == (len % PAYLOAD_SIZE_BYTES)) ? 0:1);
+    LinkedList<StorageBlock*>* blocks = rec->getBlockList();
+    uint blocks_found = blocks->size();
+    ret--;
+
+    if (BLOCKS_NEEDED > blocks_found) {    // Present allocation is too small.
+      ret--;
+      if (_free_space >= ((BLOCKS_NEEDED - blocks_found) * DEV_BLOCK_SIZE)) {
+        // If we have enough free space to allocate the extra needed space, do so.
+        ret--;
+        uint i = 1;
+        uint32_t blk_addr  = 0;
+        bool loop_continue = true;
+        while (loop_continue) {
+          // There is no block holding the root record. Find one from low-to-high.
+          const uint32_t TEST_BLK_ADDR = i * DEV_BLOCK_SIZE;
+          if (!_is_block_allocated(i)) {
+            _mark_block_allocated(i, true);
+            blocks_found++;
+            if (0 == blk_addr) {
+              blk_addr = TEST_BLK_ADDR;
+            }
+            else {
+              blocks->insert(new StorageBlock(blk_addr, TEST_BLK_ADDR));
+              blk_addr = TEST_BLK_ADDR;
+            }
+          }
+          i++;
+          loop_continue = (blocks_found < BLOCKS_NEEDED) & (i != 0) & (i != DEV_TOTAL_BLOCKS);
+        }
+        if (0 != blk_addr) {
+          blocks->insert(new StorageBlock(blk_addr, 0));
+          ret = 0;
+        }
+      }
+    }
+    else if (BLOCKS_NEEDED < blocks_found) {    // Present allocation is too large.
+      // TODO: add extra blocks to trim list.
+      ret = 0;
+    }
+    else {  // Allocation is ok as it is.
+      ret = 0;
+    }
   }
+  return ret;
+}
+
+
+/**
+*
+*
+* @param rec
+* @param buf
+* @return StorageErr
+*/
+StorageErr I2CEEPROM::persistentWrite(DataRecord* rec, StringBuilder* buf) {
+  StorageErr ret = StorageErr::BAD_PARAM;
+  // int chunks = buf->chunk(DEV_BLOCK_SIZE);  // Chunk the buffer...
+  // if (0 < chunks) {
+  //   LinkedList<StorageBlock*>* full_blk_list = rec->getBlockList();
+  //   int blk_count = full_blk_list->count();
+  //   // TODO: blk_count ought to match chunks. Test for it.
+  //   for (uint i = 0; i < blk_count; i++) {   // Copy the block list.
+  //     op->_block_queue.insert(full_blk_list->get(i));
+  //   }
+  //
+  //   StorageOp* op = new StorageOp(rec, buf, true);
+  //   if (op) {
+  //     ret = StorageErr::NONE;
+  //     _op_queue.queue(op);
+  //     if (0 == _busy_check()) {
+  //       // If nothing is presently happening, start the I/O.
+  //       uint32_t addr = op->_block_queue.get(0)->this_offset;  // TODO: Whoa...
+  //       _pl_set_flag(PL_FLAG_BUSY_WRITE);
+  //       if (addr != _address_ptr()) {
+  //         // If the write is non-sequential, we must precede it with an address.
+  //         if (0 != _set_address_ptr(addr)) {
+  //           ret = StorageErr::HW_FAULT;
+  //         }
+  //       }
+  //
+  //       if (StorageErr::NONE == ret) {   // If we are still ok to proceed...
+  //         const uint32_t BYTES_NEXT_LEN = strict_min((uint32_t) len, (uint32_t) DEV_BLOCK_SIZE);
+  //         for (uint i = 0; i < BYTES_NEXT_LEN; i++) {
+  //           *(_page_buffer + i) = *(buf + i);
+  //         }
+  //         _data_io_op.set_opcode(BusOpcode::TX);
+  //         _data_io_op.setBuffer(_page_buffer, (uint16_t) BYTES_NEXT_LEN);
+  //         _set_fsm_position(I2CEEPROMFSM::WRITING);
+  //         if (0 != queue_io_job(&_data_io_op)) {
+  //           ret = StorageErr::HW_FAULT;
+  //         }
+  //       }
+  //     }
+  //   }
+  //   else {
+  //     ret = StorageErr::MEM_ALLOC;
+  //   }
+  // }
   return ret;
 }
 
@@ -165,6 +259,7 @@ int8_t I2CEEPROM::init(I2CAdapter* b) {
     if (nullptr == _alloc_table) return ret;
     for (uint i = 0; i < ALLOC_TABLE_SIZE; i++) {  *(_alloc_table + i) = 0;  }
   }
+  _free_space = 0;  // We reserve the first block.
 
   _addr_ptr_op.shouldReap(false);
   _addr_ptr_op.sub_addr = -1;
@@ -186,7 +281,7 @@ int8_t I2CEEPROM::init(I2CAdapter* b) {
 
 
 void I2CEEPROM::printDebug(StringBuilder* output) {
-  Storage::printStorage(output);
+  _print_storage(output);
   output->concatf("\t op_len_rem:\t %u\n", _op_len_rem);
   output->concatf("\t Locked by DataRecord: %c\n", (nullptr != _current_record) ? 'y':'n');
   output->concatf("\t address_ptr:\t %u\n", _address_ptr());
@@ -225,7 +320,7 @@ int8_t I2CEEPROM::_set_address_ptr(uint32_t a) {
 uint32_t I2CEEPROM::_address_ptr() {
   uint32_t tmp = 0;
   for (uint8_t i = 0; i < DEV_ADDR_SIZE_BYTES; i++) {
-    tmp = (tmp << 8) + _addr_ptr[i];
+    tmp = tmp | (((uint32_t) _addr_ptr[i]) << ((DEV_ADDR_SIZE_BYTES - (i+1)) << 3));
   }
   return tmp;
 }
@@ -239,7 +334,8 @@ int8_t I2CEEPROM::_increment_address_ptr(uint32_t x) {
 int8_t I2CEEPROM::_store_address_ptr(uint32_t x) {
   if (DEV_SIZE_BYTES > x) {
     for (uint8_t i = 0; i < DEV_ADDR_SIZE_BYTES; i++) {
-      _addr_ptr[i] = (uint8_t) (x >> (i << 3)) & 0xFF;
+      // Store as big-endian.
+      _addr_ptr[i] = (uint8_t) (x >> ((DEV_ADDR_SIZE_BYTES - (i+1)) << 3)) & 0xFF;
     }
     return 0;
   }
@@ -265,6 +361,7 @@ int8_t I2CEEPROM::_set_fsm_position(I2CEEPROMFSM new_state) {
   switch (new_state) {
     case I2CEEPROMFSM::IDLE:
       _pl_clear_flag(PL_FLAG_BUSY_READ | PL_FLAG_BUSY_WRITE);
+      _pl_set_flag(PL_FLAG_MEDIUM_MOUNTED);
       break;
     case I2CEEPROMFSM::ALLOCATING:
     case I2CEEPROMFSM::READING:
@@ -275,6 +372,7 @@ int8_t I2CEEPROM::_set_fsm_position(I2CEEPROMFSM new_state) {
       _pl_set_flag(PL_FLAG_BUSY_WRITE);
       break;
     default:
+      _pl_clear_flag(PL_FLAG_MEDIUM_MOUNTED);
       break;
   }
   return ret;
@@ -289,22 +387,49 @@ const uint I2CEEPROM::_allocation_table_size() {
   return ((DEV_TOTAL_BLOCKS >> 3) + ((DEV_TOTAL_BLOCKS & 0x07) ? 1:0));
 }
 
-void I2CEEPROM::_mark_block_allocated(const uint32_t BLKADDR, const bool allocd) {
+
+void I2CEEPROM::_mark_block_allocated(const uint32_t BLKIDX, const bool allocd) {
   if (nullptr != _alloc_table) {
-    const uint INDEX_COMPONENT = BLKADDR >> 3;
-    const uint SHIFT_COMPONENT = BLKADDR & 0x07;
+    const uint INDEX_COMPONENT = BLKIDX >> 3;
+    const uint SHIFT_COMPONENT = BLKIDX & 0x07;
     const uint8_t BIT_MASK    = 1 << SHIFT_COMPONENT;
     const uint8_t CURRENT_VAL = *(_alloc_table + INDEX_COMPONENT) & ~BIT_MASK;
     *(_alloc_table + INDEX_COMPONENT) = CURRENT_VAL | (allocd ? BIT_MASK:0);
+    switch (_fsm_pos) {
+      case I2CEEPROMFSM::IDLE:
+      case I2CEEPROMFSM::FORMATTING:
+      case I2CEEPROMFSM::READING:
+      case I2CEEPROMFSM::WRITING:
+        if (allocd) {   _free_space = _free_space - DEV_BLOCK_SIZE;   }
+        else {          _free_space = _free_space + DEV_BLOCK_SIZE;   }
+        break;
+      default:    // These conditions don't update free space.
+        break;
+    }
   }
 }
 
-bool I2CEEPROM::_is_block_allocated(const uint32_t BLKADDR) {
-  const uint INDEX_COMPONENT = BLKADDR >> 3;
-  const uint SHIFT_COMPONENT = BLKADDR & 0x07;
+
+bool I2CEEPROM::_is_block_allocated(const uint32_t BLKIDX) {
+  const uint INDEX_COMPONENT = BLKIDX >> 3;
+  const uint SHIFT_COMPONENT = BLKIDX & 0x07;
   return ((*(_alloc_table + INDEX_COMPONENT) >> SHIFT_COMPONENT) & 0x01);
 }
 
+
+void I2CEEPROM::_recalculate_free_space() {
+  const uint ALLOC_TABLE_SIZE = _allocation_table_size();
+  uint32_t acc_val = 0;
+  for (uint x = 0; x < ALLOC_TABLE_SIZE; x++) {
+    const uint8_t THIS_BYTE = *(_alloc_table+x);
+    for (uint y = 0; y < 8; y++) {
+      if (0 == (THIS_BYTE >> y) & 0x01) {
+        acc_val += DEV_BLOCK_SIZE;
+      }
+    }
+  }
+  _free_space = acc_val;
+}
 
 
 
@@ -358,8 +483,9 @@ int8_t I2CEEPROM::io_op_callback(BusOp* _op) {
           // It is safe to assume the operation length will be the full size
           //   of the page buffer.
           _op_len_rem = _op_len_rem - op->bufferLen();
-          _mark_block_allocated(THIS_BLOCK_ADDR, false);
+          _mark_block_allocated(THIS_BLOCK_ADDR / DEV_BLOCK_SIZE, false);
           if (0 < _op_len_rem) {
+            next_addr += op->bufferLen();
             ret = BUSOP_CALLBACK_RECYCLE;
           }
           else {
@@ -372,6 +498,7 @@ int8_t I2CEEPROM::io_op_callback(BusOp* _op) {
           switch (_current_record->buffer_request_from_storage(&next_addr, _page_buffer, &next_len)) {
             case 0:    // Buffer updated. Recycle BusOp.
               op->setBuffer(_page_buffer, next_len);
+              next_addr += op->bufferLen();
               ret = BUSOP_CALLBACK_RECYCLE;
               break;
             default:   // We are done writing the record.
@@ -384,52 +511,26 @@ int8_t I2CEEPROM::io_op_callback(BusOp* _op) {
 
       case BusOpcode::RX:
         if (I2CEEPROMFSM::ALLOCATING == _fsm_pos) {
-          // We are searching for a free block.
+          // We are searching for free blocks.
+          // It is safe to assume the operation length will be the full size
+          //   of the page buffer.
           uint32_t empty_val = 0;
           uint32_t buf_addr  = 0;
           for (uint i = 0; i < DEV_ADDR_SIZE_BYTES; i++) {
             // Copy out the block address.
             empty_val = (empty_val << 8) | 0xFF;
-            buf_addr  = (buf_addr << 8)  | *(_page_buffer + 1);
+            buf_addr  = (buf_addr << 8)  | *(_page_buffer + i);
           }
           bool allocd = (buf_addr != empty_val);
-
-          if (!allocd) {
-            // We just found a free block.
-            // Take the payload size out of the remaining bytes to allocate.
-            const uint BYTES_AVAILABLE = DEV_BLOCK_SIZE - DEV_ADDR_SIZE_BYTES;
-            if (nullptr != _current_record) {
-              _current_record->append_block_to_list(THIS_BLOCK_ADDR);
-              _mark_block_allocated(THIS_BLOCK_ADDR, true);
-            }
-            if (_op_len_rem > BYTES_AVAILABLE) {
-              // Not all bytes allocated. Keep looking.
-              _op_len_rem = _op_len_rem - BYTES_AVAILABLE;
-              _set_address_ptr(THIS_BLOCK_ADDR + DEV_BLOCK_SIZE);
-              ret = BUSOP_CALLBACK_RECYCLE;
-            }
-            else {
-              // Enough free bytes were found to satisfy a pending alloc request.
-              _set_fsm_position(I2CEEPROMFSM::IDLE);
-              if (nullptr != _current_record) {
-                _current_record->alloc_complete(true);
-              }
-            }
+          _mark_block_allocated(THIS_BLOCK_ADDR / DEV_BLOCK_SIZE, allocd);
+          if ((THIS_BLOCK_ADDR + DEV_BLOCK_SIZE) < DEV_SIZE_BYTES) {
+            // Not all blocks checked. Keep looking.
+            next_addr += DEV_BLOCK_SIZE;
+            ret = BUSOP_CALLBACK_RECYCLE;
           }
           else {
-            _mark_block_allocated(THIS_BLOCK_ADDR, true);
-            // Block is in-use. Advance to next block if possible.
-            if ((THIS_BLOCK_ADDR + DEV_BLOCK_SIZE) < DEV_SIZE_BYTES) {
-              _set_address_ptr(THIS_BLOCK_ADDR + DEV_BLOCK_SIZE);
-              ret = BUSOP_CALLBACK_RECYCLE;
-            }
-            else {
-              // This is the last block in the device.
-              if (nullptr != _current_record) {
-                _current_record->alloc_complete(false);
-              }
-              _set_fsm_position(I2CEEPROMFSM::IDLE);
-            }
+            _recalculate_free_space();
+            _set_fsm_position(I2CEEPROMFSM::IDLE);
           }
         }
         else if (nullptr != _current_record) {

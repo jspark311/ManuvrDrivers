@@ -117,6 +117,7 @@ class SSD13xx : public Image, public BusOpCallback {
     int8_t invertDisplay(bool);
     int8_t commitFrameBuffer();
 
+    int8_t setBrightness(float);
     int8_t enableDisplay(bool enable);
     void printDebug(StringBuilder*);
 
@@ -170,7 +171,7 @@ class SSD1306 : public Image, public BusOpCallback {
     inline void startLine(uint8_t x) {        _start_line   = x;   };
     inline void displayOffset(uint8_t x) {    _disp_offset  = x;   };
 
-
+    int8_t setBrightness(float);
     int8_t enableDisplay(bool enable);
     void printDebug(StringBuilder*);
 
@@ -241,7 +242,7 @@ class SSD1309 : public Image, public BusOpCallback {
     inline uint8_t startLine() {            return _start_line;    };
     inline uint8_t displayOffset() {        return _disp_offset;   };
 
-
+    int8_t setBrightness(float);
     int8_t enableDisplay(bool enable);
     void printDebug(StringBuilder*);
 
@@ -278,3 +279,4 @@ class SSD1309 : public Image, public BusOpCallback {
 };
 
 #endif   // __SSD13XX_DRIVER_H_
+

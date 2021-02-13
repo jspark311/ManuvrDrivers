@@ -5,7 +5,7 @@
 * Data conventions for this class:
 *   A page is considered empty if it has a next_block pointer equal to -1 (unsigned).
 *
-* TODO: An allocation-tracking table would take up 64 bytes for a 32K EEPROM.
+* An allocation-tracking table would take up 64 bytes for a 32K EEPROM.
 *   It might be worth it to save the burdensome I/O seeking for free blocks
 *   everytime we want to store data. It might also allow us to select
 *   blocks more intelligently.
@@ -21,7 +21,6 @@
 
 #include "Storage.h"
 #include "I2CAdapter.h"
-
 
 
 /* These are the enumerated positions in the driver's finite state machine. */
@@ -42,14 +41,14 @@ enum class I2CEEPROMFSM : uint8_t {
 */
 class I2CEEPROM : public Storage, public I2CDevice {
   public:
-    I2CEEPROM(const uint32_t bits, const uint16_t page_size, const uint8_t addr = 0x50);
+    I2CEEPROM(const uint32_t bytes, const uint16_t page_size, const uint8_t addr = 0x50);
     ~I2CEEPROM();
 
     /* Mandatory overrides from Storage.h */
     StorageErr wipe(uint32_t offset, uint32_t len);
     uint8_t    blockAddrSize() {  return DEV_ADDR_SIZE_BYTES;  };
     int8_t     allocateBlocksForLength(uint32_t, DataRecord*);
-
+    StorageErr persistentWrite(DataRecord*, StringBuilder* buf);
     StorageErr persistentWrite(uint8_t* buf, unsigned int len, uint32_t offset);
     StorageErr persistentRead(uint8_t* buf,  unsigned int len, uint32_t offset);
 
@@ -63,16 +62,15 @@ class I2CEEPROM : public Storage, public I2CDevice {
 
   private:
     // Derived constants.
-    const uint8_t  OVERHEAD_SIZE_BYTES;  // Linked Lists have two addresses.
     const uint16_t PAYLOAD_SIZE_BYTES;   // This many bytes left over per page.
 
+    I2CEEPROMFSM _fsm_pos        = I2CEEPROMFSM::UNINIT;
+    I2CEEPROMFSM _fsm_pos_prior  = I2CEEPROMFSM::UNINIT;
     uint32_t     _op_len_rem     = 0;  // Used to track remaining length in self-generated I/O.
     uint8_t      _addr_ptr[4]    = {0, };  // The current value of the address pointer in the chip.
     uint8_t*     _page_buffer    = nullptr;
     uint8_t*     _alloc_table    = nullptr;  // Tracks allocation of blocks. 1-bit per block.
     DataRecord*  _current_record = nullptr;  // The object currently using the driver for I/O.
-    I2CEEPROMFSM _fsm_pos        = I2CEEPROMFSM::UNINIT;
-    I2CEEPROMFSM _fsm_pos_prior  = I2CEEPROMFSM::UNINIT;
 
     I2CBusOp _addr_ptr_op;    // A commonly-used bus operation.
     I2CBusOp _data_io_op;     // A commonly-used bus operation.
@@ -86,6 +84,7 @@ class I2CEEPROM : public Storage, public I2CDevice {
     int8_t   _increment_address_ptr(uint32_t);
     int8_t   _store_address_ptr(uint32_t);
     int8_t   _busy_check();
+    void     _recalculate_free_space();
 
     /* Driver state machine functions */
     int8_t   _set_fsm_position(I2CEEPROMFSM);

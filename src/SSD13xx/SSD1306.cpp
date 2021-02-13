@@ -344,6 +344,16 @@ int8_t SSD1306::_internal_init_fsm() {
 }
 
 
+int8_t SSD1306::setBrightness(float percentage) {
+  int8_t ret = -1;
+  if ((percentage <= 1.0) && (percentage >= 0.0)) {
+    uint8_t arg_buf[1] = {(uint8_t) (percentage * 255.0)};
+    ret = _send_command(SSD1306_CMD_CONTRAST, arg_buf, 1);
+  }
+  return ret;
+}
+
+
 /*!
   @brief  Change whether display is on or off
   @param   enable True if you want the display ON, false OFF

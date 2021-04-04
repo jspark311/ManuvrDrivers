@@ -292,8 +292,8 @@ int8_t SSD13xx::queue_io_job(BusOp* _op) {
   op->csActiveHigh(false);
   op->bitsPerFrame(SPIFrameSize::BITS_8);
   op->maxFreq(10000000);
-  op->cpol(false);
-  op->cpha(false);
+  op->cpol(true);
+  op->cpha(true);
   return _BUS->queue_io_job(op);
 }
 
@@ -359,8 +359,8 @@ int8_t SSD13xx::init(SPIAdapter* b) {
     _fb_data_op.shouldReap(false);
     _fb_data_op.maxFreq(10000000);
     _fb_data_op.bitsPerFrame(SPIFrameSize::BITS_8);
-    _fb_data_op.cpol(false);
-    _fb_data_op.cpha(false);
+    _fb_data_op.cpol(true);
+    _fb_data_op.cpha(true);
     if (0 == _ll_pin_init()) {
       ret--;
       if (reallocate()) {

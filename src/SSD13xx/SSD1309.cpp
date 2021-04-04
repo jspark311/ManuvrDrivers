@@ -150,6 +150,10 @@ int8_t SSD1309::queue_io_job(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   op->setCSPin(_opts.cs);
   op->csActiveHigh(false);
+  op->bitsPerFrame(SPIFrameSize::BITS_8);
+  op->maxFreq(10000000);
+  op->cpol(true);
+  op->cpha(true);
   return _BUS->queue_io_job(op);
 }
 

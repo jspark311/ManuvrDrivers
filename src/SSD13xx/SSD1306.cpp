@@ -148,6 +148,10 @@ int8_t SSD1306::queue_io_job(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   op->setCSPin(_opts.cs);
   op->csActiveHigh(false);
+  op->bitsPerFrame(SPIFrameSize::BITS_8);
+  op->maxFreq(10000000);
+  op->cpol(true);
+  op->cpha(true);
   return _BUS->queue_io_job(op);
 }
 
@@ -211,6 +215,10 @@ int8_t SSD1306::init(SPIAdapter* b) {
     _init_state = 0;
     _fb_data_op.setAdapter(_BUS);
     _fb_data_op.shouldReap(false);
+    _fb_data_op.bitsPerFrame(SPIFrameSize::BITS_8);
+    _fb_data_op.maxFreq(10000000);
+    _fb_data_op.cpol(true);
+    _fb_data_op.cpha(true);
     if (0 == _ll_pin_init()) {
       ret--;
       if (reallocate()) {

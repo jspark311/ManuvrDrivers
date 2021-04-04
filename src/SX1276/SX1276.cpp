@@ -210,6 +210,11 @@ int8_t SX1276::_ll_pin_init() {
 int8_t SX1276::queue_io_job(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   op->callback = this;
+  op->setCSPin(_opts.cs_pin);
+  op->csActiveHigh(false);
+  op->maxFreq(10000000);
+  op->cpol(false);
+  op->cpha(false);
   return _BUS->queue_io_job(op);
 }
 

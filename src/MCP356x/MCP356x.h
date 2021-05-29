@@ -112,6 +112,22 @@ enum class MCP356xAMCLKPrescaler : uint8_t {
 };
 
 
+/* Driver state machine positions */
+enum class MCP356xState : uint8_t {
+  UNINIT      = 0,   // init() has never been called.
+  PREINIT     = 1,   // Pin control is being established.
+  RESETTING   = 2,   // Driver is resetting the ADC.
+  DISCOVERY   = 3,   // Driver is probing for the ADC.
+  REGINIT     = 4,   // The ADC configuration is being written.
+  CLK_MEASURE = 5,   // Driver is measuring the clock.
+  CALIBRATION = 6,   // The ADC is self-calibrating.
+  IDLE        = 7,   // Powered up and calibrated, but not reading.
+  READING     = 8,   // Everything running, data collection proceeding.
+  FAULT       = 9    // State machine encountered something it couldn't cope with.
+};
+
+
+
 /*
 * Class flags.
 * NOTE: MCP356X_FLAG_USE_INTERNAL_CLK takes priority over
@@ -133,26 +149,60 @@ enum class MCP356xAMCLKPrescaler : uint8_t {
 #define MCP356X_FLAG_3RD_ORDER_TEMP   0x00000800  // Spend CPU to make temperature conversion more accurate?
 #define MCP356X_FLAG_GENERATE_MCLK    0x00001000  // MCU is to generate the clock.
 
-#define MCP356X_FLAG_MEASURING_MCLK   0x00002000  // We are in the precal phase of ODR measurement.
 #define MCP356X_FLAG_REFRESH_CYCLE    0x00004000  // We are undergoing a full register refresh.
-#define MCP356X_FLAG_CALIBRATING      0x00008000  // Driver is executing a calibration.
 
 #define MCP356X_FLAG_RESET_MASK       0x00001853  // Bits to preserve through reset.
 #define MCP356X_FLAG_ALL_CAL_MASK     0x00000700  // Bits indicating calibration steps.
 
 
+/* A class to hold enum'd config for the ADC. */
+class MCP356xConfig {
+  public:
+    uint32_t                   scan;
+    uint32_t                   flags;
+    MCP356xMode                mode;
+    MCP356xGain                gain;
+    MCP356xBiasCurrent         bias;
+    MCP356xOversamplingRatio   over;
+    MCP356xAMCLKPrescaler      prescaler;
+
+    MCP356xConfig() : scan(0), flags(0),
+        mode(MCP356xMode::ONESHOT_STANDBY),
+        gain(MCP356xGain::GAIN_1),
+        bias(MCP356xBiasCurrent::ONE),
+        over(MCP356xOversamplingRatio::OSR_256),
+        prescaler(MCP356xAMCLKPrescaler::OVER_8) {};
+
+    MCP356xConfig(
+      const uint32_t SCAN,
+      const uint32_t FLAGS,
+      const MCP356xMode MODE,
+      const MCP356xGain GAIN,
+      const MCP356xBiasCurrent BIAS,
+      const MCP356xOversamplingRatio OVER,
+      const MCP356xAMCLKPrescaler PRESCALER
+    ) : scan(SCAN), flags(FLAGS),
+        mode(MODE), gain(GAIN), bias(BIAS),
+        over(OVER), prescaler(PRESCALER) {};
+
+    MCP356xConfig(const MCP356xConfig* CFG) : scan(CFG->scan), flags(CFG->flags),
+        mode(CFG->mode), gain(CFG->gain), bias(CFG->bias),
+        over(CFG->over), prescaler(CFG->prescaler) {};
+
+
+    ~MCP356xConfig() {};
+};
 
 
 class MCP356x : public BusOpCallback {
   public:
     bool isr_fired = false;
 
-    MCP356x(uint8_t irq_pin, uint8_t cs_pin, uint8_t mclk_pin);
-    MCP356x(uint8_t irq_pin, uint8_t cs_pin, uint8_t mclk_pin, uint8_t addr);
+    MCP356x(uint8_t irq_pin, uint8_t cs_pin, uint8_t mclk_pin, uint8_t addr, MCP356xConfig*);
     ~MCP356x();
 
-    virtual int8_t  reset();
-    virtual int8_t  init(SPIAdapter*);
+    int8_t  reset();
+    int8_t  init(SPIAdapter*);
     inline  int8_t  init() {     return init(_BUS);    }
     int8_t  read();
     double  valueAsVoltage(MCP356xChannel);
@@ -177,11 +227,12 @@ class MCP356x : public BusOpCallback {
 
     int8_t  setScanChannels(int count, ...);
     int8_t  setReferenceRange(float plus, float minus);
+    void    setMCLKFrequency(double x) {  _mclk_freq = x;  };
     int8_t  refresh();
     inline uint8_t getIRQPin() {      return _IRQ_PIN;  };
     inline bool    adcFound() {       return _mcp356x_flag(MCP356X_FLAG_DEVICE_PRESENT);  };
     inline bool    adcConfigured() {  return _mcp356x_flag(MCP356X_FLAG_INITIALIZED);     };
-    inline bool    adcCalibrating() { return _mcp356x_flag(MCP356X_FLAG_CALIBRATING);     };
+    inline bool    adcCalibrating() { return (_current_state == MCP356xState::CALIBRATION); };
     inline bool    adcCalibrated() {  return _mcp356x_flag(MCP356X_FLAG_CALIBRATED);      };
 
     bool isrFired() {    return isr_fired;   };
@@ -201,15 +252,34 @@ class MCP356x : public BusOpCallback {
     void printData(StringBuilder*);
     void printChannelValues(StringBuilder*);
     void printChannel(MCP356xChannel, StringBuilder*);
+    void fetchLog(StringBuilder*);
+
+    // TODO: Below should eventually be protected.
+    inline MCP356xState getPriorState() {       return _prior_state;     };
+    inline MCP356xState getCurrentState() {     return _current_state;   };
+    inline MCP356xState getDesiredState() {     return _desired_state;   };
+    inline void setDesiredState(MCP356xState x) {    _desired_state = x; };
+    inline bool stateStable() {   return (_desired_state == _current_state);  };
+    // TODO: Above should eventually be protected.
 
     /* Overrides from the BusAdapter interface */
     int8_t io_op_callahead(BusOp*);
     int8_t io_op_callback(BusOp*);
     int8_t queue_io_job(BusOp*);
 
+    static const char* stateStr(const MCP356xState);
+
 
   protected:
-    int8_t  _clear_registers();
+    StringBuilder _local_log;
+
+    void   _clear_registers();
+
+    /* State machine functions */
+    int8_t _step_state_machine();
+    void   _set_state(MCP356xState);
+    void   _set_fault(const char*);
+    inline bool _measuring_clock() {  return (MCP356xState::CLK_MEASURE == _current_state);  };
 
 
   private:
@@ -219,9 +289,12 @@ class MCP356x : public BusOpCallback {
     const uint8_t  _MCLK_PIN;
     const uint8_t  _DEV_ADDR;
 
+    MCP356xConfig  _desired_conf;
+
     SPIBusOp  _busop_irq_read;
+    SPIBusOp  _busop_dat_read;
     SPIAdapter* _BUS      = nullptr;  // Bus reference.
-    double    _mclk_freq  = 0.0;      // MCLK in Hz. Zero means undetected.
+    double    _mclk_freq  = 19000000.0;      // MCLK in Hz. Zero means undetected.
     double    _dmclk_freq = 0.0;      // Zero means undetected.
     double    _drclk_freq = 0.0;      // Data rate in Hz. Zero means undetected.
     float     _vref_plus  = 3.3;      // Voltage at the reference pins.
@@ -236,13 +309,16 @@ class MCP356x : public BusOpCallback {
     uint32_t _settling_ms          = 0;  // Settling time of the ADC alone.
     uint32_t read_count            = 0;
     uint32_t read_accumulator      = 0;
-    uint16_t reads_per_second      = 0;
     uint32_t millis_last_read      = 0;
     uint32_t millis_last_window    = 0;
-    uint32_t _channel_backup       = 0;  // Holds scan channel selections.
+    uint16_t reads_per_second      = 0;
     uint8_t  _slot_number          = 0;
+    MCP356xState _prior_state      = MCP356xState::UNINIT;
+    MCP356xState _current_state    = MCP356xState::UNINIT;
+    MCP356xState _desired_state    = MCP356xState::UNINIT;
 
 
+    /* Everything below this line is up for review */
     int8_t  _post_reset_fxn();
     int8_t  _proc_irq_register();
     int8_t  _ll_pin_init();
@@ -251,7 +327,6 @@ class MCP356x : public BusOpCallback {
 
     uint8_t _channel_count();
     int8_t  _set_scan_channels(uint32_t);
-    int8_t  _calibrate_offset();
     int8_t  _mark_calibrated();
 
     bool   _mclk_in_bounds();
@@ -298,6 +373,9 @@ class MCP356x : public BusOpCallback {
       _channel_flags = (nu) ? (_channel_flags | (0x00010000 << (uint8_t) c)) : (_channel_flags & ~(0x00010000 << (uint8_t) c));
     };
     inline bool _channel_over_range(MCP356xChannel c) {     return (_channel_flags & (0x00010000 << (uint8_t) c)); };
+
+    static const uint16_t OSR1_VALUES[16];
+    static const uint16_t OSR3_VALUES[16];
 };
 
 #endif  // __MCP356x_H__

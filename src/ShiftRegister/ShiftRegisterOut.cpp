@@ -12,9 +12,11 @@ ShiftRegisterOut::ShiftRegisterOut(const uint8_t devs, const uint8_t rclk_pin, c
 */
 int8_t ShiftRegisterOut::reset() {
   int8_t ret = -1;
+  _flags = _flags & SHIFTREG_FLAG_RESET_MASK;   // Wipe the flags.
+
   // Zero the buffer.
   if (_allocated()) {
-    for (uint8_t i = 0; i < DEVS_IN_CHAIN; i++) {
+    for (uint8_t i = 0; i < (DEVS_IN_CHAIN << 1); i++) {
       *(_shadows + i) = 0;
     }
     ret--;
@@ -44,7 +46,7 @@ int8_t ShiftRegisterOut::init() {
   if (0 == _ll_pin_init()) {
     ret--;
     if (_allocated()) {
-      _initd = true;
+      _class_set_flag(SHIFTREG_FLAG_INITIALIZED);
       ret = 0;
     }
   }
@@ -60,8 +62,8 @@ int8_t ShiftRegisterOut::init() {
 int8_t ShiftRegisterOut::outputEnabled(bool en) {
   int8_t ret = -1;
   if (255 != OE_PIN) {
-    _enabled = en;
-    setPin(RCLK_PIN, !en);
+    _class_set_flag(SHIFTREG_FLAG_ENABLED, en);
+    setPin(OE_PIN, !en);  // Pin is inverted.
     ret = 0;
   }
   return ret;
@@ -69,32 +71,19 @@ int8_t ShiftRegisterOut::outputEnabled(bool en) {
 
 
 /**
-* Checks for allocation of memory-resident shadow, attempting allocating if
-*   necessary.
-*
-* @return true if the memory is/was allocated.
-*/
-bool ShiftRegisterOut::_allocated() {
-  if (nullptr == _shadows) {
-    _shadows = (uint8_t*) malloc(DEVS_IN_CHAIN);
-  }
-  return (nullptr != _shadows);
-};
-
-
-/**
 * Sets the value of a single pin in the chain. Invokes I/O immediately if possible.
 *
 * @return 0 on success. -1 on invalid pin. -2 on memory failure. -3 on I/O rejection.
 */
-int8_t ShiftRegisterOut::setPin(uint8_t pin, bool val) {
+int8_t ShiftRegisterOut::digitalWrite(uint8_t pin, bool val) {
   int8_t ret = -1;
   if (_pin_valid(pin)) {
     ret--;
     if (_allocated()) {
-      const uint8_t BYTE_IDX = pin >> 3;
+      const uint8_t DEV_IDX  = (pin >> 3);
+      const uint8_t BYTE_IDX = (DEVS_IN_CHAIN - 1) - DEV_IDX;
       const uint8_t BIT_MASK = 1 << (pin & 0x07);
-      ret = setPins((pin >> 3), (_shadows[BYTE_IDX] & ~BIT_MASK) | (val ? BIT_MASK : 0));
+      ret = digitalWrite8(DEV_IDX, (_shadows[BYTE_IDX] & ~BIT_MASK) | (val ? BIT_MASK : 0));
     }
   }
   return ret;
@@ -103,16 +92,16 @@ int8_t ShiftRegisterOut::setPin(uint8_t pin, bool val) {
 
 /**
 * Returns the shadow value of a single pin in the chain.
-* Invokes I/O immediately if possible.
+* Never invokes I/O. Uses shadows exclusively.
 *
 * @return 1 on bit set, 0 on bit unset, -1 on invalid pin. -2 on memory failure.
 */
-int8_t ShiftRegisterOut::readPin(uint8_t pin) {
+int8_t ShiftRegisterOut::digitalRead(uint8_t pin) {
   int8_t ret = -1;
   if (_pin_valid(pin)) {
     ret--;
     if (_allocated()) {
-      const uint8_t BYTE_IDX = pin >> 3;
+      const uint8_t BYTE_IDX = ((DEVS_IN_CHAIN - 1) - (pin >> 3)) + DEVS_IN_CHAIN;
       const uint8_t BIT_MASK = 1 << (pin & 0x07);
       const uint8_t ORIGINAL = _shadows[BYTE_IDX];
       ret = (0 == (ORIGINAL & BIT_MASK) ? 0 : 1);
@@ -123,18 +112,19 @@ int8_t ShiftRegisterOut::readPin(uint8_t pin) {
 
 
 /**
-* Sets the value of a single pin in the chain. Invokes I/O immediately if possible.
+* Sets the value of a single device in the chain. Invokes I/O immediately if possible.
 *
 * @return 0 on success. -1 on invalid dev. -2 on memory failure. -3 on I/O rejection.
 */
-int8_t ShiftRegisterOut::setPins(uint8_t dev, uint8_t val) {
+int8_t ShiftRegisterOut::digitalWrite8(uint8_t dev, uint8_t val) {
   int8_t ret = -1;
   if (DEVS_IN_CHAIN > dev) {
     ret--;
     if (_allocated()) {
-      if (val != _shadows[dev]) {
-        _shadows[dev] = val;
-        if (_pins_initd) {
+      const uint8_t BYTE_IDX = (DEVS_IN_CHAIN - 1) - dev;
+      if (val != _shadows[BYTE_IDX]) {
+        _shadows[BYTE_IDX] = val;
+        if (_class_flag(SHIFTREG_FLAG_PINS_CONFIGURED)) {
           // We are in a position to send I/O now.
           ret--;
           if (0 == _write_chain()) {
@@ -153,18 +143,35 @@ int8_t ShiftRegisterOut::setPins(uint8_t dev, uint8_t val) {
 
 /**
 * Returns the shadow value of all pins on the given device in the chain.
-* Invokes I/O immediately if possible.
+* Never invokes I/O. Uses shadows exclusively.
 *
 * @return the byte representing the given device, or zero on failure.
 */
-uint8_t ShiftRegisterOut::readPins(uint8_t dev) {
+uint8_t ShiftRegisterOut::getPinValues(uint8_t dev) {
   uint8_t ret = 0;
   if (DEVS_IN_CHAIN > dev) {
     if (_allocated()) {
-      ret = _shadows[dev];
+      ret = _shadows[((DEVS_IN_CHAIN - 1) - dev) + DEVS_IN_CHAIN];
     }
   }
   return ret;
+}
+
+
+/*
+*
+*/
+void ShiftRegisterOut::printDebug(StringBuilder* output) {
+  //ParsingConsole::styleHeader1(output, "ShiftRegisterOut");
+  output->concatf("\tChain len:     %u\n", DEVS_IN_CHAIN);
+  output->concatf("\tRCLK Pin:      %u\n", RCLK_PIN);
+  output->concatf("\tOE Pin:        %u\n", OE_PIN);
+  output->concatf("\tSRCLR Pin:     %u\n", SRCLR_PIN);
+  output->concatf("\toutputEnabled: %c\n", outputEnabled() ? 'y' : 'n');
+  output->concatf("\t_pins_initd:   %c\n", _class_flag(SHIFTREG_FLAG_PINS_CONFIGURED) ? 'y' : 'n');
+  output->concatf("\tinitialized:   %c\n", initialized() ? 'y' : 'n');
+  output->concatf("\tallocated:     %c\n", allocated() ? 'y' : 'n');
+  //StringBuilder::printBuffer(output, _shadows, (DEVS_IN_CHAIN << 1));
 }
 
 
@@ -179,16 +186,42 @@ int8_t ShiftRegisterOut::_ll_pin_init() {
     setPin(RCLK_PIN, true);
     if (255 != SRCLR_PIN) {
       pinMode(SRCLR_PIN, GPIOMode::OUTPUT);
+      // Store the zero state in the output registers.
+      setPin(SRCLR_PIN, false);
       setPin(SRCLR_PIN, true);
+      setPin(RCLK_PIN, false);
+      setPin(RCLK_PIN, true);
     }
+    // The driver will initialize the hardware with
+    //   outputs disabled if it has the choice.
+    _class_set_flag(SHIFTREG_FLAG_ENABLED, (255 == OE_PIN));
     if (255 != OE_PIN) {
       pinMode(OE_PIN, GPIOMode::OUTPUT);
       setPin(OE_PIN, true);
     }
-    _pins_initd = true;
+    _class_set_flag(SHIFTREG_FLAG_PINS_CONFIGURED);
   }
-  return (_pins_initd ? 0 : -1);
+  return (_class_flag(SHIFTREG_FLAG_PINS_CONFIGURED) ? 0 : -1);
 }
+
+
+/**
+* Checks for allocation of memory-resident shadow, attempting allocating if
+*   necessary.
+*
+* @return true if the memory is/was allocated.
+*/
+bool ShiftRegisterOut::_allocated() {
+  if (nullptr == _shadows) {
+    _shadows = (uint8_t*) malloc(DEVS_IN_CHAIN << 1);
+    if (nullptr != _shadows) {
+      for (uint8_t i = 0; i < (DEVS_IN_CHAIN << 1); i++) {
+        *(_shadows + i) = 0;
+      }
+    }
+  }
+  return (nullptr != _shadows);
+};
 
 
 /**
@@ -205,6 +238,7 @@ int8_t ShiftRegisterOut::_write_chain() {
       ret--;
       op->setBuffer(_shadows, DEVS_IN_CHAIN);
       if (0 == queue_io_job(op)) {
+        _class_set_flag(SHIFTREG_FLAG_PENDING_IO);
         ret = 0;
       }
     }
@@ -235,8 +269,6 @@ int8_t ShiftRegisterOut::io_op_callahead(BusOp* _op) {
 /**
 * When a bus operation completes, it is passed back to its issuing class.
 * This driver never reads back from the device. Assume all ops are WRITEs.
-* The initialization chain is carried forward in this function, so that we don't
-*   swamp the bus queue. Display will enable at the end of the init chain.
 *
 * @param  _op  The bus operation that was completed.
 * @return BUSOP_CALLBACK_NOMINAL on success, or appropriate error code.
@@ -245,8 +277,35 @@ int8_t ShiftRegisterOut::io_op_callback(BusOp* _op) {
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
   SPIBusOp* op = (SPIBusOp*) _op;
   if (op->hasFault()) {
-    return BUSOP_CALLBACK_ERROR;
+    ret = BUSOP_CALLBACK_ERROR;
   }
+  else {
+    uint8_t* buf = op->buffer();
+    const uint BUF_LEN = op->bufferLen();
+    uint8_t diff_array[BUF_LEN] = {0, };
+    for (uint idx = 0; idx < BUF_LEN; idx++) {
+      const uint8_t BYTE_IDX = idx + DEVS_IN_CHAIN;
+      diff_array[idx] = *(buf + idx) ^ *(_shadows + BYTE_IDX);
+      *(_shadows + BYTE_IDX) = *(buf + idx);
+    }
+    if (_callback) {
+      for (uint dev_idx = 0; dev_idx < DEVS_IN_CHAIN; dev_idx++) {
+        const uint8_t BYTE_IDX = ((DEVS_IN_CHAIN - 1) - dev_idx);
+        if (0 != diff_array[BYTE_IDX]) {
+          const uint8_t ORIGINAL = _shadows[BYTE_IDX + DEVS_IN_CHAIN];
+          for (uint bit_idx = 0; bit_idx < 8; bit_idx++) {
+            const uint8_t BIT_MASK = 1 << bit_idx;
+            if (diff_array[BYTE_IDX] & BIT_MASK) {
+              const uint8_t PIN_NUMBER = (dev_idx << 3) + bit_idx;
+              const uint8_t LEVEL      = (0 == (ORIGINAL & BIT_MASK) ? 0 : 1);
+              _callback(PIN_NUMBER, LEVEL);
+            }
+          }
+        }
+      }
+    }
+  }
+  _class_clear_flag(SHIFTREG_FLAG_PENDING_IO);
   return ret;
 }
 
@@ -266,5 +325,9 @@ int8_t ShiftRegisterOut::queue_io_job(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   op->setCSPin(RCLK_PIN);
   op->csActiveHigh(false);
+  op->bitsPerFrame(SPIFrameSize::BITS_8);
+  op->maxFreq(4000000);
+  op->cpol(false);
+  op->cpha(false);
   return _BUS->queue_io_job(op);
 }

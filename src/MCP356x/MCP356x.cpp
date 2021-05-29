@@ -199,18 +199,22 @@ int8_t MCP356x::_post_reset_fxn() {
   int8_t ret = -1;
   uint32_t c0_val = 0x000000C3;
 
-  // Enable fast command, disable IRQ on conversion start, IRQ pin is push-pull.
-  ret = _write_register(MCP356xRegister::IRQ, 0x00000006);
+  // Enable register write.
+  ret = _write_register(MCP356xRegister::LOCK, 0x000000A5);
   if (0 == ret) {
-    if (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK)) {
-      c0_val &= 0xFFFFFFCF;   // Set CLK_SEL to use internal clock with no pin output.
-      c0_val |= 0x00000020;
-    }
-    ret = _write_register(MCP356xRegister::CONFIG0, c0_val);
+    // Enable fast command, disable IRQ on conversion start, IRQ pin is push-pull.
+    ret = _write_register(MCP356xRegister::IRQ, 0x00000006);
     if (0 == ret) {
-      // For simplicity, we select a 32-bit sign-extended data representation with
-      //   channel identifiers.
-      ret = _write_register(MCP356xRegister::CONFIG3, 0x000000F0);
+      if (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK)) {
+        c0_val &= 0xFFFFFFCF;   // Set CLK_SEL to use internal clock with no pin output.
+        c0_val |= 0x00000020;
+      }
+      ret = _write_register(MCP356xRegister::CONFIG0, c0_val);
+      if (0 == ret) {
+        // For simplicity, we select a 32-bit sign-extended data representation with
+        //   channel identifiers.
+        ret = _write_register(MCP356xRegister::CONFIG3, 0x000000F0);
+      }
     }
   }
   return ret;
@@ -629,9 +633,18 @@ int8_t MCP356x::_detect_adc_clock() {
 */
 int8_t MCP356x::_mark_calibrated() {
   int8_t ret = -1;
-  if (0 == _set_scan_channels(_desired_conf.scan)) {
-    ret++;
-    _mcp356x_set_flag(MCP356X_FLAG_CALIBRATED);
+
+  if (0 == setGain(_desired_conf.gain)) {
+    if (0 == setBiasCurrent(_desired_conf.bias)) {
+      if (0 == setAMCLKPrescaler(_desired_conf.prescaler)) {
+        if (0 == setOversamplingRatio(_desired_conf.over)) {
+          if (0 == _set_scan_channels(_desired_conf.scan)) {
+            ret++;
+            _mcp356x_set_flag(MCP356X_FLAG_CALIBRATED);
+          }
+        }
+      }
+    }
   }
   return ret;
 }

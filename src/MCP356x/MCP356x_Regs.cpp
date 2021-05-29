@@ -259,6 +259,9 @@ int8_t MCP356x::_normalize_data_register() {
     case MCP356xChannel::OFFSET:
       _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_OFFSET);
       setOffsetCalibration(nval);
+      if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
+        _mark_calibrated();
+      }
       break;
   }
   return 0;
@@ -508,7 +511,7 @@ int8_t MCP356x::_write_register(MCP356xRegister r, uint32_t val) {
     ret++;
     if (nullptr != op) {
       _set_shadow_value(r, safe_val);
-      _local_log.concatf("MCP356x::_write_register(%u) --> 0x%08x\n", (uint8_t) r, safe_val);
+      //_local_log.concatf("MCP356x::_write_register(%u) --> 0x%08x\n", (uint8_t) r, safe_val);
       op->setParams((uint8_t) _get_reg_addr(r));
       op->setBuffer((uint8_t*) &_reg_shadows[(uint8_t) r], MCP356x_reg_width[(uint8_t) r]);
       if (0 == queue_io_job(op)) {
@@ -562,16 +565,16 @@ int8_t MCP356x::_proc_irq_register() {
   uint8_t irq_reg_data = (uint8_t) _get_shadow_value(MCP356xRegister::IRQ);
   _mcp356x_set_flag(MCP356X_FLAG_CRC_ERROR, (0 == (0x20 & irq_reg_data)));
   if (0 == (0x40 & irq_reg_data)) {   // Conversion is finished.
-    _local_log.concat("MCP356x::_proc_irq_register() conversion finsihed\n");
+    //_local_log.concat("MCP356x::_proc_irq_register() conversion finsihed\n");
     _read_register(MCP356xRegister::ADCDATA);
-    //if (_busop_dat_read.isIdle()) {
-    //  if (0 == _BUS->queue_io_job(&_busop_dat_read)) {
+    if (_busop_dat_read.isIdle()) {
+      if (0 == _BUS->queue_io_job(&_busop_dat_read)) {
         ret = 1;
-    //    if (_measuring_clock()) {
-    //      _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);  // This must be reality.
-    //    }
-    //  }
-    //}
+        if (_measuring_clock()) {
+          _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);  // This must be reality.
+        }
+      }
+    }
   }
   if (0 == (0x10 & irq_reg_data)) { // Power-on-Reset has happened.
     // Not sure why this happened, but reset the class.
@@ -584,8 +587,8 @@ int8_t MCP356x::_proc_irq_register() {
   if (0 == (0x20 & irq_reg_data)) { // CRC config error.
     // Something is sideways in the configuration.
     // Send start/restart conversion. Might also write 0xA5 to the LOCK register.
-    _write_register(MCP356xRegister::LOCK, 0x000000A5);
-    _send_fast_command(0x28);
+    //_write_register(MCP356xRegister::LOCK, 0x000000A5);
+    //_send_fast_command(0x28);
   }
   //if (0x01 & irq_reg_data) {   // Conversion started
     // We don't configure the class this way, and don't observe the IRQ.
@@ -661,7 +664,7 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
 int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
   uint32_t reg_val = _get_shadow_value(r);
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  _local_log.concatf("MCP356x::_proc_reg_read(%s)  %u --> 0x%02x\n", stateStr(_current_state), (uint8_t) r, reg_val);
+  //_local_log.concatf("MCP356x::_proc_reg_read(%s)  %u --> 0x%02x\n", stateStr(_current_state), (uint8_t) r, reg_val);
 
   switch (r) {
     case MCP356xRegister::ADCDATA:
@@ -775,44 +778,45 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
 
   if (op == &_busop_irq_read) {
     // IRQ register read.
-    // _proc_irq_register();
-    // if (isr_fired) {   // If IRQ is still not disasserted, re-read the register.
-    //   ret = BUSOP_CALLBACK_RECYCLE;
-    // }
+    _proc_irq_register();
+    if (isr_fired) {   // If IRQ is still not disasserted, re-read the register.
+      ret = BUSOP_CALLBACK_RECYCLE;
+    }
   }
-
-  switch (first_param) {
-    case 0x28:   // Fast command for start/restart conversion.
-      break;
-    case 0x38:   // Fast command for reset.
-      _step_state_machine();
-      break;
-    default:
-      {   // This was register access.
-        uint8_t reg_idx = first_param >> 2;
-        if (BusOpcode::TX == op->get_opcode()) {
-          ret = _proc_reg_write((MCP356xRegister) reg_idx);
-        }
-        else {
-          if (_mcp356x_flag(MCP356X_FLAG_REFRESH_CYCLE)) {
-            if (15 > reg_idx) {
-              reg_idx++;
-              op->setParams((uint8_t) _get_reg_addr((MCP356xRegister) reg_idx) | 0x01);
-              op->setBuffer((uint8_t*) &_reg_shadows[reg_idx], MCP356x_reg_width[reg_idx]);
-              ret = BUSOP_CALLBACK_RECYCLE;
-            }
-            else {   // This is the end of the refresh cycle.
-              _mcp356x_clear_flag(MCP356X_FLAG_REFRESH_CYCLE);
-              ret = _proc_reg_read(MCP356xRegister::RESERVED2);
-              _step_state_machine();
-            }
+  else {
+    switch (first_param) {
+      case 0x28:   // Fast command for start/restart conversion.
+        break;
+      case 0x38:   // Fast command for reset.
+        _step_state_machine();
+        break;
+      default:
+        {   // This was register access.
+          uint8_t reg_idx = first_param >> 2;
+          if (BusOpcode::TX == op->get_opcode()) {
+            ret = _proc_reg_write((MCP356xRegister) reg_idx);
           }
           else {
-            ret = _proc_reg_read((MCP356xRegister) reg_idx);
+            if (_mcp356x_flag(MCP356X_FLAG_REFRESH_CYCLE)) {
+              if (15 > reg_idx) {
+                reg_idx++;
+                op->setParams((uint8_t) _get_reg_addr((MCP356xRegister) reg_idx) | 0x01);
+                op->setBuffer((uint8_t*) &_reg_shadows[reg_idx], MCP356x_reg_width[reg_idx]);
+                ret = BUSOP_CALLBACK_RECYCLE;
+              }
+              else {   // This is the end of the refresh cycle.
+                _mcp356x_clear_flag(MCP356X_FLAG_REFRESH_CYCLE);
+                ret = _proc_reg_read(MCP356xRegister::RESERVED2);
+                _step_state_machine();
+              }
+            }
+            else {
+              ret = _proc_reg_read((MCP356xRegister) reg_idx);
+            }
           }
         }
-      }
-      break;
+        break;
+    }
   }
   return ret;
 }

@@ -23,6 +23,7 @@ const char* MCP356x::stateStr(const MCP356xState e) {
     case MCP356xState::REGINIT:       return "REGINIT";
     case MCP356xState::CLK_MEASURE:   return "CLK_MEASURE";
     case MCP356xState::CALIBRATION:   return "CALIBRATION";
+    case MCP356xState::USR_CONF:      return "USR_CONF";
     case MCP356xState::IDLE:          return "IDLE";
     case MCP356xState::READING:       return "READING";
     case MCP356xState::FAULT:         return "FAULT";
@@ -82,6 +83,16 @@ void MCP356x::printData(StringBuilder* output) {
     output->concatf("\tDesired State:\t%s\n", stateStr(_desired_state));
   }
   output->concatf("\tFound:          %c\n", (adcFound() ? 'y' : 'n'));
+  output->concatf("\t_desired_conf->scan: %u\n", _desired_conf->scan);
+  output->concatf("\t_desired_conf->flags: %u\n", _desired_conf->flags);
+
+
+  output->concatf("\t_desired_conf->gain: %u\n", (uint8_t) _desired_conf->gain);
+  output->concatf("\t_desired_conf->over: %u\n", (uint8_t) _desired_conf->over);
+  output->concatf("\t_desired_conf->bias: %u\n", (uint8_t) _desired_conf->bias);
+  output->concatf("\t_desired_conf->prescaler: %u\n", (uint8_t) _desired_conf->prescaler);
+
+
   output->concatf("\tChannels:       %u\n", _channel_count());
   output->concatf("\tClock running:  %c\n", (_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING) ? 'y' : 'n'));
   output->concatf("\tInitialized:    %c\n", (adcConfigured() ? 'y' : 'n'));

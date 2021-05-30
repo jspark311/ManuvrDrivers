@@ -51,11 +51,16 @@ static const float ADC_GAIN_VALUES[8] = {
 *    0 if config was set successfully.
 */
 int8_t MCP356x::setOffsetCalibration(int32_t offset) {
-  int8_t ret = _write_register(MCP356xRegister::OFFSETCAL, (uint32_t) offset);
-  if (0 == ret) {
-    uint32_t c_val = _get_shadow_value(MCP356xRegister::CONFIG3);
-    c_val = (0 != offset) ? (c_val | 0x00000002) : (c_val & 0xFFFFFFFD);
-    ret = _write_register(MCP356xRegister::CONFIG3, c_val);
+  uint32_t c3_val_cur = _get_shadow_value(MCP356xRegister::CONFIG3);
+  uint32_t c3_val_new = (0 != offset) ? (c3_val_cur | 0x00000002) : (c3_val_cur & 0xFFFFFFFD);
+  int8_t ret = 0;
+  if (offset != _get_shadow_value(MCP356xRegister::OFFSETCAL)) {
+    if (c3_val_new != c3_val_cur) {
+      ret = _write_register(MCP356xRegister::CONFIG3, c3_val_new);
+    }
+    if (0 == ret) {
+      ret = _write_register(MCP356xRegister::OFFSETCAL, (uint32_t) offset);
+    }
   }
   return ret;
 }
@@ -109,7 +114,8 @@ MCP356xGain MCP356x::getGain() {
 
 
 /**
-* Changes the BOOST setting.
+* Changes the current source setting in CONFIG0.
+* This is basically used for burnout detection in external hardware.
 *
 * @param e The desired bias current enum.
 * @return
@@ -121,6 +127,17 @@ int8_t MCP356x::setBiasCurrent(MCP356xBiasCurrent e) {
   uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0) & 0x00F3FFFF;
   c0_val += ((((uint8_t) e) & 0x03) << 18);
   return _write_register(MCP356xRegister::CONFIG0, c0_val);
+}
+
+
+/**
+* Application-facing accessor for the current source setting.
+* This is basically used for burnout detection in external hardware.
+*
+* @return the enum for the present current source setting.
+*/
+MCP356xBiasCurrent MCP356x::getBiasCurrent() {
+  return (MCP356xBiasCurrent) ((_get_shadow_value(MCP356xRegister::CONFIG0) & 0x000C0000) >> 18);
 }
 
 
@@ -141,6 +158,16 @@ int8_t MCP356x::setAMCLKPrescaler(MCP356xAMCLKPrescaler d) {
     ret = _recalculate_clk_tree();
   }
   return ret;
+}
+
+
+/**
+* Application-facing accessor for the AMCLK prescaler.
+*
+* @return the enum for the present setting of the AMCLK prescaler.
+*/
+MCP356xAMCLKPrescaler MCP356x::getAMCLKPrescaler() {
+  return (MCP356xAMCLKPrescaler) ((_get_shadow_value(MCP356xRegister::CONFIG1) & 0x000000C0) >> 6);
 }
 
 
@@ -244,10 +271,7 @@ int8_t MCP356x::_normalize_data_register() {
         if (!_mcp356x_flag(MCP356X_FLAG_VREF_DECLARED)) {
           // If we are scanning the AVDD channel, we use that instead of the
           //   assumed 3.3v.
-          //_vref_plus = nval / (8388608.0 * 0.33);
-        }
-        if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
-          _mark_calibrated();
+          _vref_plus = nval / (8388608.0 * 0.33);
         }
       }
       break;
@@ -255,18 +279,14 @@ int8_t MCP356x::_normalize_data_register() {
       // Nothing done here yet. Value should always be near 1.2v.
       if (!_mcp356x_flag(MCP356X_FLAG_SAMPLED_VCM)) {
         _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_VCM);
-        if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
-          _mark_calibrated();
-        }
       }
       break;
     case MCP356xChannel::OFFSET:
       if (!_mcp356x_flag(MCP356X_FLAG_SAMPLED_OFFSET)) {
         _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_OFFSET);
+      }
+      if (MCP356xState::CALIBRATION == _current_state ) {
         setOffsetCalibration(nval);
-        if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
-          _mark_calibrated();
-        }
       }
       break;
   }
@@ -615,41 +635,51 @@ int8_t MCP356x::_proc_irq_register() {
 int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
   uint32_t reg_val = _get_shadow_value(r);
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  _local_log.concatf("MCP356x::_proc_reg_write(%s)  %u --> 0x%02x\n", stateStr(_current_state), (uint8_t) r, reg_val);
+  _local_log.concatf("MCP356x::_proc_reg_write(%s)  %u --> 0x%06x\n", stateStr(_current_state), (uint8_t) r, reg_val);
 
   switch (r) {
     case MCP356xRegister::CONFIG0:
       if (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK)) {
         _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);
       }
-      break;
+      //break;   // Break omitted because CONFIG0 contains user configurables.
     case MCP356xRegister::CONFIG1:
     case MCP356xRegister::CONFIG2:
-      break;
     case MCP356xRegister::CONFIG3:
-      // We construe the first write to CONFIG3 as being the end of REGINIT.
-      if (!adcConfigured()) {
-        _step_state_machine();
+    case MCP356xRegister::MUX:
+    case MCP356xRegister::SCAN:
+      switch (_current_state) {
+        case MCP356xState::REGINIT:
+          if (MCP356xRegister::CONFIG3 == r) {
+            // We construe the first write to CONFIG3 as being the end of REGINIT.
+            _step_state_machine();
+          }
+          break;
+        case MCP356xState::USR_CONF:
+          if (0 == _apply_usr_config()) {
+            // If the user's config is fully written, punch the FSM.
+            _step_state_machine();
+          }
+          break;
+        default:
+          break;
       }
       break;
     case MCP356xRegister::IRQ:
-    case MCP356xRegister::MUX:
-    case MCP356xRegister::SCAN:
     case MCP356xRegister::TIMER:
       break;
-
     case MCP356xRegister::OFFSETCAL:
-      if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
-        _mark_calibrated();
+      if (MCP356xState::CALIBRATION == _current_state) {
+        if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
+          _mark_calibrated();
+          _step_state_machine();
+        }
       }
       break;
-
     case MCP356xRegister::GAINCAL:
     case MCP356xRegister::RESERVED0:
     case MCP356xRegister::RESERVED1:
-      break;
     case MCP356xRegister::LOCK:
-      break;
     case MCP356xRegister::RESERVED2:
       break;
     default:   // Anything else is an illegal target for write.

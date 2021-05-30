@@ -46,7 +46,7 @@ void mcp356x_isr1() {
 /*
 * Constructor specifying every setting.
 */
-MCP356x::MCP356x(uint8_t irq_pin, uint8_t cs_pin, uint8_t mclk_pin, uint8_t addr, MCP356xConfig* CONF) :
+MCP356x::MCP356x(const uint8_t irq_pin, const uint8_t cs_pin, const uint8_t mclk_pin, const uint8_t addr, const MCP356xConfig* CONF) :
   _IRQ_PIN(irq_pin), _CS_PIN(cs_pin), _MCLK_PIN(mclk_pin), _DEV_ADDR(addr),
   _desired_conf(CONF),
   _busop_irq_read(BusOpcode::RX, this, cs_pin, false),
@@ -131,7 +131,7 @@ int8_t MCP356x::init(SPIAdapter* b) {
     _busop_dat_read.cpol(false);
     _busop_dat_read.cpha(false);
 
-    setOption(_desired_conf.flags);
+    setOption(_desired_conf->flags);
 
     if (MCP356xState::UNINIT == _desired_state) {
       _desired_state = MCP356xState::READING;
@@ -188,6 +188,7 @@ int8_t MCP356x::setOption(uint32_t flgs) {
 
 /**
 * Handles our configuration after reset.
+* Unlocks the registers ahead of any other operation.
 * TODO: Presently sets IRQ pin to be push-pull. So multiple instances of this
 *   driver will require independant IRQ pins.
 *
@@ -461,7 +462,7 @@ int8_t MCP356x::setScanChannels(int count, ...) {
   va_end(args);
   if (0 == ret) {   // If there were no foul ups, we can write the registers.
     chans = chans | (existing_scan & 0xFFFF0000);
-    _desired_conf.scan = chans;
+    _desired_conf->scan = chans;
     if (adcCalibrated()) {
       ret = _set_scan_channels(chans);
     }
@@ -524,8 +525,8 @@ float MCP356x::getTemperature() {
 
 
 /**
-* Reads the ADC channels that assist us with calibration.
-* Saves the existing channel settings, before changing them.
+* Sets up the driver to read the ADC channels that assist us with calibration.
+* Clears the existing calibration-related flags.
 *
 * @return
 *   -1 if switching to the calibration channels failed
@@ -533,7 +534,7 @@ float MCP356x::getTemperature() {
 */
 int8_t MCP356x::calibrate() {
   int8_t ret = _set_scan_channels(0x0000E000);
-  _mcp356x_clear_flag(MCP356X_FLAG_CALIBRATED | MCP356X_FLAG_ALL_CAL_MASK);
+  _mcp356x_clear_flag(MCP356X_FLAG_CALIBRATED | MCP356X_FLAG_ALL_CAL_MASK | MCP356X_FLAG_USER_CONFIG);
   if (0 == ret) {
     _set_state(MCP356xState::CALIBRATION);
   }
@@ -632,23 +633,46 @@ int8_t MCP356x::_detect_adc_clock() {
 *   0 on success.
 */
 int8_t MCP356x::_mark_calibrated() {
-  int8_t ret = -1;
+  _mcp356x_set_flag(MCP356X_FLAG_CALIBRATED);
+  _set_state(MCP356xState::USR_CONF);
+  return (-1 != _apply_usr_config()) ? 0 : -1;
+}
 
-  if (0 == setGain(_desired_conf.gain)) {
-    if (0 == setBiasCurrent(_desired_conf.bias)) {
-      if (0 == setAMCLKPrescaler(_desired_conf.prescaler)) {
-        if (0 == setOversamplingRatio(_desired_conf.over)) {
-          if (0 == _set_scan_channels(_desired_conf.scan)) {
-            _mcp356x_set_flag(MCP356X_FLAG_CALIBRATED);
-            ret = 0;
-          }
-        }
-      }
-    }
+
+/**
+* Calling this function will cause the user's desired configuration to be
+*   written to the registers. It may be necessary to call this several times
+*   to achieve complete configuration. So call it until it returns 0.
+*
+* @return 1 on success with pending I/O
+*         0 on success with no changes
+*        -1 on failure.
+*/
+int8_t MCP356x::_apply_usr_config() {
+  int8_t ret = 0;
+  if (getGain() != _desired_conf->gain) {
+    ret = (0 == setGain(_desired_conf->gain)) ? 1 : -1;
+  }
+  else if (getBiasCurrent() != _desired_conf->bias) {
+    ret = (0 == setBiasCurrent(_desired_conf->bias)) ? 1 : -1;
+  }
+  else if (getAMCLKPrescaler() != _desired_conf->prescaler) {
+    ret = (0 == setAMCLKPrescaler(_desired_conf->prescaler)) ? 1 : -1;
+  }
+  else if (getOversamplingRatio() != _desired_conf->over) {
+    ret = (0 == setOversamplingRatio(_desired_conf->over)) ? 1 : -1;
+  }
+  else if (_get_shadow_value(MCP356xRegister::SCAN) != _desired_conf->scan) {
+    ret = (0 == _set_scan_channels(_desired_conf->scan)) ? 1 : -1;
+  }
+
+  switch (ret) {
+    case -1:   _set_fault("Failed to apply usr config.");    break;
+    case 0:    _mcp356x_set_flag(MCP356X_FLAG_USER_CONFIG);  break;
+    default:   break;
   }
   return ret;
 }
-
 
 
 /*******************************************************************************
@@ -745,6 +769,9 @@ int8_t MCP356x::_step_state_machine() {
             // The timing parameters of the ADC must be known to arrive at a linear model of
             //   the interrupt rate with respect to input clock. Then, we use the model to determine
             //   clock rate by watching the IRQ rate.
+            // Since a non-zero value in the SCAN register adds padding to
+            //   timing, we disable this ability, and use the MUX register to
+            //   dwell on the temperature diode.
             if (0 == _write_register(MCP356xRegister::SCAN, 0)) {
               if (0 == _write_register(MCP356xRegister::MUX, 0xDE)) {
                 _set_state(MCP356xState::CLK_MEASURE);
@@ -768,12 +795,12 @@ int8_t MCP356x::_step_state_machine() {
           else {
             // If a re-init cycle happened after the clock and cal steps, jump
             //   right to reading.
-            _mcp356x_set_flag(MCP356X_FLAG_INITIALIZED);
             switch (_desired_state) {
               case MCP356xState::IDLE:     _set_state(MCP356xState::IDLE);     break;
               case MCP356xState::READING:  _set_state(MCP356xState::READING);  break;
               default:                     _set_state(MCP356xState::IDLE);     break;
             }
+            continue_looping = true;
             ret = 2;
           }
           break;
@@ -784,12 +811,12 @@ int8_t MCP356x::_step_state_machine() {
               ret = (0 == calibrate()) ? 2 : -1;
             }
             else {
-              _mcp356x_set_flag(MCP356X_FLAG_INITIALIZED);
               switch (_desired_state) {
                 case MCP356xState::IDLE:     _set_state(MCP356xState::IDLE);     break;
                 case MCP356xState::READING:  _set_state(MCP356xState::READING);  break;
                 default:                     _set_state(MCP356xState::IDLE);     break;
               }
+              continue_looping = true;
             }
             ret = 2;
           }
@@ -801,18 +828,22 @@ int8_t MCP356x::_step_state_machine() {
 
         case MCP356xState::CALIBRATION:
           if (adcCalibrated()) {
-            _mcp356x_set_flag(MCP356X_FLAG_INITIALIZED);
+            _set_state(MCP356xState::USR_CONF);
+            continue_looping = true;
+            ret = 2;
+          }
+          break;
+
+        case MCP356xState::USR_CONF:
+          if (adcConfigured()) {
             switch (_desired_state) {
               case MCP356xState::IDLE:     _set_state(MCP356xState::IDLE);     break;
               case MCP356xState::READING:  _set_state(MCP356xState::READING);  break;
               default:                     _set_state(MCP356xState::IDLE);     break;
             }
+            continue_looping = true;
             ret = 2;
           }
-          //else {
-          //  _set_fault("Failed to calibrate");
-          //  ret = -1;
-          //}
           break;
 
         case MCP356xState::IDLE:
@@ -885,6 +916,7 @@ void MCP356x::_set_state(MCP356xState e) {
     case MCP356xState::REGINIT:
     case MCP356xState::CLK_MEASURE:
     case MCP356xState::CALIBRATION:
+    case MCP356xState::USR_CONF:
     case MCP356xState::IDLE:
     case MCP356xState::READING:
       _prior_state = _current_state;

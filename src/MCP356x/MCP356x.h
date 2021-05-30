@@ -150,9 +150,12 @@ enum class MCP356xState : uint8_t {
 #define MCP356X_FLAG_SAMPLED_OFFSET   0x00000400  // This calibration-related channel was sampled.
 #define MCP356X_FLAG_3RD_ORDER_TEMP   0x00000800  // Spend CPU to make temperature conversion more accurate?
 #define MCP356X_FLAG_GENERATE_MCLK    0x00001000  // MCU is to generate the clock.
-#define MCP356X_FLAG_REFRESH_CYCLE    0x00004000  // We are undergoing a full register refresh.
+#define MCP356X_FLAG_REFRESH_CYCLE    0x00002000  // We are undergoing a full register refresh.
 
-#define MCP356X_FLAG_RESET_MASK       0x00001853  // Bits to preserve through reset.
+// Bits to preserve through reset.
+#define MCP356X_FLAG_RESET_MASK  (MCP356X_FLAG_DEVICE_PRESENT | MCP356X_FLAG_PINS_CONFIGURED | \
+                                  MCP356X_FLAG_VREF_DECLARED | MCP356X_FLAG_USE_INTERNAL_CLK | \
+                                  MCP356X_FLAG_3RD_ORDER_TEMP | MCP356X_FLAG_GENERATE_MCLK)
 
 // Bits indicating calibration steps.
 #define MCP356X_FLAG_ALL_CAL_MASK     (MCP356X_FLAG_SAMPLED_AVDD | MCP356X_FLAG_SAMPLED_VCM | MCP356X_FLAG_SAMPLED_OFFSET)
@@ -219,7 +222,7 @@ class MCP356x : public BusOpCallback {
     int32_t value(MCP356xChannel);
 
     bool scanComplete();
-    inline uint32_t  lastRead() {        return millis_last_read;  };
+    inline uint32_t  lastRead() {        return micros_last_read;  };
     inline uint32_t  readCount() {       return read_count;        };
     inline void      resetReadCount() {  read_count = 0;           };
 
@@ -314,13 +317,13 @@ class MCP356x : public BusOpCallback {
     int32_t  channel_vals[16];    // Normalized channel values.
     uint32_t _flags                = 0;
     uint32_t _channel_flags        = 0;
-    uint32_t _discard_until_millis = 0;
+    uint32_t _discard_until_micros = 0;
     uint32_t _circuit_settle_ms    = 0;  // A optional constant from the application.
     uint32_t _settling_ms          = 0;  // Settling time of the ADC alone.
     uint32_t read_accumulator      = 0;
     uint32_t read_count            = 0;
-    uint32_t millis_last_read      = 0;
-    uint32_t millis_last_window    = 0;
+    uint32_t micros_last_read      = 0;
+    uint32_t micros_last_window    = 0;
     uint16_t reads_per_second      = 0;
     uint8_t  _slot_number          = 0;
     MCP356xState _prior_state      = MCP356xState::UNINIT;

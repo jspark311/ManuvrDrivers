@@ -79,7 +79,6 @@ MCP356x::~MCP356x() {
 
 
 
-
 /*******************************************************************************
 * High-level API functions
 *******************************************************************************/
@@ -314,27 +313,24 @@ int32_t MCP356x::value(MCP356xChannel chan) {
 * @return
 *   -1 if the pin setup is wrong. Class must halt.
 *   0  if the pin setup is complete.
-*   1  if the pin setup is complete, and the clock needs measurement.
 */
 int8_t MCP356x::_ll_pin_init() {
   int8_t ret = -1;
   if (_mcp356x_flag(MCP356X_FLAG_PINS_CONFIGURED)) {
     ret = 0;
   }
-  else if (255 != _CS_PIN) {
-    ret = 1;
+  else if ((255 != _CS_PIN) & (255 != _IRQ_PIN)) {
+    ret = 0;
     pinMode(_CS_PIN, GPIOMode::OUTPUT);
     setPin(_CS_PIN, 1);
-    if (255 != _IRQ_PIN) {
-      pinMode(_IRQ_PIN, GPIOMode::INPUT_PULLUP);
-      switch (_slot_number) {  // TODO: This is terrible. You know better.
-        case 0:
-          setPinFxn(_IRQ_PIN, IRQCondition::FALLING, mcp356x_isr0);
-          break;
-        case 1:
-          setPinFxn(_IRQ_PIN, IRQCondition::FALLING, mcp356x_isr1);
-          break;
-      }
+    pinMode(_IRQ_PIN, GPIOMode::INPUT);
+    switch (_slot_number) {  // TODO: This is terrible. You know better.
+      case 0:
+        setPinFxn(_IRQ_PIN, IRQCondition::FALLING, mcp356x_isr0);
+        break;
+      case 1:
+        setPinFxn(_IRQ_PIN, IRQCondition::FALLING, mcp356x_isr1);
+        break;
     }
     if (255 != _MCLK_PIN) {
       // If we have MCLK, we need to generate a squarewave on that pin.
@@ -345,27 +341,23 @@ int8_t MCP356x::_ll_pin_init() {
         pinMode(_MCLK_PIN, GPIOMode::INPUT);
       }
       else {
-        pinMode(_MCLK_PIN, GPIOMode::OUTPUT);
         if (_mcp356x_flag(MCP356X_FLAG_GENERATE_MCLK)) {
           // NOTE: Not all pin support this. Works for some pins on some MCUs.
+          //pinMode(_MCLK_PIN, GPIOMode::ANALOG_OUT);
           //analogWriteFrequency(_MCLK_PIN, 4915200);
           //analogWrite(_MCLK_PIN, 128);
           //_mclk_freq = 4915200.0;
+          _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);
+          _recalculate_clk_tree();
         }
         else {
           // There is a hardware oscillator whose enable pin we control with
           //   the MCLK pin. Set the pin high (enabled) and measure the clock.
+          pinMode(_MCLK_PIN, GPIOMode::OUTPUT);
+          _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);
           setPin(_MCLK_PIN, 1);
         }
-        _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);
-        ret = _recalculate_clk_tree();
       }
-    }
-    else {
-      // We assume that MCLK frequency has been declared by fiat.
-      // TODO: There is no need for this if we can measure the data rate.
-      ret = _recalculate_clk_tree();
-      _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);
     }
     _mcp356x_set_flag(MCP356X_FLAG_PINS_CONFIGURED);
   }
@@ -403,7 +395,7 @@ int8_t MCP356x::refresh() {
 *   reports of fully-settled values.
 */
 void MCP356x::discardUnsettledSamples() {
-  _discard_until_millis = getSettlingTime() + _circuit_settle_ms + millis();
+  _discard_until_micros = (getSettlingTime() + _circuit_settle_ms) * 1000 + micros();
 }
 
 
@@ -763,6 +755,7 @@ int8_t MCP356x::_step_state_machine() {
           break;
 
         case MCP356xState::REGINIT:
+          ret = 1;
           if (!_mclk_in_bounds()) {
             // If register init completed, and we don't think we have a
             //   valid clock, try to measure it.
@@ -774,15 +767,9 @@ int8_t MCP356x::_step_state_machine() {
             //   dwell on the temperature diode.
             if (0 == _write_register(MCP356xRegister::SCAN, 0)) {
               if (0 == _write_register(MCP356xRegister::MUX, 0xDE)) {
-                _set_state(MCP356xState::CLK_MEASURE);
-                _local_log.concat("MCP356x::_proc_reg_write() MEASURING_MCLK...\n");
-                // The first time through, we reset the read count so that we don't
-                //   bake the ADC startup time into our clock calculation.
-                resetReadCount();
                 ret = 2;
               }
             }
-
             if (2 != ret) {
               _set_fault("Failed to start clock measurement");
               ret = -1;
@@ -806,6 +793,7 @@ int8_t MCP356x::_step_state_machine() {
           break;
 
         case MCP356xState::CLK_MEASURE:
+          ret = 1;
           if (_mclk_in_bounds()) {
             if (!adcCalibrated()) {
               ret = (0 == calibrate()) ? 2 : -1;
@@ -819,10 +807,6 @@ int8_t MCP356x::_step_state_machine() {
               continue_looping = true;
             }
             ret = 2;
-          }
-          else {
-            _set_fault("Failed to measure MCLK");
-            ret = -1;
           }
           break;
 

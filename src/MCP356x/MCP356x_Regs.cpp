@@ -201,6 +201,10 @@ MCP356xOversamplingRatio MCP356x::getOversamplingRatio() {
 }
 
 
+/*******************************************************************************
+* Internal functions
+*******************************************************************************/
+
 /**
 * Returns the number of channels this part supports. Should be (2, 4, 8). Any
 *   other value is invalid and indicates a need for a register sync (if 0) or
@@ -364,8 +368,7 @@ int8_t MCP356x::_set_scan_channels(uint32_t rval) {
 *   the input clock if we don't know it already.
 * NOTE: since the sample count doesn't reset when timing parameters are altered,
 *   this only gives accurate results if the settings are unchanged from init, or
-*   the caller has pinged resetReadCount() before taking the measurement. See
-*   the example file for usage pattern.
+*   the caller has pinged resetReadCount() before taking the measurement.
 *
 * @param elapsed_us The number of microseconds that were spent taking readings.
 * @return The calculated MCLK frequency
@@ -436,13 +439,13 @@ void MCP356x::_clear_registers() {
     channel_vals[i]  = 0;
   }
   _channel_flags        = 0;
-  _discard_until_millis = 0;
+  _discard_until_micros = 0;
   _settling_ms          = 0;
   read_count            = 0;
   read_accumulator      = 0;
   reads_per_second      = 0;
-  millis_last_read      = 0;
-  millis_last_window    = 0;
+  micros_last_read      = 0;
+  micros_last_window    = 0;
 }
 
 
@@ -646,7 +649,6 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
     case MCP356xRegister::CONFIG1:
     case MCP356xRegister::CONFIG2:
     case MCP356xRegister::CONFIG3:
-    case MCP356xRegister::MUX:
     case MCP356xRegister::SCAN:
       switch (_current_state) {
         case MCP356xState::REGINIT:
@@ -665,6 +667,15 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
           break;
       }
       break;
+
+    case MCP356xRegister::MUX:
+      // When the MUX register changes, we reset the read count.
+      resetReadCount();
+      if (MCP356xState::REGINIT == _current_state) {
+        _set_state(MCP356xState::CLK_MEASURE);
+      }
+      break;
+
     case MCP356xRegister::IRQ:
     case MCP356xRegister::TIMER:
       break;
@@ -703,44 +714,15 @@ int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
   //_local_log.concatf("MCP356x::_proc_reg_read(%s)  %u --> 0x%02x\n", stateStr(_current_state), (uint8_t) r, reg_val);
 
   switch (r) {
-    case MCP356xRegister::ADCDATA:
-      millis_last_read = millis();
-      read_count++;
-      read_accumulator++;
-      if (millis_last_read - millis_last_window >= 1000) {
-        millis_last_window = millis_last_read;
-        reads_per_second = read_accumulator;
-        read_accumulator = 0;
-      }
-      if (_measuring_clock()) {
-        _mclk_freq = _calculate_input_clock(1000000);
-        _recalculate_clk_tree();
-        _step_state_machine();
-      }
-      else {
-        //if (_discard_until_millis <= millis_last_read) {
-          _normalize_data_register();
-        //}
-      }
-      break;
-
     case MCP356xRegister::CONFIG0:
     case MCP356xRegister::CONFIG1:
     case MCP356xRegister::CONFIG2:
     case MCP356xRegister::CONFIG3:
-      break;
-    case MCP356xRegister::IRQ:
-      _proc_irq_register();
-      if (isr_fired) {   // If IRQ is still not disasserted, re-read the register.
-        ret = BUSOP_CALLBACK_RECYCLE;
-      }
-      break;
     case MCP356xRegister::MUX:
     case MCP356xRegister::SCAN:
     case MCP356xRegister::TIMER:
     case MCP356xRegister::OFFSETCAL:
     case MCP356xRegister::GAINCAL:
-      break;
     case MCP356xRegister::LOCK:
       break;
     case MCP356xRegister::RESERVED2:
@@ -764,6 +746,8 @@ int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
       break;
     case MCP356xRegister::CRCCFG:
       break;
+    case MCP356xRegister::ADCDATA:    // Handled by a dedicated BusOp object.
+    case MCP356xRegister::IRQ:        // Handled by a dedicated BusOp object.
     case MCP356xRegister::RESERVED0:  // Handled in RESERVED2 case.
     case MCP356xRegister::RESERVED1:  // Handled in RESERVED2 case.
     default:
@@ -817,6 +801,40 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
     _proc_irq_register();
     if (isr_fired) {   // If IRQ is still not disasserted, re-read the register.
       ret = BUSOP_CALLBACK_RECYCLE;
+    }
+  }
+  else if (op == &_busop_dat_read) {
+    // DATA register read.
+    micros_last_read = micros();
+    uint32_t window_width_us = wrap_accounted_delta(micros_last_read, micros_last_window);
+    read_count++;
+    read_accumulator++;
+    if (window_width_us >= 1000000) {
+      micros_last_window = micros_last_read;
+      reads_per_second = read_accumulator;
+      read_accumulator = 0;
+    }
+    switch (_current_state) {
+      case MCP356xState::CLK_MEASURE:
+        if (window_width_us >= 1000000) {
+          _mclk_freq = _calculate_input_clock(window_width_us);
+          if (0 == _recalculate_clk_tree()) {
+            _step_state_machine();
+          }
+          else {
+            _set_fault("Failed to measure MCLK");
+          }
+        }
+        break;
+      case MCP356xState::CALIBRATION:
+      case MCP356xState::READING:
+        if (_discard_until_micros <= micros_last_read) {
+          // If we aren't in the settling period, we observe the data that was read.
+          _normalize_data_register();
+        }
+        break;
+      default:
+        break;
     }
   }
   else {

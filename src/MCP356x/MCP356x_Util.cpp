@@ -68,7 +68,7 @@ void MCP356x::printTimings(StringBuilder* output) {
   output->concatf("\tReal sample rate    = %u\n", reads_per_second);
   output->concatf("\tADC settling time   = %u\n", getSettlingTime());
   output->concatf("\tTotal settling time = %u\n", _circuit_settle_ms);
-  output->concatf("\tLast read (millis)  = %u\n", millis_last_read);
+  output->concatf("\tLast read (micros)  = %u\n", micros_last_read);
 }
 
 
@@ -83,19 +83,9 @@ void MCP356x::printData(StringBuilder* output) {
     output->concatf("\tDesired State:\t%s\n", stateStr(_desired_state));
   }
   output->concatf("\tFound:          %c\n", (adcFound() ? 'y' : 'n'));
-  output->concatf("\t_desired_conf->scan: %u\n", _desired_conf->scan);
-  output->concatf("\t_desired_conf->flags: %u\n", _desired_conf->flags);
-
-
-  output->concatf("\t_desired_conf->gain: %u\n", (uint8_t) _desired_conf->gain);
-  output->concatf("\t_desired_conf->over: %u\n", (uint8_t) _desired_conf->over);
-  output->concatf("\t_desired_conf->bias: %u\n", (uint8_t) _desired_conf->bias);
-  output->concatf("\t_desired_conf->prescaler: %u\n", (uint8_t) _desired_conf->prescaler);
-
-
   output->concatf("\tChannels:       %u\n", _channel_count());
   output->concatf("\tClock running:  %c\n", (_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING) ? 'y' : 'n'));
-  output->concatf("\tInitialized:    %c\n", (adcConfigured() ? 'y' : 'n'));
+  output->concatf("\tConfigured:     %c\n", (adcConfigured() ? 'y' : 'n'));
   output->concatf("\tCalibrated:     %c\n", (adcCalibrated() ? 'y' : 'n'));
   if (!adcCalibrated()) {
     output->concatf("\t  SAMPLED_OFFSET: %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_OFFSET) ? 'y' : 'n'));

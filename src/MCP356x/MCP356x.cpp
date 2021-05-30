@@ -639,8 +639,8 @@ int8_t MCP356x::_mark_calibrated() {
       if (0 == setAMCLKPrescaler(_desired_conf.prescaler)) {
         if (0 == setOversamplingRatio(_desired_conf.over)) {
           if (0 == _set_scan_channels(_desired_conf.scan)) {
-            ret++;
             _mcp356x_set_flag(MCP356X_FLAG_CALIBRATED);
+            ret = 0;
           }
         }
       }

@@ -239,28 +239,34 @@ int8_t MCP356x::_normalize_data_register() {
     case MCP356xChannel::TEMP:
       break;
     case MCP356xChannel::AVDD:
-      _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_AVDD);
-      if (!_mcp356x_flag(MCP356X_FLAG_VREF_DECLARED)) {
-        // If we are scanning the AVDD channel, we use that instead of the
-        //   assumed 3.3v.
-        //_vref_plus = nval / (8388608.0 * 0.33);
-      }
-      if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
-        _mark_calibrated();
+      if (!_mcp356x_flag(MCP356X_FLAG_SAMPLED_AVDD)) {
+        _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_AVDD);
+        if (!_mcp356x_flag(MCP356X_FLAG_VREF_DECLARED)) {
+          // If we are scanning the AVDD channel, we use that instead of the
+          //   assumed 3.3v.
+          //_vref_plus = nval / (8388608.0 * 0.33);
+        }
+        if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
+          _mark_calibrated();
+        }
       }
       break;
     case MCP356xChannel::VCM:
       // Nothing done here yet. Value should always be near 1.2v.
-      _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_VCM);
-      if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
-        _mark_calibrated();
+      if (!_mcp356x_flag(MCP356X_FLAG_SAMPLED_VCM)) {
+        _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_VCM);
+        if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
+          _mark_calibrated();
+        }
       }
       break;
     case MCP356xChannel::OFFSET:
-      _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_OFFSET);
-      setOffsetCalibration(nval);
-      if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
-        _mark_calibrated();
+      if (!_mcp356x_flag(MCP356X_FLAG_SAMPLED_OFFSET)) {
+        _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_OFFSET);
+        setOffsetCalibration(nval);
+        if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
+          _mark_calibrated();
+        }
       }
       break;
   }

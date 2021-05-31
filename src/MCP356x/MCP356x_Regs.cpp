@@ -54,7 +54,7 @@ int8_t MCP356x::setOffsetCalibration(int32_t offset) {
   uint32_t c3_val_cur = _get_shadow_value(MCP356xRegister::CONFIG3);
   uint32_t c3_val_new = (0 != offset) ? (c3_val_cur | 0x00000002) : (c3_val_cur & 0xFFFFFFFD);
   int8_t ret = 0;
-  if (offset != _get_shadow_value(MCP356xRegister::OFFSETCAL)) {
+  if (offset != (int32_t) _get_shadow_value(MCP356xRegister::OFFSETCAL)) {
     if (c3_val_new != c3_val_cur) {
       ret = _write_register(MCP356xRegister::CONFIG3, c3_val_new);
     }
@@ -236,7 +236,8 @@ uint8_t MCP356x::_output_coding_bytes() {
 * Output coding correction and observation.
 * This function also observes the calibration flags and marks the driver as
 *   calibrated if all of the parameters have been read.
-* TODO: We rely on (assume) the output coding having chan-id and SGN.
+* Resulting voltage value is stored in the appropriate slot in channel_vals[].
+* NOTE: We rely on (assume) the output coding having chan-id and SGN.
 *
 * @return 0 always.
 */
@@ -709,7 +710,6 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
 *   BUSOP_CALLBACK_RECYCLE
 */
 int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
-  uint32_t reg_val = _get_shadow_value(r);
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
   //_local_log.concatf("MCP356x::_proc_reg_read(%s)  %u --> 0x%02x\n", stateStr(_current_state), (uint8_t) r, reg_val);
 

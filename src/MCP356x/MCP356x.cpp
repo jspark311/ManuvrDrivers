@@ -188,7 +188,7 @@ int8_t MCP356x::setOption(uint32_t flgs) {
 /**
 * Handles our configuration after reset.
 * Unlocks the registers ahead of any other operation.
-* TODO: Presently sets IRQ pin to be push-pull. So multiple instances of this
+* NOTE: Presently sets IRQ pin to be push-pull. So multiple instances of this
 *   driver will require independant IRQ pins.
 *
 * @return
@@ -715,7 +715,7 @@ int8_t MCP356x::_step_state_machine() {
           // Regardless of where we are going, we only have one way out of here.
           // If we were given one, check that the IRQ pin pulsed.
           if (255 != _IRQ_PIN) {
-            sleep_ms(150);   // TODO: Wrong
+            sleep_ms(10);   // TODO: Wrong
             if (0 == refresh()) {
               _set_state(MCP356xState::DISCOVERY);
               ret = 2;

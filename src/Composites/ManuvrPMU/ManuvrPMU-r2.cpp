@@ -101,6 +101,7 @@ const ConsoleCommand cmd00 = ConsoleCommand("pmu", 'p', ParsingConsole::tcodes_s
 ManuvrPMU::ManuvrPMU(const BQ24155Opts* charger_opts, const LTC294xOpts* fuel_gauge_opts, const ManuvrPMUOpts* o, const BatteryOpts* bo) :
   _opts(o), _battery(bo),
   _bq24155(charger_opts), _ltc294x(fuel_gauge_opts, bo->capacity), _flags(_opts.flags) {
+    INSTANCE = this;
 }
 
 

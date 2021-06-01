@@ -95,8 +95,7 @@ class SX1503 : public I2CDevice {
     int8_t io_op_callahead(BusOp*);
     int8_t io_op_callback(BusOp*);
 
-    inline int8_t init() {  return init(_bus);  };
-    int8_t init(I2CAdapter*);
+    int8_t init(I2CAdapter* b = nullptr);
     int8_t reset();
     int8_t poll();
     bool isrFired();
@@ -121,7 +120,9 @@ class SX1503 : public I2CDevice {
     uint8_t serialize(uint8_t* buf, unsigned int len);
     int8_t  unserialize(const uint8_t* buf, const unsigned int len);
 
-    inline bool initialized() {  return _sx_flag(SX1503_FLAG_INITIALIZED);  };
+    inline bool devFound() {     return _sx_flag(SX1503_FLAG_DEVICE_PRESENT);  };
+    inline bool initialized() {  return _sx_flag(SX1503_FLAG_INITIALIZED);     };
+
     inline bool preserveOnDestroy() {
       return _sx_flag(SX1503_FLAG_PRESERVE_STATE);
     };

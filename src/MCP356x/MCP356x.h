@@ -82,6 +82,16 @@ enum class MCP356xBiasCurrent : uint8_t {
   NANOAMPS_15000 = 3
 };
 
+/*
+* Bias current boost ratio.
+* Enum values convert directly into register values.
+*/
+enum class MCP356xBiasBoost : uint8_t {
+  HALF      = 0,
+  TWOTHIRDS = 1,
+  ONE       = 2,
+  DOUBLE    = 3
+};
 
 /*
 * Enum values convert directly into register values.

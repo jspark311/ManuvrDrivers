@@ -204,7 +204,7 @@ int8_t SX1503::reset() {
     // Steamroll the registers with the default values.
     ret = _write_registers(SX1503RegId::DATA_B, 0x12);
     if (0 == ret) {  ret = _write_registers(SX1503RegId::PLD_MODE_B, 0x0C);  }
-    if (0 == ret) {  ret = _write_registers(SX1503RegId::ADVANCED, 1);       }
+    if (0 == ret) {  ret = _write_register(SX1503RegId::ADVANCED, 0x04);     }
   }
   return ret;
 }
@@ -742,7 +742,9 @@ void SX1503::printDebug(StringBuilder* output) {
   output->concatf("\tRESET Pin:   %u\n", _RESET_PIN);
   output->concatf("\tIRQ Pin:     %u\n", _IRQ_PIN);
   output->concatf("\tISR fired:   %c\n", sx1503_isr_fired ? 'y' : 'n');
+  output->concatf("\tDev found:   %c\n", devFound() ? 'y' : 'n');
   output->concatf("\tInitialized: %c\n", initialized() ? 'y' : 'n');
+  output->concatf("\tPins setup:  %c\n", _sx_flag(SX1503_FLAG_PINS_CONFD) ? 'y' : 'n');
   output->concatf("\tPreserve:    %c\n", preserveOnDestroy() ? 'y' : 'n');
   output->concatf("\t_x_dat:      0x%04x\n", _a_dat | ((uint16_t) _b_dat << 8));
 }

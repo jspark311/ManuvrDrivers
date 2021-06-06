@@ -339,16 +339,24 @@ int8_t ManuvrPMU::_ll_pin_init() {
 * TODO: This is on borrowed time.
 */
 int8_t ManuvrPMU::poll() {
-  uint32_t ts = millis();
+  uint32_t now = millis();
   int8_t ret = -1;
-  //ltc294x.readSensor();
-  if (ts >= (_punch_timestamp + 1740000)) {
-    // One every 32 minutes, the charger will stop.
-    // We punch the safety timer every 29 minutes.
-    bq24155.punch_safety_timer();
+  if (bq24155.initComplete()) {
+    if (wrap_accounted_delta(_last_meter_poll, now) >= _polling_period) {
+      ltc294x.readSensor();
+      _last_meter_poll = now;
+    }
   }
-  else {
-    bq24155.refresh();
+  if (bq24155.initComplete()) {
+    if (wrap_accounted_delta(_punch_timestamp, now) >= 1740000) {
+      // One every 32 minutes, the charger will stop.
+      // We punch the safety timer every 29 minutes.
+      bq24155.punch_safety_timer();
+    }
+    if (wrap_accounted_delta(_last_charger_poll, now) >= _polling_period) {
+      bq24155.refresh_status();
+      _last_charger_poll = now;
+    }
   }
   return ret;
 }
@@ -382,7 +390,7 @@ int8_t ManuvrPMU::configureConsole(ParsingConsole* console) {
 */
 void ManuvrPMU::fetchLog(StringBuilder* l) {
   ltc294x.fetchLog(l);
-  bq24155.fetchLog(l);
+  //bq24155.fetchLog(l);
   if (_local_log.length() > 0) {
     if (nullptr != l) {
       _local_log.string();

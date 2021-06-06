@@ -125,6 +125,9 @@ class ManuvrPMU {
     const BatteryOpts    _battery;
 
     uint32_t       _punch_timestamp = 0;
+    uint32_t       _polling_period  = 5000;
+    uint32_t       _last_meter_poll = 0;
+    uint32_t       _last_charger_poll = 0;
     BatteryStateCallback _callback  = nullptr;
     ChargeState    _charge_state    = ChargeState::UNKNOWN;
     uint8_t        _verbosity       = 5;   // How chatty is the debug log?

@@ -46,13 +46,12 @@ static ManuvrPMU* INSTANCE = nullptr;
 int callback_pmu_tools(StringBuilder* text_return, StringBuilder* args) {
   int ret = 0;
   char* cmd  = args->position_trimmed(0);
-  char* arg1 = args->position_trimmed(1);
-  char* arg2 = args->position_trimmed(2);
+  int   arg1 = args->position_as_int(1);
 
   if (0 == StringBuilder::strcasecmp(cmd, "verbosity")) {
     switch (args->count()) {
       case 2:
-        INSTANCE->logVerbosity(0x07 & args->position_as_int(1));
+        INSTANCE->logVerbosity(0x07 & (uint8_t) arg1);
         // NOTE: No break;
       case 1:
         text_return->concatf("PMU log verbosity is %u\n", INSTANCE->logVerbosity());
@@ -63,16 +62,95 @@ int callback_pmu_tools(StringBuilder* text_return, StringBuilder* args) {
     }
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "reset")) {
-    text_return->concat("TODO: Unimplemented\n");
+    text_return->concatf("Resetting charger parameters returns %d\n", INSTANCE->bq24155.reset_charger_fsm());
   }
+  else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
+    switch (arg1) {
+      case 1:
+        text_return->concatf("ltc294x.readSensor() returns %d.\n", INSTANCE->ltc294x.readSensor());
+        break;
+      case 2:
+        text_return->concatf("bq24155.refresh() returns %d.\n", INSTANCE->bq24155.refresh());
+        break;
+      default:
+        text_return->concat("Usage:  pmu refresh [1|2]\n");
+        break;
+    }
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "regulation")) {
+    if (2 == args->count()) {
+      INSTANCE->bq24155.batt_reg_voltage(args->position_as_double(1));
+    }
+    text_return->concatf("bq24155 battery regulation voltage is %.2f.\n", INSTANCE->bq24155.batt_reg_voltage());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "weakness")) {
+    if (2 == args->count()) {
+      INSTANCE->bq24155.batt_weak_voltage(args->position_as_double(1));
+    }
+    text_return->concatf("bq24155 battery weakness voltage is %.2f.\n", INSTANCE->bq24155.batt_weak_voltage());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "punch")) {
+    text_return->concatf("bq24155.punch_safety_timer() returns %d\n", INSTANCE->bq24155.punch_safety_timer());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "charger")) {
+    if (2 == args->count()) {
+      INSTANCE->bq24155.charger_enabled(1 == arg1);
+    }
+    text_return->concatf("bq24155 is %sabled.\n", INSTANCE->bq24155.charger_enabled() ? "en" : "dis");
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "termination")) {
+    if (2 == args->count()) {
+      INSTANCE->bq24155.charge_current_termination_enabled((1 == arg1), false);
+    }
+    text_return->concatf("bq24155 charge termination is %sabled.\n", INSTANCE->bq24155.charge_current_termination_enabled() ? "en" : "dis");
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "sleep")) {
+    if (2 == args->count()) {
+      INSTANCE->ltc294x.sleep(1 == arg1);
+    }
+    text_return->concatf("ltc294x is %s.\n", INSTANCE->ltc294x.asleep() ? "asleep" : "awake");
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "aux")) {
+    if (2 == args->count()) {
+      INSTANCE->auxRegEnabled(1 == arg1);
+    }
+    text_return->concatf("AUX regulator is %sabled.\n", INSTANCE->auxRegEnabled() ? "en" : "dis");
+  }
+
   else if (0 == StringBuilder::strcasecmp(cmd, "info")) {
-    INSTANCE->printDebug(text_return);
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "battery")) {
-    INSTANCE->printBattery(text_return);
+    switch (arg1) {
+      default:
+      case 0:
+        INSTANCE->printDebug(text_return);
+        INSTANCE->printBattery(text_return);
+        break;
+      case 1:
+        INSTANCE->ltc294x.printDebug(text_return);
+        break;
+      case 2:
+        INSTANCE->bq24155.printDebug(text_return);
+        break;
+      case 3:
+        INSTANCE->ltc294x.printRegisters(text_return);
+        break;
+      case 4:
+        INSTANCE->bq24155.printRegisters(text_return);
+        break;
+    }
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "init")) {
-    text_return->concatf("PMU init() returns %d\n", INSTANCE->init());
+    switch (arg1) {
+      default:
+      case 0:
+        text_return->concatf("PMU init() returns %d\n", INSTANCE->init());
+        break;
+      case 1:
+        text_return->concatf("ltc294x.init() returns %d\n", INSTANCE->ltc294x.init());
+        break;
+      case 2:
+        text_return->concatf("bq24155.init() returns %d\n", INSTANCE->bq24155.init());
+        break;
+    }
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
     text_return->concat("TODO: Unimplemented\n");
@@ -83,7 +161,7 @@ int callback_pmu_tools(StringBuilder* text_return, StringBuilder* args) {
   return ret;
 }
 
-const ConsoleCommand cmd00 = ConsoleCommand("pmu", 'p', ParsingConsole::tcodes_str_4, "PMU tools", "[info|battery|punch|charging|aux|reset|init|refresh|verbosity]", 1, callback_pmu_tools);
+const ConsoleCommand cmd00 = ConsoleCommand("pmu", 'p', ParsingConsole::tcodes_str_4, "PMU tools", "[info|punch|charging|aux|reset|init|refresh|verbosity]", 1, callback_pmu_tools);
 
 
 /*******************************************************************************
@@ -98,9 +176,10 @@ const ConsoleCommand cmd00 = ConsoleCommand("pmu", 'p', ParsingConsole::tcodes_s
 /**
 * Constructor. All params are required.
 */
-ManuvrPMU::ManuvrPMU(const BQ24155Opts* charger_opts, const LTC294xOpts* fuel_gauge_opts, const ManuvrPMUOpts* o, const BatteryOpts* bo) :
-  _opts(o), _battery(bo),
-  _bq24155(charger_opts), _ltc294x(fuel_gauge_opts, bo->capacity), _flags(_opts.flags) {
+ManuvrPMU::ManuvrPMU(const BQ24155Opts* charger_opts, const LTC294xOpts* fuel_gauge_opts, const ManuvrPMUOpts* o) :
+  bq24155(charger_opts), ltc294x(fuel_gauge_opts, charger_opts->battery.capacity),
+  _opts(o), _battery(&charger_opts->battery),
+  _flags(_opts.flags) {
     INSTANCE = this;
 }
 
@@ -146,6 +225,7 @@ int8_t ManuvrPMU::auxRegLowPower(bool lpm) {
   return -1;
 }
 
+
 /**
 * Debug support function.
 *
@@ -153,8 +233,8 @@ int8_t ManuvrPMU::auxRegLowPower(bool lpm) {
 */
 void ManuvrPMU::printBattery(StringBuilder* output) {
   const uint8_t DBAR_WIDTH = 25;
-  float v  = _ltc294x.batteryVoltage();
-  float vp = _ltc294x.batteryPercentVoltage();
+  float v  = ltc294x.batteryVoltage();
+  float vp = ltc294x.batteryPercentVoltage();
   char* bar_buf = (char*) alloca(DBAR_WIDTH+1);
   uint8_t mark = (vp/100.0f) * DBAR_WIDTH;
   for (uint8_t i = 0; i < DBAR_WIDTH; i++) {
@@ -173,6 +253,7 @@ void ManuvrPMU::printBattery(StringBuilder* output) {
   output->concatf("\tCapacity %umAh\n", _battery.capacity);
   output->concatf("\tWeak     %.2fV\n", _battery.voltage_weak);
   output->concatf("\tFloat    %.2fV\n", _battery.voltage_float);
+  output->concatf("\tMax      %.2fV\n", _battery.voltage_max);
 }
 
 /**
@@ -182,9 +263,10 @@ void ManuvrPMU::printBattery(StringBuilder* output) {
 */
 void ManuvrPMU::printDebug(StringBuilder* output) {
   const char* aux_reg_state = auxRegLowPower() ? "2.5v" : "3.3v";
-  output->concatf("-- VS/RE pins          %u/%u\n", _opts.vs_pin, _opts.re_pin);
-  output->concatf("-- Auxiliary regulator %s\n", auxRegEnabled() ? aux_reg_state : "Disabled");
-  output->concatf("-- Charge state        %s\n", getChargeStateString());
+  ParsingConsole::styleHeader1(output, "ManuvrPMU");
+  output->concatf("\tVS/RE pins          %u/%u\n", _opts.vs_pin, _opts.re_pin);
+  output->concatf("\tAuxiliary regulator %s\n", auxRegEnabled() ? aux_reg_state : "Disabled");
+  output->concatf("\tCharge state        %s\n", getChargeStateString());
 }
 
 
@@ -193,19 +275,15 @@ void ManuvrPMU::printDebug(StringBuilder* output) {
 */
 int8_t ManuvrPMU::init(I2CAdapter* b) {
   int8_t ret = -1;
-  // Now... we have battery details. So we derive some settings for the two
-  //   I2C chips we are dealing with.
-  _bq24155.batt_reg_voltage(_battery.voltage_max);
-  _bq24155.batt_weak_voltage(_battery.voltage_weak);
-  // We want the gas guage to warn us if the voltage leaves the realm of safety.
-  _ltc294x.setVoltageThreshold(_battery.voltage_weak, _battery.voltage_max);
   if (0 == _ll_pin_init()) {   // Configure the pins if they are not already.
     if (nullptr != b) {
-      _ltc294x.assignBusInstance(b);
-      _bq24155.assignBusInstance(b);
-      if (0 == _ltc294x.init()) {
+      ltc294x.assignBusInstance(b);
+      bq24155.assignBusInstance(b);
+      if (0 == ltc294x.init()) {
+        // We want the gas guage to warn us if the voltage leaves the realm of safety.
+        ltc294x.setVoltageThreshold(_battery.voltage_weak, _battery.voltage_max);
       }
-      if (0 == _bq24155.init()) {
+      if (0 == bq24155.init()) {
       }
     }
   }
@@ -263,14 +341,14 @@ int8_t ManuvrPMU::_ll_pin_init() {
 int8_t ManuvrPMU::poll() {
   uint32_t ts = millis();
   int8_t ret = -1;
-  //_ltc294x.readSensor();
+  //ltc294x.readSensor();
   if (ts >= (_punch_timestamp + 1740000)) {
     // One every 32 minutes, the charger will stop.
     // We punch the safety timer every 29 minutes.
-    _bq24155.punch_safety_timer();
+    bq24155.punch_safety_timer();
   }
   else {
-    _bq24155.refresh();
+    bq24155.refresh();
   }
   return ret;
 }
@@ -303,6 +381,8 @@ int8_t ManuvrPMU::configureConsole(ParsingConsole* console) {
 * @param l is a reference to the buffer which should receive the log.
 */
 void ManuvrPMU::fetchLog(StringBuilder* l) {
+  ltc294x.fetchLog(l);
+  bq24155.fetchLog(l);
   if (_local_log.length() > 0) {
     if (nullptr != l) {
       _local_log.string();
@@ -312,44 +392,6 @@ void ManuvrPMU::fetchLog(StringBuilder* l) {
 }
 
 
-// void ManuvrPMU::consoleCmdProc(StringBuilder* input) {
-//   // TODO: This function (and the open-scoping demands it makes on member classes)
-//   //         is awful. It is hasty until I can learn enough from some other PMU
-//   //         abstraction to do something more sensible.
-//   const char* str = (char *) input->position(0);
-//   char c    = *str;
-//   int temp_int = 0;
-//
-//   if (input->count() > 1) {
-//     // If there is a second token, we proceed on good-faith that it's an int.
-//     temp_int = input->position_as_int(1);
-//   }
-//   else if (strlen(str) > 1) {
-//     // We allow a short-hand for the sake of short commands that involve a single int.
-//     temp_int = atoi(str + 1);
-//   }
-//
-//   switch (c) {
-//     case 'p':
-//     case 'P':
-//       // Start or stop the periodic sensor read.
-//       if (temp_int) {
-//         _periodic_pmu_read.alterSchedulePeriod(temp_int * 10);
-//         local_log.concatf("_periodic_pmu_read set to %d ms period.\n", (temp_int * 10));
-//       }
-//       _periodic_pmu_read.enableSchedule(*(str) == 'P');
-//       local_log.concatf("%s _periodic_pmu_read.\n", (*(str) == 'p' ? "Stopping" : "Starting"));
-//       break;
-//
-//     case 'X':
-//     case 'x':
-//       local_log.concatf(
-//         "%sabling auxiliary regulator... %s\n",
-//         (*(str) == 'X' ? "En" : "Dis"),
-//         (0 != auxRegEnabled(*(str) == 'X')) ? "failure" : "success"
-//       );
-//       break;
-//
 //     case 'L':
 //     case 'l':
 //       local_log.concatf(
@@ -359,131 +401,9 @@ void ManuvrPMU::fetchLog(StringBuilder* l) {
 //       );
 //       break;
 //
-//     case 'i':
-//       switch (temp_int) {
-//         case 1:
-//           _ltc294x.printDebug(&local_log);
-//           break;
-//         case 2:
-//           _bq24155.printDebug(&local_log);
-//           break;
-//         case 5:
-//           printBattery(&local_log);
-//           break;
-//
-//         default:
-//           printDebug(&local_log);
-//       }
-//       break;
-//
-//     case 'a':
-//       switch (temp_int) {
-//         case 1:
-//           _ltc294x.init();
-//           break;
-//         case 2:
-//           _bq24155.init();
-//           break;
-//         default:
-//           local_log.concat("1: _ltc294x.init()\n");
-//           local_log.concat("2: _bq24155.init()\n");
-//           break;
-//       }
-//       break;
-//
-//     case 'd':
-//       switch (temp_int) {
-//         case 1:
-//           local_log.concat("Refreshing _ltc294x.\n");
-//           _ltc294x.readSensor();
-//           break;
-//         case 2:
-//           local_log.concat("Refreshing _bq24155.\n");
-//           _bq24155.refresh();
-//           break;
-//         case 3:
-//           _ltc294x.printRegisters(&local_log);
-//           break;
-//         case 4:
-//           _bq24155.printRegisters(&local_log);
-//           break;
-//         default:
-//           local_log.concat("1: _ltc294x.readSensor()\n");
-//           local_log.concat("2: _bq24155.refresh()\n");
-//           break;
-//       }
-//       break;
-//
-//     ///////////////////////
-//     // Gas guage
-//     ///////////////////////
-//     case 's':
-//       switch (temp_int) {
-//         case 1:
-//           _ltc294x.setVoltageThreshold(3.3f, 4.4f);
-//           break;
-//         case 2:
-//           _ltc294x.sleep(true);
-//           break;
-//         case 3:
-//           _ltc294x.sleep(false);
-//           break;
-//       }
-//       break;
-//
-//     ///////////////////////
-//     // Charger
-//     ///////////////////////
-//     case 'E':
-//     case 'e':
-//       local_log.concatf("%sabling battery charge...\n", (*(str) == 'E' ? "En" : "Dis"));
-//       _bq24155.charger_enabled(*(str) == 'E');
-//       break;
-//
-//     case 'T':
-//     case 't':
-//       local_log.concatf("%sabling charge current termination...\n", (*(str) == 'T' ? "En" : "Dis"));
-//       _bq24155.charger_enabled(*(str) == 'T');
-//       break;
-//
-//     case '*':
-//       local_log.concat("Punching safety timer...\n");
-//       _bq24155.punch_safety_timer();
-//       break;
-//
-//     case 'R':
-//       local_log.concat("Resetting charger parameters...\n");
-//       _bq24155.reset_charger_params();
-//       _bq24155.batt_reg_voltage(_battery.voltage_max);
-//       _bq24155.batt_weak_voltage(_battery.voltage_weak);
-//       break;
-//
 //     case 'u':   // USB host current limit.
 //       if (temp_int) {
-//         _bq24155.usb_current_limit((unsigned int) temp_int);
+//         bq24155.usb_current_limit((unsigned int) temp_int);
 //       }
-//       local_log.concatf("USB current limit: %dmA\n", _bq24155.usb_current_limit());
+//       local_log.concatf("USB current limit: %dmA\n", bq24155.usb_current_limit());
 //       break;
-//
-//     case 'v':   // Battery regulation voltage
-//       if (temp_int) {
-//         local_log.concatf("Setting battery regulation voltage to %.2fV\n", input->position_as_double(1));
-//         _bq24155.batt_reg_voltage(input->position_as_double(1));
-//       }
-//       local_log.concatf("Batt reg voltage:  %.2fV\n", _bq24155.batt_reg_voltage());
-//       break;
-//
-//     case 'w':   // Battery weakness voltage
-//       if (temp_int) {
-//         local_log.concatf("Setting battery weakness voltage to %.2fV\n", input->position_as_double(1));
-//         _bq24155.batt_weak_voltage(input->position_as_double(1));
-//       }
-//       local_log.concatf("Batt weakness voltage:  %.2fV\n", _bq24155.batt_weak_voltage());
-//       break;
-//
-//     default:
-//       break;
-//   }
-//
-//   flushLocalLog();
-// }

@@ -84,7 +84,10 @@ class ManuvrPMUOpts {
 
 class ManuvrPMU {
   public:
-    ManuvrPMU(const BQ24155Opts*, const LTC294xOpts*, const ManuvrPMUOpts*, const BatteryOpts*);
+    BQ24155 bq24155;
+    LTC294x ltc294x;
+
+    ManuvrPMU(const BQ24155Opts*, const LTC294xOpts*, const ManuvrPMUOpts*);
     ~ManuvrPMU();
 
     /* Console config */
@@ -110,6 +113,8 @@ class ManuvrPMU {
     int8_t auxRegEnabled(bool);
     int8_t auxRegLowPower(bool);
 
+    inline float battVoltage() {    return ltc294x.batteryVoltage();   };
+
 
     /* Inlines for object-style usage of static functions... */
     inline const char* getChargeStateString() {   return BatteryOpts::batteryStateStr(_charge_state);  };
@@ -118,8 +123,6 @@ class ManuvrPMU {
   private:
     const ManuvrPMUOpts  _opts;
     const BatteryOpts    _battery;
-    BQ24155        _bq24155;
-    LTC294x        _ltc294x;
 
     uint32_t       _punch_timestamp = 0;
     BatteryStateCallback _callback  = nullptr;

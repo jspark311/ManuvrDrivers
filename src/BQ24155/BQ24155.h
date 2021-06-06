@@ -23,6 +23,8 @@ limitations under the License.
 #define __BQ24155_DRIVER_H__
 
 #include <AbstractPlatform.h>
+#include <FlagContainer.h>
+#include <Battery.h>
 #include <I2CAdapter.h>
 
 /* Driver state flags. */
@@ -33,10 +35,10 @@ limitations under the License.
 #define BQ24155_FLAG_DISABLE_STAT   0x1000
 #define BQ24155_FLAG_ISEL_HIGH      0x2000
 #define BQ24155_FLAG_LIMIT_WRITING  0x4000  // There is write operation to the limit register pending.
+#define BQ24155_FLAG_PINS_INITD     0x8000  // The pins have been setup.
 
 #define BQ24155_FLAG_MASK_INIT_CMPLT ( \
-  BQ24155_FLAG_INIT_CTRL     | BQ24155_FLAG_INIT_LIMITS | \
-  BQ24155_FLAG_INIT_BATT_REG | BQ24155_FLAG_INIT_FAST_CHRG)
+  BQ24155_FLAG_INIT_LIMITS | BQ24155_FLAG_INIT_BATT_REG)
 
 /* Registers that exist in hardware */
 enum class BQ24155RegID : uint8_t {
@@ -92,40 +94,45 @@ enum class BQ24155USBCurrent : uint8_t {
 class BQ24155Opts {
   public:
     // If valid, will use a gpio operation to pull the SDA pin low to wake device.
+    const BatteryOpts battery;
     const uint16_t  sense_milliohms;
+    const BQ24155USBCurrent  src_limit;
     const uint8_t   stat_pin;
     const uint8_t   isel_pin;
-    const BQ24155USBCurrent  src_limit;
     const uint16_t _flgs_initial;
 
     /** Copy constructor. */
     BQ24155Opts(const BQ24155Opts* o) :
+      battery(&o->battery),
       sense_milliohms(o->sense_milliohms),
+      src_limit(o->src_limit),
       stat_pin(o->stat_pin),
       isel_pin(o->isel_pin),
-      src_limit(o->src_limit),
       _flgs_initial(o->_flgs_initial) {};
 
     /**
     * Constructor.
     *
+    * @param battery_opts
     * @param sense_milliohms
+    * @param src_limit
     * @param stat_pin
     * @param isel_pin
-    * @param src_limit
     * @param Initial flags
     */
     BQ24155Opts(
+      const BatteryOpts* b_opts,
       uint16_t _smo,
+      BQ24155USBCurrent _sl = BQ24155USBCurrent::LIMIT_500,
       uint8_t  _stat_pin = 255,
       uint8_t  _isel_pin = 255,
-      BQ24155USBCurrent _sl = BQ24155USBCurrent::LIMIT_500,
       uint16_t _fi = 0
     ) :
+      battery(b_opts),
       sense_milliohms(_smo),
+      src_limit(_sl),
       stat_pin(_stat_pin),
       isel_pin(_isel_pin),
-      src_limit(_sl),
       _flgs_initial(_fi)
     {};
 
@@ -137,6 +144,7 @@ class BQ24155Opts {
       return (255 != isel_pin);
     };
 };
+
 
 
 /**
@@ -161,7 +169,7 @@ class BQ24155 : public I2CDevice {
     * @return true if the charger is initialized.
     */
     inline bool initComplete() {
-      return (BQ24155_FLAG_MASK_INIT_CMPLT == (_flgs & BQ24155_FLAG_MASK_INIT_CMPLT));
+      return (BQ24155_FLAG_MASK_INIT_CMPLT == (_flgs.raw & BQ24155_FLAG_MASK_INIT_CMPLT));
     };
 
     /**
@@ -174,45 +182,45 @@ class BQ24155 : public I2CDevice {
     /**
     * @return true if the STAT pin is disabled.
     */
-    inline bool disableSTATPin() {
-      return (BQ24155_FLAG_DISABLE_STAT == (_flgs & BQ24155_FLAG_DISABLE_STAT));
-    };
+    inline bool disableSTATPin() {   return _flgs.value(BQ24155_FLAG_DISABLE_STAT);    };
 
-
-    int8_t   reset_charger_params();
+    int8_t   reset_charger_fsm();
     int8_t   punch_safety_timer();
+    int8_t   refresh_status();
 
     bool     charger_enabled();
-    int8_t   charger_enabled(bool en);
+    int8_t   charger_enabled(bool en, bool defer = false);
     bool     hi_z_mode();
-    int8_t   hi_z_mode(bool en);
+    int8_t   hi_z_mode(bool en, bool defer = false);
     bool     charge_current_termination_enabled();
-    int8_t   charge_current_termination_enabled(bool en);
+    int8_t   charge_current_termination_enabled(bool en, bool defer = false);
 
     int16_t  charge_current_limit();
     int16_t  usb_current_limit();
-    int8_t   usb_current_limit(int16_t milliamps);
-    int8_t   usb_current_limit(BQ24155USBCurrent);
+    int8_t   usb_current_limit(int16_t milliamps, bool defer = false);
+    int8_t   usb_current_limit(BQ24155USBCurrent, bool defer = false);
 
     float    batt_weak_voltage();
-    int8_t   batt_weak_voltage(float);
+    int8_t   batt_weak_voltage(float, bool defer = false);
 
     float    batt_reg_voltage();
     int8_t   batt_reg_voltage(float);
 
     BQ24155Fault getFault();
     BQ24155State getChargerState();
+    //void fetchLog(StringBuilder*);
 
 
   private:
     const BQ24155Opts _opts;
-    uint16_t _flgs      = 0;
+    FlagContainer16 _flgs;
     uint8_t  shadows[5] = {0, 0, 0, 0, 0};
+    //StringBuilder _local_log;
 
     /**
     * @return ISEL pin state.
     */
-    inline bool _isel_state() {     return (_flgs & BQ24155_FLAG_ISEL_HIGH);   };
+    inline bool _isel_state() {     return _flgs.value(BQ24155_FLAG_ISEL_HIGH);   };
     void _isel_state(bool x);
 
     /**

@@ -22,6 +22,7 @@ Support for the Texas Instruments li-ion charger.
 */
 
 #include "BQ24155.h"
+#include "ParsingConsole.h"
 
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
@@ -78,38 +79,33 @@ BQ24155RegID BQ24155::_reg_id_from_addr(const uint8_t reg_addr) {
 /*
 * Constructor.
 */
-BQ24155::BQ24155(const BQ24155Opts* o) : I2CDevice(BQ24155_I2CADDR), _opts(o) {
-  _flgs = _opts._flgs_initial;
-  if (_opts.useStatPin()) {
-    // This pin on the BQ24155 is open-drain.
-    pinMode(_opts.stat_pin, GPIOMode::INPUT_PULLUP);
-  }
-  if (_opts.useISELPin()) {
-    // This is the default value. If we do not set the pin high, we risk interrupting
-    //   our own power supply if a battery is not present.
-    pinMode(_opts.isel_pin, GPIOMode::OUTPUT);
-    setPin(_opts.isel_pin, _isel_state());
-  }
+BQ24155::BQ24155(const BQ24155Opts* o) : I2CDevice(BQ24155_I2CADDR), _opts(o), _flgs(_opts._flgs_initial) {
 }
 
 
 /*
 * Destructor.
 */
-BQ24155::~BQ24155() {
-}
+BQ24155::~BQ24155() {}
 
 
 int8_t BQ24155::init() {
+  if (_opts.useISELPin()) {
+    // This is the default value. If we do not set the pin high, we risk interrupting
+    //   our own power supply if a battery is not present.
+    pinMode(_opts.isel_pin, GPIOMode::OUTPUT);
+    setPin(_opts.isel_pin, _isel_state());
+  }
   if (_opts.useStatPin()) {
     // TODO: Choose.
+    pinMode(_opts.stat_pin, GPIOMode::INPUT_PULLUP);
     // int8_t setPinEvent(_opts._stat_pin, uint8_t condition, ManuvrMsg* isr_event);
     // int8_t setPinFxn(_opts._stat_pin, uint8_t condition, FxnPointer fxn);
   }
 
   // Wipe the init indicators to prevent immediate commit, before we start
   //   writing registers.
-  _flgs &= ~BQ24155_FLAG_MASK_INIT_CMPLT;
+  _flgs.raw &= ~BQ24155_FLAG_MASK_INIT_CMPLT;
   return refresh();
 }
 
@@ -119,22 +115,34 @@ int8_t BQ24155::init() {
 * Functions specific to this class....                                         *
 *******************************************************************************/
 
+/**
+* Applies the user-defined battery parameters to the charger.
+* NOTE: If the device is operating without a battery, calling this function
+*   amounts to fiddling with our own regulator. Risk of brown-outs and other
+*   hard to debug problems.
+*
+* @return 0 on success. Nonzero otherwise.
+*/
 int8_t BQ24155::_post_discovery_init() {
   int8_t ret = -1;
-  // Check for clean registers and mark them as init'd.
-  //_set_shadow_value((uint8_t) BQ24155RegID::STATUS,    0x00);
-  //_set_shadow_value((uint8_t) BQ24155RegID::LIMITS,    0x30);
-  //_set_shadow_value((uint8_t) BQ24155RegID::BATT_REGU, 0x0A);
-  //_set_shadow_value((uint8_t) BQ24155RegID::FAST_CHRG, 0x89);
-
-  if (initComplete()) {
-    if (disableSTATPin()) {
-      uint8_t int_val = _get_shadow_value(BQ24155RegID::STATUS);
-      _set_shadow_value(BQ24155RegID::STATUS, (int_val & 0xBF));
-    }
-    usb_current_limit(_opts.src_limit);     // Set the source current limit.
-    ret = 0;
+  if (disableSTATPin()) {
+    uint8_t int_val = _get_shadow_value(BQ24155RegID::STATUS);
+    _set_shadow_value(BQ24155RegID::STATUS, (int_val & 0xBF));
   }
+  // Set the limit register.
+  if (0 == charger_enabled(true, true)) {
+    ret--;
+    if (0 == batt_weak_voltage(_opts.battery.voltage_weak, true)) {
+      ret--;
+      if (0 == batt_reg_voltage(_opts.battery.voltage_max)) {
+        ret--;
+        if (0 == usb_current_limit(_opts.src_limit)) {  // Causes the LIMITS register to be written.
+          ret = 0;
+        }
+      }
+    }
+  }
+  //_local_log.concatf("_post_discovery_init(): %d\n", ret);
   return ret;
 }
 
@@ -146,6 +154,9 @@ int8_t BQ24155::refresh() {
   return _read_registers(BQ24155RegID::STATUS, 5);
 }
 
+int8_t BQ24155::refresh_status() {
+  return _read_registers(BQ24155RegID::STATUS, 1);
+}
 
 /**
 * Returns the charger's current state.
@@ -182,7 +193,7 @@ int8_t BQ24155::punch_safety_timer() {
 *
 * @return 0 on success, non-zero otherwise.
 */
-int8_t BQ24155::reset_charger_params() {
+int8_t BQ24155::reset_charger_fsm() {
   int8_t ret = -1;
   if (initComplete()) {
     uint8_t int_val = _get_shadow_value(BQ24155RegID::FAST_CHRG);
@@ -239,7 +250,7 @@ float BQ24155::batt_weak_voltage() {
 * @param The number of mV at which point the battery is to be considered weak.
 * @return 0 on success, non-zero otherwise.
 */
-int8_t BQ24155::batt_weak_voltage(float desired) {
+int8_t BQ24155::batt_weak_voltage(float desired, bool defer) {
   int8_t ret = -1;
   if ((desired >= BQ24155_VLOW_OFFSET) && (desired <= 3.7f)) {
     uint8_t bw_step = 0;
@@ -249,7 +260,7 @@ int8_t BQ24155::batt_weak_voltage(float desired) {
     if (3.7f <= desired) {  bw_step++;  }
     uint8_t int_val = _get_shadow_value(BQ24155RegID::LIMITS);
     if (0 == _set_shadow_value(BQ24155RegID::LIMITS, (int_val & 0xCF) | (bw_step << 4))) {
-      ret = _write_registers(BQ24155RegID::LIMITS, 1);
+      ret = defer ? 0 : _write_registers(BQ24155RegID::LIMITS, 1);
     }
   }
   return ret;
@@ -287,11 +298,11 @@ int16_t BQ24155::usb_current_limit() {
 * @param The number of mA to draw from the USB host.
 * @return 0 on success, non-zero otherwise.
 */
-int8_t BQ24155::usb_current_limit(int16_t milliamps) {
-  if (milliamps > 800) {  return usb_current_limit(BQ24155USBCurrent::NO_LIMIT);  }
-  if (milliamps > 500) {  return usb_current_limit(BQ24155USBCurrent::LIMIT_800); }
-  if (milliamps > 100) {  return usb_current_limit(BQ24155USBCurrent::LIMIT_100); }
-  return usb_current_limit(BQ24155USBCurrent::LIMIT_100);
+int8_t BQ24155::usb_current_limit(int16_t milliamps, bool defer) {
+  BQ24155USBCurrent climit_enum = BQ24155USBCurrent::LIMIT_100;
+  if (milliamps > 800) {       climit_enum = BQ24155USBCurrent::NO_LIMIT;  }
+  else if (milliamps > 500) {  climit_enum = BQ24155USBCurrent::LIMIT_800; }
+  return usb_current_limit(climit_enum, defer);
 }
 
 /**
@@ -300,7 +311,7 @@ int8_t BQ24155::usb_current_limit(int16_t milliamps) {
 * @param The number of mA to draw from the USB host.
 * @return 0 on success, non-zero otherwise.
 */
-int8_t BQ24155::usb_current_limit(BQ24155USBCurrent milliamps) {
+int8_t BQ24155::usb_current_limit(BQ24155USBCurrent milliamps, bool defer) {
   int8_t ret = -1;
   uint8_t c_step  = 0;
   uint8_t int_val = _get_shadow_value(BQ24155RegID::LIMITS);
@@ -311,7 +322,7 @@ int8_t BQ24155::usb_current_limit(BQ24155USBCurrent milliamps) {
     case BQ24155USBCurrent::LIMIT_100:
     default:  // NOTE: The list obove is exhaustive, but some GCC builds don't know so.
       if (0 == _set_shadow_value(BQ24155RegID::LIMITS, (int_val & 0x3F) | (c_step << 6))) {
-        ret = _write_registers(BQ24155RegID::LIMITS, 1);
+        ret = defer ? 0 : _write_registers(BQ24155RegID::LIMITS, 1);
       }
       break;
   }
@@ -333,14 +344,14 @@ bool BQ24155::charger_enabled() {
 * @param True to enable the charger.
 * @return 0 on success, non-zero otherwise.
 */
-int8_t BQ24155::charger_enabled(bool en) {
-  int8_t ret = -1;
+int8_t BQ24155::charger_enabled(bool en, bool defer) {
+  int8_t ret = 0;
   uint8_t int_val = _get_shadow_value(BQ24155RegID::LIMITS);
   if ((!en) ^ (int_val & 0x04)) {
     ret--;
     int_val = (!en) ? (int_val | 0x04) : (int_val & 0xFB);
     if (0 == _set_shadow_value(BQ24155RegID::LIMITS, int_val)) {
-      ret = _write_registers(BQ24155RegID::LIMITS, 1);
+      ret = defer ? 0 : _write_registers(BQ24155RegID::LIMITS, 1);
     }
   }
   return ret;
@@ -361,13 +372,13 @@ bool BQ24155::hi_z_mode() {
 * @param True to enable the charger.
 * @return 0 on success, non-zero otherwise.
 */
-int8_t BQ24155::hi_z_mode(bool en) {
+int8_t BQ24155::hi_z_mode(bool en, bool defer) {
   int8_t ret = -1;
   uint8_t int_val = _get_shadow_value(BQ24155RegID::LIMITS);
   if (en ^ (int_val & 0x02)) {
     int_val = (en) ? (int_val | 0x02) : (int_val & 0xFC);
     if (0 == _set_shadow_value(BQ24155RegID::LIMITS, int_val)) {
-      ret = _write_registers(BQ24155RegID::LIMITS, 1);
+      ret = defer ? 0 : _write_registers(BQ24155RegID::LIMITS, 1);
     }
   }
   return ret;
@@ -388,13 +399,13 @@ bool BQ24155::charge_current_termination_enabled() {
 * @param True to enable the charge termination phase.
 * @return 0 on success, non-zero otherwise.
 */
-int8_t BQ24155::charge_current_termination_enabled(bool en) {
+int8_t BQ24155::charge_current_termination_enabled(bool en, bool defer) {
   int8_t ret = -1;
   uint8_t int_val = _get_shadow_value(BQ24155RegID::LIMITS);
   if (en ^ (int_val & 0x08)) {
     int_val = (en) ? (int_val | 0x08) : (int_val & 0xF7);
     if (0 == _set_shadow_value(BQ24155RegID::LIMITS, int_val)) {
-      ret = _write_registers(BQ24155RegID::LIMITS, 1);
+      ret = defer ? 0 : _write_registers(BQ24155RegID::LIMITS, 1);
     }
   }
   return ret;
@@ -405,7 +416,7 @@ int8_t BQ24155::charge_current_termination_enabled(bool en) {
 * @param ISEL pin state.
 */
 void BQ24155::_isel_state(bool x) {
-  _flgs = x ? (_flgs | BQ24155_FLAG_ISEL_HIGH) : (_flgs & ~BQ24155_FLAG_ISEL_HIGH);
+  _flgs.set(BQ24155_FLAG_ISEL_HIGH, x);
   if (_opts.useISELPin()) {
     setPin(_opts.isel_pin, x);
   }
@@ -414,22 +425,20 @@ void BQ24155::_isel_state(bool x) {
 
 
 int8_t  BQ24155::_set_shadow_value(BQ24155RegID r, uint8_t val) {
-  int8_t ret = -1;
+  int8_t ret = 0;
   switch (r) {
-    case BQ24155RegID::STATUS:  // This register on has two writable bits.
+    case BQ24155RegID::STATUS:  // This register only has two writable bits.
       shadows[(uint8_t) r] = val & 0xC0;
-      ret = 0;
       break;
     case BQ24155RegID::BATT_REGU:
       shadows[(uint8_t) r] = val & 0xFC;
-      ret = 0;
       break;
     case BQ24155RegID::LIMITS:
     case BQ24155RegID::FAST_CHRG:
       shadows[(uint8_t) r] = val;
-      ret = 0;
       break;
     default:
+      ret = -1;
       break;
   }
   return ret;
@@ -489,8 +498,6 @@ int8_t  BQ24155::_write_registers(BQ24155RegID r, uint8_t len) {
 
 
 
-
-
 /*******************************************************************************
 * ___     _       _                      These members are mandatory overrides
 *  |   / / \ o   | \  _     o  _  _      for implementing I/O callbacks. They
@@ -521,17 +528,17 @@ int8_t BQ24155::io_op_callback(BusOp* _op) {
           uint8_t value = *buf++;
           switch ((BQ24155RegID) reg_idx) {
             case BQ24155RegID::STATUS:
-              _flgs |= BQ24155_FLAG_INIT_CTRL;
+              _flgs.set(BQ24155_FLAG_INIT_CTRL);
               break;
             case BQ24155RegID::LIMITS:
-              _flgs |= BQ24155_FLAG_INIT_LIMITS;
-              _flgs &= ~(BQ24155_FLAG_LIMIT_WRITING);
+              _flgs.set(BQ24155_FLAG_INIT_LIMITS);
+              _flgs.clear(BQ24155_FLAG_LIMIT_WRITING);
               break;
             case BQ24155RegID::BATT_REGU:
-              _flgs |= BQ24155_FLAG_INIT_BATT_REG;
+              _flgs.set(BQ24155_FLAG_INIT_BATT_REG);
               break;
             case BQ24155RegID::FAST_CHRG:
-              _flgs |= BQ24155_FLAG_INIT_FAST_CHRG;
+              _flgs.set(BQ24155_FLAG_INIT_FAST_CHRG);
               break;
             default:  // Illegal. A bad mistake was made somewhere.
               break;
@@ -611,7 +618,22 @@ void BQ24155::printDebug(StringBuilder* output) {
 * Dump the contents of this device to the logger.
 */
 void BQ24155::printRegisters(StringBuilder* output) {
-  output->concat("-- BQ24155 shadow registers\n----------------------------------\n");
+  ParsingConsole::styleHeader1(output, "BQ24155 shadows");
   StringBuilder::printBuffer(output, shadows, sizeof(shadows), "\t");
   output->concat("\n");
 }
+
+
+/**
+* Allow the application to retreive the log.
+*
+* @param l is a reference to the buffer which should receive the log.
+*/
+// void BQ24155::fetchLog(StringBuilder* l) {
+//   if (_local_log.length() > 0) {
+//     if (nullptr != l) {
+//       _local_log.string();
+//       l->concatHandoff(&_local_log);
+//     }
+//   }
+// }

@@ -23,6 +23,7 @@ limitations under the License.
 #define __LTC294X_DRIVER_H__
 
 #include <AbstractPlatform.h>
+#include <FlagContainer.h>
 #include <I2CAdapter.h>
 
 #define LTC294X_I2CADDR        0x64
@@ -38,6 +39,7 @@ limitations under the License.
 #define LTC294X_FLAG_INIT_THRESH_CH 0x0020  // Register init flags.
 #define LTC294X_FLAG_TRACKING_READY 0x0040  // Tracking data is available.
 #define LTC294X_FLAG_BATTERY_GT55AM 0x0080  // The battery is bigger than 5.5AH.
+#define LTC294X_FLAG_PINS_INITD     0x0100  // The pins have been setup.
 
 #define LTC294X_FLAG_MASK_INIT_CMPLT ( \
   LTC294X_FLAG_INIT_CTRL     | LTC294X_FLAG_INIT_THRESH_V | \
@@ -130,9 +132,9 @@ class LTC294x : public I2CDevice {
     LTC294x(const LTC294xOpts*, uint16_t batt_capacity);
     ~LTC294x();
 
-    /* Overrides from SensorWrapper */
     int8_t init();
     int8_t poll();
+    int8_t readSensor();
 
     /* Overrides from I2CDevice... */
     int8_t io_op_callahead(BusOp*);
@@ -158,18 +160,18 @@ class LTC294x : public I2CDevice {
     /**
     * @return true if the sensor has valid power-tracking data.
     */
-    inline bool trackingReady() {   return (_flags & LTC294X_FLAG_TRACKING_READY);   };
+    inline bool trackingReady() {   return _flags.value(LTC294X_FLAG_TRACKING_READY);   };
 
     /**
     * @return true if the sensor is initialized.
     */
     inline bool initComplete() {
-      return (LTC294X_FLAG_MASK_INIT_CMPLT == (_flags & LTC294X_FLAG_MASK_INIT_CMPLT));
+      return (LTC294X_FLAG_MASK_INIT_CMPLT == (_flags.raw & LTC294X_FLAG_MASK_INIT_CMPLT));
     };
-
 
     inline bool asleep() {    return (1 == ((uint8_t) _get_shadow_value(LTC294xRegID::CONTROL) & 0x01));  };
     int8_t  sleep(bool);
+    void fetchLog(StringBuilder*);
 
 
     static LTC294x* INSTANCE;
@@ -178,9 +180,9 @@ class LTC294x : public I2CDevice {
   private:
     const LTC294xOpts _opts;
     const uint16_t _batt_volume; // Our idea about how many mA the battery should hold.
-    uint16_t _flags        = 0;
     uint16_t _thrsh_l_chrg = 0;  // cached threshold values
     uint16_t _thrsh_h_chrg = 0;  // cached threshold values
+    FlagContainer16 _flags;
     uint8_t  _thrsh_l_temp = 0;  // cached threshold values
     uint8_t  _thrsh_h_temp = 0;  // cached threshold values
     uint8_t  _thrsh_l_volt = 0;  // cached threshold values
@@ -207,6 +209,7 @@ class LTC294x : public I2CDevice {
     float    _volt_max_dt;        // Maximum observed dV/dt (peak drain).
     float    _temp_min;           // Minimum observed temperature.
     float    _temp_max;           // Maximum observed temperature.
+    StringBuilder _local_log;
 
 
     int8_t _set_charge_register(uint16_t x);
@@ -243,7 +246,7 @@ class LTC294x : public I2CDevice {
     * @param Is power-tracking data valid?
     */
     inline void _tracking_ready(bool x) {
-      _flags = x ? (_flags | LTC294X_FLAG_TRACKING_READY) : (_flags & ~LTC294X_FLAG_TRACKING_READY);
+      _flags.set(LTC294X_FLAG_TRACKING_READY, x);
     };
 
     /**

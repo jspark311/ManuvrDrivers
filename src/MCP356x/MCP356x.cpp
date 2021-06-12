@@ -113,6 +113,8 @@ int8_t MCP356x::init(SPIAdapter* b) {
   int8_t ret = -1;
   if (nullptr != b) {
     _BUS = b;
+  }
+  if (nullptr != _BUS) {
     _clear_registers();
     _busop_irq_read.setAdapter(_BUS);
     _busop_irq_read.shouldReap(false);

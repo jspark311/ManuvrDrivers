@@ -225,7 +225,8 @@ class MCP356x : public BusOpCallback {
 
     int8_t  reset();
     int8_t  init(SPIAdapter*);
-    inline  int8_t  init() {     return init(_BUS);    }
+    inline  int8_t  init() {     return init(_BUS);    };
+    inline  void setAdapter(SPIAdapter* b) {  _BUS = b;     };
     int8_t  read();
     int8_t  refresh();
     double  valueAsVoltage(MCP356xChannel);

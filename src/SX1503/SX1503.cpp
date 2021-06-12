@@ -45,7 +45,7 @@ static const uint8_t SX1503_REG_ADDR[31] = {
 
 
 
-/*
+/**
 * This is an ISR.
 */
 void sx1503_isr() {
@@ -100,20 +100,20 @@ const SX1503RegId _reg_id_from_addr(uint8_t addr) {
 * Constructors/destructors, class initialization functions and so-forth...
 *******************************************************************************/
 
-/*
+/**
 * Constructor.
 */
 SX1503::SX1503(const uint8_t irq_pin, const uint8_t reset_pin) :
   I2CDevice(SX1503_I2C_ADDR), _IRQ_PIN(irq_pin), _RESET_PIN(reset_pin) {}
 
-/*
+/**
 * Constructor.
 */
 SX1503::SX1503(const uint8_t* buf, const unsigned int len) : SX1503(*(buf + 1), *(buf + 2)) {
   unserialize(buf, len);
 }
 
-/*
+/**
 * Destructor.
 */
 SX1503::~SX1503() {
@@ -126,20 +126,31 @@ SX1503::~SX1503() {
 }
 
 
+/**
+* In-class accessor to check if the IRQ pin has asserted since last poll()'ing.
+*
+* @return true if the data registers need to be read.
+*/
 bool SX1503::isrFired() {
   return (255 != _IRQ_PIN) ? sx1503_isr_fired : true;
 }
 
 
-/*
+/**
+* Initializes the hardware.
+*
+* This driver's proper operation requires that IRQ autoclears when the data
+*   registers are read, and that all input pins generate an IRQ on state change
+*   (rising AND falling edges). The driver will rationalize the pin state
+*   against the application's notification preferences for each input pin.
+*
+* @param b Is the bus that is hosting the hardware.
 * @return 0 on success, non-zero otherwise.
 */
 int8_t SX1503::init(I2CAdapter* b) {
   int8_t ret = -1;
   _sx_clear_flag(SX1503_FLAG_INITIALIZED);
-  if (!_sx_flag(SX1503_FLAG_PINS_CONFD)) {
-    _ll_pin_init();
-  }
+  _ll_pin_init();
   if (nullptr != b) {
     _bus = b;
   }
@@ -167,12 +178,24 @@ int8_t SX1503::init(I2CAdapter* b) {
 }
 
 
+/**
+* Resets the hardware by the most expedient means available.
+*
+* This driver's proper operation requires that IRQ autoclears when the data
+*   registers are read, and that all input pins generate an IRQ on state change
+*   (rising AND falling edges). The driver will rationalize the pin state
+*   against the application's notification preferences for each input pin.
+*
+* @param b Is the bus that is hosting the hardware.
+* @return 0 on success, non-zero otherwise.
+*/
 int8_t SX1503::reset() {
   int8_t ret = -1;
   _a_dat = 0;
   _b_dat = 0;
   _sx_clear_flag(SX1503_FLAG_INITIALIZED);
   sx1503_isr_fired = false;
+  // Rewrite the shadows with the default values.
   uint8_t vals[31] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00,
     0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -186,7 +209,6 @@ int8_t SX1503::reset() {
     setPin(_RESET_PIN, 0);
     sleep_us(1);   // Datasheet says 300ns.
     setPin(_RESET_PIN, 1);
-    sleep_us(10);
     if (255 != _IRQ_PIN) {
       // Wait on the IRQ pin to go high.
       uint32_t millis_abort = millis() + 15;
@@ -196,12 +218,18 @@ int8_t SX1503::reset() {
       }
     }
     else {
-      sleep_ms(15);   // Datasheet says chip comes back in 7ms.
+      // Without an IRQ pin, we have to take the datasheet on faith when it says
+      //   the chip comes back in 7ms.
+      sleep_ms(10);
+      ret = 0;
     }
-    ret = _write_register(SX1503RegId::ADVANCED, 0x04);
+    if (0 == ret) {
+      // If reset succeeded, write the only value needed for driver operation.
+      ret = _write_register(SX1503RegId::ADVANCED, 0x04);
+    }
   }
   else {
-    // Steamroll the registers with the default values.
+    // Without a RESET pin, steamroll the hardware with the default values.
     ret = _write_registers(SX1503RegId::DATA_B, 0x12);
     if (0 == ret) {  ret = _write_registers(SX1503RegId::PLD_MODE_B, 0x0C);  }
     if (0 == ret) {  ret = _write_register(SX1503RegId::ADVANCED, 0x04);     }
@@ -210,13 +238,13 @@ int8_t SX1503::reset() {
 }
 
 
-/*
+/**
 * Poll the class for updates.
 * If the application has setup a callback for a given pin, its change will not
 *   be counted in the return value. Thus, if callbacks are setup for every pin
 *   that is configured for input, this function will never return a value (>0).
 *
-* Returns...
+* @return
 *   -3 if not initialized.
 *   -1 if the hardware needed to be read, but doing so failed.
 *   0  if nothing needs doing.
@@ -230,7 +258,7 @@ int8_t SX1503::poll() {
       // Without an IRQ pin, we hammer this every polling cycle.
       sx1503_isr_fired = true;
     }
-    if (sx1503_isr_fired) {
+    if (sx1503_isr_fired && !_sx_flag(SX1503_FLAG_READ_IN_FLIGHT)) {
       ret--;
       _sx_set_flag(SX1503_FLAG_READ_IN_FLIGHT);
       if (0 == _read_registers(SX1503RegId::DATA_B, 2)) {
@@ -248,6 +276,12 @@ int8_t SX1503::poll() {
 }
 
 
+/**
+* Refreshes all register shadows from the hardware. The address space is
+*   discontinuous, so this must be done in chunks.
+*
+* @return 0 if all bus reads were dispatched, nonzero otherwise.
+*/
 int8_t SX1503::refresh() {
   int8_t ret = _read_registers(SX1503RegId::DATA_B, 0x12);
   if (0 == ret) {  ret = _read_registers(SX1503RegId::PLD_MODE_B, 0x0C);  }
@@ -267,8 +301,11 @@ int8_t SX1503::attachInterrupt(uint8_t pin, PinCallback cb, IRQCondition conditi
 }
 
 
-/*
-* Returns the number of interrupts removed.
+/**
+* Stops the driver from invoking the pin callback on pin change.
+*
+* @param pin The pin whose callback is to be removed.
+* @return the number of interrupts removed.
 */
 int8_t SX1503::detachInterrupt(uint8_t pin) {
   pin &= 0x0F;
@@ -277,9 +314,11 @@ int8_t SX1503::detachInterrupt(uint8_t pin) {
   return ret;
 }
 
-
-/*
-* Returns the number of interrupts removed.
+/**
+* Stops the driver from invoking the pin callback on pin change.
+*
+* @param cb The callback for the pin that is to be removed.
+* @return the number of interrupts removed.
 */
 int8_t SX1503::detachInterrupt(PinCallback cb) {
   int8_t ret = 0;
@@ -308,6 +347,9 @@ int8_t SX1503::digitalWrite(uint8_t pin, bool value) {
     val0 = value ? (val0 | f) : (val0 & ~f);
     if (val1 != val0) {
       ret = _write_register(reg0, val0);
+      if (0 == ret) {
+        _sx_set_flag(SX1503_FLAG_WRITE_IN_FLIGHT);
+      }
     }
   }
   return ret;
@@ -338,6 +380,22 @@ uint8_t SX1503::digitalRead(uint8_t pin) {
 */
 uint16_t SX1503::getPinValues() {
   return (_a_dat | ((uint16_t) _b_dat << 8));
+}
+
+
+/**
+*
+* @return The current verified state of the GPIO pins.
+*/
+int8_t SX1503::setPinValues(uint16_t value) {
+  uint8_t ret = -1;
+  _set_shadow_value(SX1503RegId::DATA_B, (uint8_t) (value >> 8));
+  _set_shadow_value(SX1503RegId::DATA_A, (uint8_t) (value & 0x00FF));
+  if (0 == _write_registers(SX1503RegId::DATA_B, 2)) {
+    _sx_set_flag(SX1503_FLAG_WRITE_IN_FLIGHT);
+    ret = 0;
+  }
+  return ret;
 }
 
 
@@ -421,7 +479,11 @@ int8_t SX1503::gpioMode(uint8_t pin, GPIOMode mode) {
 /*******************************************************************************
 * Hidden machinery
 *******************************************************************************/
-
+/**
+* Internal function that safely wraps the callback invocation for pin states.
+*
+* @return 0 on success, -1 if there is no callback defined.
+*/
 int8_t SX1503::_invoke_pin_callback(uint8_t pin, bool value) {
   int8_t ret = -1;
   pin &= 0x0F;
@@ -433,24 +495,36 @@ int8_t SX1503::_invoke_pin_callback(uint8_t pin, bool value) {
 }
 
 
-/*
+/**
 * Setup the low-level pin details.
 * Both pins are optional, so this can't fail.
+*
+* @return 0 on success, nonzero otherwise.
 */
 int8_t SX1503::_ll_pin_init() {
-  if (255 != _IRQ_PIN) {
-    pinMode(_IRQ_PIN, GPIOMode::INPUT_PULLUP);
-    sx1503_isr_fired = !readPin(_IRQ_PIN);
-    setPinFxn(_IRQ_PIN, IRQCondition::FALLING, sx1503_isr);
+  if (_sx_flag(SX1503_FLAG_PINS_CONFD)) {
+    if (255 != _IRQ_PIN) {
+      pinMode(_IRQ_PIN, GPIOMode::INPUT_PULLUP);
+      sx1503_isr_fired = !readPin(_IRQ_PIN);
+      setPinFxn(_IRQ_PIN, IRQCondition::FALLING, sx1503_isr);
+    }
+    if (255 != _RESET_PIN) {
+      pinMode(_RESET_PIN, GPIOMode::OUTPUT);
+    }
+    _sx_set_flag(SX1503_FLAG_PINS_CONFD);
   }
-  if (255 != _RESET_PIN) {
-    pinMode(_RESET_PIN, GPIOMode::OUTPUT);
-  }
-  _sx_set_flag(SX1503_FLAG_PINS_CONFD);
   return 0;
 }
 
 
+/**
+* Updates the shadow value and dispatches a write operation for the given
+*   register and value.
+*
+* @param reg is the register to write.
+* @param val is the new value.
+* @return 0 on success, nonzero otherwise.
+*/
 int8_t SX1503::_write_register(SX1503RegId reg, uint8_t val) {
   int8_t ret = -2;
   if (nullptr != _bus) {
@@ -462,9 +536,13 @@ int8_t SX1503::_write_register(SX1503RegId reg, uint8_t val) {
 }
 
 
-/*
-* This is basically only used to sync the class state back into the hardware.
-* Does not update the shadow.
+/**
+* Writes values in the register shadows to the hardware.
+* Does not update the shadows.
+*
+* @param reg is the register to write.
+* @param val is the number of registers to write.
+* @return 0 on success, nonzero otherwise.
 */
 int8_t SX1503::_write_registers(SX1503RegId reg, uint8_t len) {
   int8_t ret = -1;
@@ -527,7 +605,7 @@ int8_t SX1503::_read_registers(SX1503RegId reg, uint8_t len) {
 uint8_t SX1503::serialize(uint8_t* buf, unsigned int len) {
   uint8_t offset = 0;
   if (len >= SX1503_SERIALIZE_SIZE) {
-    if (_sx_flag(SX1503_FLAG_INITIALIZED)) {
+    if (initialized()) {
       uint16_t f = _flags & SX1503_FLAG_SERIAL_MASK;
       *(buf + offset++) = SX1503_SERIALIZE_VERSION;
       *(buf + offset++) = _IRQ_PIN;
@@ -561,7 +639,7 @@ int8_t SX1503::unserialize(const uint8_t* buf, const unsigned int len) {
       default:  // Unhandled serializer version.
         return -2;
     }
-    if (_sx_flag(SX1503_FLAG_INITIALIZED)) {
+    if (initialized()) {
       // If the device has already been initialized, we impart the new conf.
       int8_t ret = _write_registers(SX1503RegId::DATA_B, 0x12);
       if (0 == ret) {  ret = _write_registers(SX1503RegId::PLD_MODE_B, 0x0C);  }
@@ -595,9 +673,11 @@ int8_t SX1503::io_op_callback(BusOp* _op) {
   int8_t    ret = BUSOP_CALLBACK_NOMINAL;
 
   if (!op->hasFault()) {
-    uint8_t*    buf   = op->buffer();
-    uint        len   = op->bufferLen();
+    uint8_t* buf = op->buffer();
+    uint     len = op->bufferLen();
     if (!_sx_flag(SX1503_FLAG_DEVICE_PRESENT)) {
+      // With no ID register to check, we construe no failure on bus operation
+      //   as the condition "device found".
       _sx_set_flag(SX1503_FLAG_DEVICE_PRESENT);
     }
     switch (op->get_opcode()) {
@@ -609,10 +689,11 @@ int8_t SX1503::io_op_callback(BusOp* _op) {
             case SX1503RegId::DATA_B:
             case SX1503RegId::DATA_A:
               {
-                uint8_t dir_val = _get_shadow_value((reg == SX1503RegId::DATA_B) ? SX1503RegId::DIR_B : SX1503RegId::DIR_A);
                 uint8_t* dat_val = (reg == SX1503RegId::DATA_B) ? &_b_dat : &_a_dat;
+                //uint8_t  dir_val = _get_shadow_value((reg == SX1503RegId::DATA_B) ? SX1503RegId::DIR_B : SX1503RegId::DIR_A);
                 //*dat_val = (value & dir_val) | (value | ~dir_val);
                 *dat_val = value;
+                _sx_clear_flag(SX1503_FLAG_WRITE_IN_FLIGHT);
               }
               break;
 
@@ -646,9 +727,7 @@ int8_t SX1503::io_op_callback(BusOp* _op) {
             case SX1503RegId::PLD_TABLE_4A:
               break;
             case SX1503RegId::ADVANCED:
-              if (0x04 == (value & 0x04)) {
-                _sx_set_flag(SX1503_FLAG_INITIALIZED);
-              }
+              _sx_set_flag(SX1503_FLAG_INITIALIZED, (0x04 == (value & 0x04)));
               break;
             default:  // Anything else is invalid.
               break;
@@ -678,6 +757,7 @@ int8_t SX1503::io_op_callback(BusOp* _op) {
                   //*dat_val = (value & ~dir_val) | (value | dir_val);
                   *dat_val = value;
                 }
+                _sx_clear_flag(SX1503_FLAG_READ_IN_FLIGHT);
               }
               sx1503_isr_fired = (255 != _IRQ_PIN) ? !readPin(_IRQ_PIN) : true;
               break;
@@ -713,7 +793,8 @@ int8_t SX1503::io_op_callback(BusOp* _op) {
               break;
             case SX1503RegId::ADVANCED:
               if (0x04 != (value & 0x04)) {
-                _write_register(SX1503RegId::ADVANCED, value & 0x04);
+                // Driver needs IRQ autoclear to function correctly.
+                _write_register(SX1503RegId::ADVANCED, value | 0x04);
               }
               break;
             default:  // Anything else is invalid.

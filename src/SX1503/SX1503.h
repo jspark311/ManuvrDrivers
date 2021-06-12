@@ -106,6 +106,7 @@ class SX1503 : public I2CDevice {
     int8_t  digitalWrite(uint8_t pin, bool value);
     uint8_t digitalRead(uint8_t pin);
     uint16_t getPinValues();
+    int8_t   setPinValues(uint16_t);
 
     // Interrupt and callback management...
     int8_t  attachInterrupt(uint8_t pin, PinCallback, IRQCondition condition);
@@ -139,8 +140,8 @@ class SX1503 : public I2CDevice {
     const uint8_t  _IRQ_PIN;
     const uint8_t  _RESET_PIN;
     uint16_t       _flags = 0;
-    uint8_t        _a_dat = 0;
-    uint8_t        _b_dat = 0;
+    uint8_t        _a_dat = 0;  // Confirmed pin states.
+    uint8_t        _b_dat = 0;  // Confirmed pin states.
     PinCallback    callbacks[16] = {nullptr, };
     uint8_t        registers[31] = {0, };
 

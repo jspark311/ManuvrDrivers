@@ -37,6 +37,9 @@
 #define TSL2561_FLAG_ENABLED          0x0008  // Device is measuring.
 #define TSL2561_FLAG_AUTOGAIN         0x0010  // Class will adjust hardware gain automatically.
 #define TSL2561_FLAG_GAIN_16X         0x0020  // Is the low-light setting on?
+#define TSL2561_FLAG_READ_IN_FLIGHT   0x0100  // Presently waiting on read.
+#define TSL2561_FLAG_DATA_FRESH       0x0200  // Data is fresh.
+
 
 #define TSL2561_FLAG_INTEGRATION_MASK 0x00C0  // Integration time mask.
 

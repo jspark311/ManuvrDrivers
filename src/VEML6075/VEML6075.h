@@ -52,6 +52,8 @@
 #define VEML6075_FLAG_AF_ENABLED       0x0008  //
 #define VEML6075_FLAG_TRIGGER_ENABLED  0x0010  //
 #define VEML6075_FLAG_DYNAMIC_HIGH     0x0020  //
+#define VEML6075_FLAG_READ_IN_FLIGHT   0x0040  // Presently waiting on read.
+#define VEML6075_FLAG_DATA_FRESH       0x0080  // Data is fresh.
 
 
 /* VEML6075 error code returns */

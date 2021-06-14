@@ -176,8 +176,10 @@ int8_t TSL2561::poll() {
     ret = 0;
     if (255 != _IRQ_PIN) {
       if (tsl_irq_fired) {
-        ret = (0 <= _read_data_registers()) ? 1 : -1;
-        tsl_irq_fired = !readPin(_IRQ_PIN);
+        if (!_tsl_flag(TSL2561_FLAG_READ_IN_FLIGHT)) {
+          ret = (0 <= _read_data_registers()) ? 0 : -1;
+          tsl_irq_fired = !readPin(_IRQ_PIN);
+        }
       }
     }
     else {
@@ -188,13 +190,19 @@ int8_t TSL2561::poll() {
         case TSLIntegrationTime::MS_101:   r_interval -= 301;  // No break
         case TSLIntegrationTime::MS_402:
           if (wrap_accounted_delta(now, _last_read) >= r_interval) {
-            ret = (0 <= _read_data_registers()) ? 1 : -1;
+            if (!_tsl_flag(TSL2561_FLAG_READ_IN_FLIGHT)) {
+              ret = (0 <= _read_data_registers()) ? 0 : -1;
+            }
           }
           break;
         case TSLIntegrationTime::MANUAL:
           ret = -2;
           break;
       }
+    }
+    if (_tsl_flag(TSL2561_FLAG_DATA_FRESH)) {
+      _tsl_clear_flag(TSL2561_FLAG_DATA_FRESH);
+      ret = 1;
     }
   }
   return ret;
@@ -316,7 +324,7 @@ int8_t TSL2561::getLuminosity() {
             /* Increase the gain and try again */
             highGain(true);
             /* Drop the previous conversion results */
-            _read_data_registers();
+            //_read_data_registers(); // TODO: Needs a state machine to work properly.
             /* Set a flag to indicate we've adjusted the gain */
             _agcCheck = true;
           }
@@ -324,7 +332,7 @@ int8_t TSL2561::getLuminosity() {
             /* Drop gain to 1x and try again */
             highGain(false);
             /* Drop the previous conversion results */
-            _read_data_registers();
+            //_read_data_registers();   // TODO: Needs a state machine to work properly.
             /* Set a flag to indicate we've adjusted the gain */
             _agcCheck = true;
           }
@@ -533,6 +541,7 @@ int8_t TSL2561::_read_data_registers() {
       op->setBuffer((uint8_t*) _data_shadow, 4);
       if (0 == _bus->queue_io_job(op)) {
         ret = 0;
+        _tsl_set_flag(TSL2561_FLAG_READ_IN_FLIGHT);
       }
     }
   }
@@ -633,6 +642,8 @@ int8_t TSL2561::io_op_callback(BusOp* _op) {
           _infrared = (_data_shadow[3] << 8) | _data_shadow[2];   // channel 1 (infrared)
           _last_read = millis();
           _calculate_lux();
+          _tsl_clear_flag(TSL2561_FLAG_READ_IN_FLIGHT);
+          _tsl_set_flag(TSL2561_FLAG_DATA_FRESH);
           break;
         case TSL2561Reg::CHAN0_HIGH:         // Light data channel 0, high byte
         case TSL2561Reg::CHAN1_LOW:          // Light data channel 1, low byte

@@ -58,6 +58,7 @@ courtesy of Brian McNoldy at http://andrew.rsmas.miami.edu.
 */
 
 #include <AbstractPlatform.h>
+#include <FlagContainer.h>
 #include <I2CAdapter.h>
 
 #ifndef TG_BME_280_H
@@ -72,7 +73,8 @@ courtesy of Brian McNoldy at http://andrew.rsmas.miami.edu.
 #define BME280_FLAG_ENABLED          0x0008  // Device is measuring.
 #define BME280_FLAG_USE_SPI          0x0010  // Enable the SPI interface.
 #define BME280_FLAG_CAL_DATA_READ    0x0020  // Calibration data read.
-
+#define BME280_FLAG_READ_IN_FLIGHT   0x0040  // Presently waiting on read.
+#define BME280_FLAG_DATA_FRESH       0x0080  // Data is fresh.
 
 enum class TempUnit : uint8_t {
   Celsius,
@@ -162,11 +164,11 @@ struct BME280Settings {
 /// the Bme280 environmental sensor.
 class BME280 {
   public:
-    inline bool  devFound() {       return _baro_flag(BME280_FLAG_DEVICE_PRESENT);  };
-    inline bool  enabled() {        return _baro_flag(BME280_FLAG_ENABLED);         };
-    inline bool  initialized() {    return _baro_flag(BME280_FLAG_INITIALIZED);     };
-    inline bool  hasHumidity() {    return _baro_flag(BME280_FLAG_HAS_HUMIDITY);    };
-    inline bool  calibrated() {     return _baro_flag(BME280_FLAG_CAL_DATA_READ);   };
+    inline bool  devFound() {       return _flags.value(BME280_FLAG_DEVICE_PRESENT);  };
+    inline bool  enabled() {        return _flags.value(BME280_FLAG_ENABLED);         };
+    inline bool  initialized() {    return _flags.value(BME280_FLAG_INITIALIZED);     };
+    inline bool  hasHumidity() {    return _flags.value(BME280_FLAG_HAS_HUMIDITY);    };
+    inline bool  calibrated() {     return _flags.value(BME280_FLAG_CAL_DATA_READ);   };
 
 
     int8_t poll();
@@ -214,10 +216,10 @@ class BME280 {
     float      _dew_point   = 0.0;
     float      _esl_pres    = 0.0;
     uint32_t   _last_read   = 0;
-    uint16_t   _flags       = 0;
     LengthUnit _unit_length = LengthUnit::Meters;
     TempUnit   _unit_temp   = TempUnit::Celsius;
     PresUnit   _unit_pres   = PresUnit::Pa;
+    FlagContainer16 _flags;
 
     /* This constructor is only a delegate to an extending class. */
     BME280(const BME280Settings& settings);
@@ -228,17 +230,7 @@ class BME280 {
 
     bool _priv_init();  // Write configuration to BME280, return true if successful.
 
-    /* Flag manipulation inlines */
-    inline uint16_t _baro_flags() {                return _flags;           };
-    inline bool _baro_flag(uint16_t _flag) {       return (_flags & _flag); };
-    inline void _baro_clear_flag(uint16_t _flag) { _flags &= ~_flag;        };
-    inline void _baro_set_flag(uint16_t _flag) {   _flags |= _flag;         };
-    inline void _baro_set_flag(uint16_t _flag, bool nu) {
-      if (nu) _flags |= _flag;
-      else    _flags &= ~_flag;
-    };
-
-    inline bool _useSPI() {     return _baro_flag(BME280_FLAG_USE_SPI);     };
+    inline bool _useSPI() {     return _flags.value(BME280_FLAG_USE_SPI);     };
 
 
     // Read the data from the BME280 in the specified unit.
@@ -275,6 +267,8 @@ class BME280I2C: public BME280, public I2CDevice {
 
 
   private:
+    I2CBusOp      _frame_read;
+
     // Write values to BME280 registers.
     virtual int8_t _write_register(uint8_t addr, uint8_t* data);
     // Read values from BME280 registers.

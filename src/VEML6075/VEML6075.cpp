@@ -171,8 +171,14 @@ int8_t VEML6075::poll() {
   int8_t ret = -3;
   if (initialized() && enabled()) {
     ret = 0;
-    if ((_last_read + _integrationTime) <= millis()) {
-      ret = (VEML6075Err::SUCCESS == _read_data()) ? 1 : -1;
+    if (wrap_accounted_delta(millis(), _last_read) >= _integrationTime) {
+      if (!_veml_flag(VEML6075_FLAG_READ_IN_FLIGHT)) {
+        ret = (VEML6075Err::SUCCESS == _read_data()) ? 0 : -1;
+      }
+    }
+    if (_veml_flag(VEML6075_FLAG_DATA_FRESH)) {
+      _veml_clear_flag(VEML6075_FLAG_DATA_FRESH);
+      ret = 1;
     }
   }
   return ret;
@@ -191,7 +197,6 @@ int8_t VEML6075::_post_discovery_init() {
   }
   return ret;
 }
-
 
 
 VEML6075Err VEML6075::setIntegrationTime(VEML6075IntTime it) {
@@ -297,6 +302,7 @@ void VEML6075::printDebug(StringBuilder* output) {
   output->concatf("\tAF enabled:     %c\n", (_veml_flag(VEML6075_FLAG_AF_ENABLED) ? 'y' : 'n'));
   output->concatf("\tTrig enabled:   %c\n", (_veml_flag(VEML6075_FLAG_TRIGGER_ENABLED) ? 'y' : 'n'));
   output->concatf("\tDynamic mode:   %s\n", (_veml_flag(VEML6075_FLAG_DYNAMIC_HIGH) ? "HIGH" : "NORM"));
+  output->concatf("\tIntgration time: %u\n", _integrationTime);
   output->concatf("\tCONF:           0x%04x\n", shadows[0]);
   output->concatf("\t_lastCOMP1:     0x%04x\n", _lastCOMP1);
   output->concatf("\t_lastCOMP2:     0x%04x\n", _lastCOMP2);
@@ -335,6 +341,7 @@ VEML6075Err VEML6075::_read_data() {
       if (0 == _read_registers(VEML6075RegId::UVB_DATA, 2)) {
         if (0 == _read_registers(VEML6075RegId::UVCOMP1_DATA, 2)) {
           if (0 == _read_registers(VEML6075RegId::UVCOMP2_DATA, 2)) {
+            _veml_set_flag(VEML6075_FLAG_READ_IN_FLIGHT);
             err = VEML6075Err::SUCCESS;
           }
         }
@@ -466,15 +473,12 @@ int8_t VEML6075::io_op_callback(BusOp* _op) {
           case VEML6075RegId::UV_CONF:
             _process_new_config(value);
             break;
-          case VEML6075RegId::UVA_DATA:
-            break;
-          case VEML6075RegId::UVB_DATA:
-            break;
+          case VEML6075RegId::UVA_DATA:  // The first three data registers are
+          case VEML6075RegId::UVB_DATA:  //   observed on the fouth's callback.
           case VEML6075RegId::UVCOMP1_DATA:
             break;
           case VEML6075RegId::UVCOMP2_DATA:
             {
-              _last_read = millis();
               uint8_t* uva_ptr = ((uint8_t*) &shadows[1]);
               uint16_t new_uva = ((uint16_t) *(uva_ptr + 0)) | ((uint16_t) *(uva_ptr + 1) << 8);
               uint16_t new_uvb = ((uint16_t) *(uva_ptr + 2)) | ((uint16_t) *(uva_ptr + 3) << 8);
@@ -482,6 +486,9 @@ int8_t VEML6075::io_op_callback(BusOp* _op) {
               _lastCOMP2 = ((uint16_t) *(uva_ptr + 6)) | ((uint16_t) *(uva_ptr + 7) << 8);
               _lastUVA = ((float) new_uva) - ((UVA_A_COEF * UV_ALPHA * _lastCOMP1) / UV_GAMMA) - ((UVA_B_COEF * UV_ALPHA * _lastCOMP2) / UV_DELTA);
               _lastUVB = ((float) new_uvb) - ((UVA_C_COEF * UV_BETA  * _lastCOMP1) / UV_GAMMA) - ((UVA_D_COEF * UV_BETA  * _lastCOMP2) / UV_DELTA);
+              _last_read = millis();
+              _veml_clear_flag(VEML6075_FLAG_READ_IN_FLIGHT);
+              _veml_set_flag(VEML6075_FLAG_DATA_FRESH);
             }
             break;
           case VEML6075RegId::ID:

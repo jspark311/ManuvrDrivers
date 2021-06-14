@@ -69,7 +69,7 @@ BME280::BME280(const BME280Settings& settings) : m_settings(settings) {}
 */
 bool BME280::_priv_init() {
   if (!devFound()) {
-    _baro_clear_flag(BME280_FLAG_HAS_HUMIDITY);
+    _flags.clear(BME280_FLAG_HAS_HUMIDITY);
     return (0 == _read_registers(ID_ADDR, &_shadow_id, 1));
   }
   else {
@@ -91,11 +91,15 @@ int8_t BME280::poll() {
   if (initialized() && enabled()) {
     uint32_t now = millis();
     uint32_t r_interval = 100;
-    if ((now - _last_read) >= r_interval) {
-      ret = _refresh_data() ? 1 : -1;
+    ret = 0;
+    if (wrap_accounted_delta(now, _last_read) >= r_interval) {
+      if (!_flags.value(BME280_FLAG_READ_IN_FLIGHT)) {
+        ret = _refresh_data() ? 0 : -1;
+      }
     }
-    else {
-      ret = 0;
+    if (_flags.value(BME280_FLAG_DATA_FRESH)) {
+      _flags.clear(BME280_FLAG_DATA_FRESH);
+      ret = 1;
     }
   }
   return ret;
@@ -243,13 +247,16 @@ float BME280::CalculatePressure(int32_t raw, int32_t t_fine) {
 
 
 bool BME280::_refresh_data() {
+  bool ret = false;
   // For forced mode we need to write the mode to BME280 register before reading
   // TODO: This was never converted to async. Single-shot mode won't work as expected.
-  bool ret = (m_settings.mode == BME280Mode::Forced) ? WriteSettings() : true;
-
+  ret = (m_settings.mode == BME280Mode::Forced) ? WriteSettings() : true;
   // Registers are in order. So we can start at the pressure register and read 8 bytes.
   if (ret) {
     ret = (0 == _read_registers(PRESS_ADDR, _shadow_sdat, SENSOR_DATA_LENGTH));
+    if (ret) {
+      _flags.set(BME280_FLAG_READ_IN_FLIGHT);
+    }
   }
   return ret;
 }
@@ -301,7 +308,9 @@ float BME280::DewPoint(float temp, float hum) {
 /*******************************************************************************
 * Members and logic specific to the i2c package
 *******************************************************************************/
-BME280I2C::BME280I2C(const BME280Settings& settings) : BME280(settings), I2CDevice(settings.BUS_BYTE) {}
+BME280I2C::BME280I2C(const BME280Settings& settings) :
+  BME280(settings), I2CDevice(settings.BUS_BYTE),
+  _frame_read(BusOpcode::RX, settings.BUS_BYTE, PRESS_ADDR, _shadow_sdat, 8) {}
 
 /**
 *
@@ -329,13 +338,22 @@ int8_t BME280I2C::_write_register(uint8_t addr, uint8_t* data) {
 int8_t BME280I2C::_read_registers(uint8_t addr, uint8_t* data, uint8_t length) {
   int8_t ret = -2;
   if (nullptr != _bus) {
-    I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
-    if (nullptr != op) {
-      op->dev_addr = _dev_addr;
-      op->sub_addr = addr;
-      op->setBuffer(data, length);
-      if (0 == queue_io_job(op)) {
-        ret = 0;
+    if (PRESS_ADDR == addr) {
+      if (_frame_read.isIdle()) {
+        if (0 == queue_io_job(&_frame_read)) {
+          ret = 0;
+        }
+      }
+    }
+    else {
+      I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
+      if (nullptr != op) {
+        op->dev_addr = _dev_addr;
+        op->sub_addr = addr;
+        op->setBuffer(data, length);
+        if (0 == queue_io_job(op)) {
+          ret = 0;
+        }
       }
     }
   }
@@ -347,7 +365,9 @@ int8_t BME280I2C::_read_registers(uint8_t addr, uint8_t* data, uint8_t length) {
 int8_t BME280I2C::init() {
   int8_t ret = -1;
   if (nullptr != _bus) {
-    _baro_clear_flag(BME280_FLAG_USE_SPI);
+    _flags.clear(BME280_FLAG_USE_SPI);
+    _frame_read.shouldReap(false);
+    _frame_read.callback = this;
     ret = _priv_init() ? 0 : -2;
   }
   return ret;
@@ -359,14 +379,14 @@ int8_t BME280I2C::init() {
 */
 void BME280I2C::printDebug(StringBuilder* output) {
   output->concatf("-- BM%c280 %sinitialized\n", (hasHumidity()?'E':'P'), (initialized() ? "" : "un"));
-  output->concatf("\tPowered:        %c\n", (_baro_flag(BME280_FLAG_ENABLED) ? 'y' : 'n'));
+  I2CDevice::printDebug(output);
+  output->concatf("\tPowered:        %c\n", (_flags.value(BME280_FLAG_ENABLED) ? 'y' : 'n'));
   output->concatf("\tFound:          %c\n", (devFound() ? 'y' : 'n'));
-  output->concatf("\tCalibrated:     %c\n", (_baro_flag(BME280_FLAG_CAL_DATA_READ) ? 'y' : 'n'));
+  output->concatf("\tCalibrated:     %c\n", (_flags.value(BME280_FLAG_CAL_DATA_READ) ? 'y' : 'n'));
   output->concatf("\t_last_read:     %u\n", _last_read);
   output->concatf("\t_air_temp:      %.2f\n", _air_temp);
   output->concatf("\t_humidity:      %.2f\n", _humidity);
   output->concatf("\t_pressure:      %.2f\n", _pressure);
-  I2CDevice::printDebug(output);
 }
 
 
@@ -392,7 +412,6 @@ int8_t BME280I2C::io_op_callback(BusOp* _op) {
 
   if (!op->hasFault()) {
     uint8_t* buf     = op->buffer();
-    //uint     len     = op->bufferLen();
     uint8_t  r       = op->sub_addr;
     switch (op->get_opcode()) {
       case BusOpcode::TX:
@@ -400,8 +419,8 @@ int8_t BME280I2C::io_op_callback(BusOp* _op) {
           case CTRL_MEAS_ADDR:
             break;
           case CONFIG_ADDR:
-            _baro_set_flag(BME280_FLAG_INITIALIZED);
-            _baro_set_flag(BME280_FLAG_ENABLED);
+            _flags.set(BME280_FLAG_INITIALIZED);
+            _flags.set(BME280_FLAG_ENABLED);
             break;
           case CTRL_HUM_ADDR:
             break;
@@ -420,7 +439,7 @@ int8_t BME280I2C::io_op_callback(BusOp* _op) {
           case HUM_DIG_ADDR1:
             break;
           case HUM_DIG_ADDR2:
-            _baro_set_flag(BME280_FLAG_CAL_DATA_READ);
+            _flags.set(BME280_FLAG_CAL_DATA_READ);
             if (!initialized()) {
               WriteSettings();
             }
@@ -429,8 +448,8 @@ int8_t BME280I2C::io_op_callback(BusOp* _op) {
             break;
           case ID_ADDR:
             switch (*buf) {  // No breaks
-              case 0x60:  _baro_set_flag(BME280_FLAG_HAS_HUMIDITY);  // BME280 (With humidity)
-              case 0x58:  _baro_set_flag(BME280_FLAG_DEVICE_PRESENT);  // BMP280 (No humidity)
+              case 0x60:  _flags.set(BME280_FLAG_HAS_HUMIDITY);  // BME280 (With humidity)
+              case 0x58:  _flags.set(BME280_FLAG_DEVICE_PRESENT);  // BMP280 (No humidity)
               default:    break;
             }
             if (devFound() && !calibrated()) {
@@ -455,7 +474,9 @@ int8_t BME280I2C::io_op_callback(BusOp* _op) {
               _air_temp = CalculateTemperature(rawTemp,  t_fine);
               _pressure = CalculatePressure(rawPressure, t_fine);
               _humidity = CalculateHumidity(rawHumidity, t_fine);
+              _flags.set(BME280_FLAG_DATA_FRESH);
             }
+            _flags.clear(BME280_FLAG_READ_IN_FLIGHT);
             break;
           case TEMP_ADDR:
             break;

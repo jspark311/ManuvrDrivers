@@ -33,7 +33,7 @@ const char* MCP4728::vrefStr(MCP4728Vref e) {
 * Constructor.
 */
 MCP4728::MCP4728(const float ext_vref, const uint8_t l_pin, const uint8_t b_pin, uint8_t address)
-  : _EXT_VREF(ext_vref), _LDAC_PIN(l_pin), _BUSY_PIN(b_pin), I2CDevice(address) {}
+  : I2CDevice(address), _EXT_VREF(ext_vref), _LDAC_PIN(l_pin), _BUSY_PIN(b_pin) {}
 
 
 /*

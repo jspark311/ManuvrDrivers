@@ -86,7 +86,10 @@
 #define GRIDEYE_FLAG_HW_AVERAGING     0x0040  // Use the sensor's hardware averaging?
 #define GRIDEYE_FLAG_FRAME_UPDATED    0x0080  // The frame has been refreshed.
 
-#define GRIDEYE_FLAG_RESET_MASK       (GRIDEYE_FLAG_DEVICE_PRESENT | GRIDEYE_FLAG_PINS_CONFIGURED)
+#define GRIDEYE_FLAG_RESET_MASK  ( \
+  GRIDEYE_FLAG_DEVICE_PRESENT | \
+  GRIDEYE_FLAG_PINS_CONFIGURED | \
+  GRIDEYE_FLAG_FREEDOM_UNITS)
 
 /*
 * Registers
@@ -190,6 +193,7 @@ class GridEYE : public I2CDevice {
     int16_t getInterruptHysteresisRaw();
 
     void printDebug(StringBuilder*);
+    void printFrame(StringBuilder*);
 
 
   private:

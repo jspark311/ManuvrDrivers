@@ -34,6 +34,7 @@
 */
 
 #include "AMG88xx.h"
+#include <ParsingConsole.h>
 #include <math.h>
 
 /*******************************************************************************
@@ -90,7 +91,6 @@ AMG88XXRegID GridEYE::_reg_id_from_addr(const uint8_t reg_addr) {
 }
 
 
-
 volatile static bool amg_irq_fired = false;
 
 /* ISR */
@@ -112,7 +112,7 @@ void amg_isr_fxn() {   amg_irq_fired = true;   }
 */
 GridEYE::GridEYE(uint8_t addr, uint8_t irq) :
   I2CDevice(addr), _IRQ_PIN(irq),
-  _frame_read(BusOpcode::RX, addr, TEMPERATURE_REGISTER_START, _frame, 128) {}
+  _frame_read(BusOpcode::RX, addr, TEMPERATURE_REGISTER_START, _frame, 32) {}
 
 /*
 * Destructor
@@ -128,10 +128,14 @@ int8_t GridEYE::init(I2CAdapter* b) {
   int8_t ret = -1;
   _ll_pin_init();  // Idempotent. Ok to call twice.
   _frame_read.shouldReap(false);
+  _frame_read.callback = this;
+  _frame_read.sub_addr = TEMPERATURE_REGISTER_START;
   _amg_clear_flag(GRIDEYE_FLAG_INITIALIZED);
 
   if (nullptr != b) {
     _bus = b;
+  }
+  if (nullptr != _bus) {
     if (0 == setFramerate10FPS()) {
       if (0 == enabled(true)) {
         _amg_set_flag(GRIDEYE_FLAG_INITIALIZED);
@@ -191,8 +195,15 @@ int8_t GridEYE::poll() {
     uint32_t now = millis();
     uint32_t r_interval = isFramerate10FPS() ? 100 : 1000;
     if ((now - _last_read) >= r_interval) {
-      ret = (0 == _read_full_frame()) ? 1 : -1;
-      // TODO: Optionally get the die temperature.
+      if (_frame_read.isIdle()) {
+        ret = (0 == _read_full_frame()) ? 0 : -1;
+        // TODO: Optionally get the die temperature.
+        //_read_registers(AMG88XXRegID::THERMISTOR_LSB, 2);
+      }
+    }
+    if (_amg_flag(GRIDEYE_FLAG_FRAME_UPDATED)) {
+      _amg_clear_flag(GRIDEYE_FLAG_FRAME_UPDATED);
+      ret = 1;
     }
   }
   return ret;
@@ -251,7 +262,6 @@ int8_t GridEYE::setFramerate10FPS() {
 int8_t GridEYE::enabled(bool x) {
   return _write_register(AMG88XXRegID::POWER_CONTROL, x ? 0x00 : 0x10);
 }
-
 
 
 /**
@@ -701,6 +711,8 @@ int8_t GridEYE::_read_full_frame() {
   if (_frame_read.isIdle()) {
     ret--;
     _frame_read.dev_addr = _dev_addr;
+    _frame_read.sub_addr = TEMPERATURE_REGISTER_START;
+    _frame_read.setBuffer(_frame, 32);
     if (0 == queue_io_job(&_frame_read)) {
       ret = 0;
     }
@@ -771,8 +783,8 @@ int16_t GridEYE::_native_float_to_dev_int16(float DegreesC) {
 
 int16_t GridEYE::getPixelRaw(uint8_t pixel) {
   uint8_t  idx = pixel << 1;
-  uint16_t msb = (uint16_t) _frame[idx];
-  uint16_t ret = (uint16_t) _frame[idx+1];
+  uint16_t ret = (uint16_t) _frame[idx];
+  uint16_t msb = (uint16_t) _frame[idx+1];
   msb = ((msb & 0x0008) ? (msb | 0x00F0) : (msb & 0x000F));
   ret |= msb;
   return (int16_t) ret;
@@ -780,7 +792,26 @@ int16_t GridEYE::getPixelRaw(uint8_t pixel) {
 
 
 void GridEYE::printDebug(StringBuilder* output) {
+  ParsingConsole::styleHeader1(output, "GridEYE");
   I2CDevice::printDebug(output);
+  if (255 != _IRQ_PIN) {
+    output->concatf("\tIRQ Pin:      %u\n", _IRQ_PIN);
+    output->concatf("\tISR fired:    %c\n", amg_irq_fired ? 'y' : 'n');
+  }
+  output->concatf("\tDevice found: %c\n", devFound() ? 'y' : 'n');
+  if (devFound()) {
+    output->concatf("\tEnabled:      %c\n", enabled() ? 'y' : 'n');
+    output->concatf("\tInitialized   %c\n", initialized() ? 'y' : 'n');
+    output->concatf("\tHW averaging: %c\n", movingAverage() ? 'y' : 'n');
+    output->concatf("\tLast read:    %u\n", _last_read);
+    output->concatf("\tFrame rate:   %u\n", isFramerate10FPS() ? 10:1);
+    output->concatf("\tDevice temp:  %.2f\n", getDeviceTemperature());
+  }
+  output->concat("\n");
+}
+
+
+void GridEYE::printFrame(StringBuilder* output) {
   for (int i = 0; i < 8; i++) {
     int n = i << 3;
     output->concatf(
@@ -828,15 +859,30 @@ int8_t GridEYE::io_op_callback(BusOp* _op) {
   I2CBusOp* op = (I2CBusOp*) _op;
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
 
-
   if (!op->hasFault()) {
     if (!_amg_flag(GRIDEYE_FLAG_DEVICE_PRESENT)) {
       _amg_set_flag(GRIDEYE_FLAG_DEVICE_PRESENT);
     }
     if (op == &_frame_read) {   // Shortcut for our most common operation.
       // Process data from frame.
-      _last_read = millis();
-      _amg_set_flag(GRIDEYE_FLAG_FRAME_UPDATED);
+      const uint8_t NEXT_ADDR_OFFSET = ((op->sub_addr - TEMPERATURE_REGISTER_START) + 32) % 128;
+      op->setBuffer(&_frame[NEXT_ADDR_OFFSET], 32);
+
+      switch (op->sub_addr) {
+        case (TEMPERATURE_REGISTER_START + 0):
+        case (TEMPERATURE_REGISTER_START + 32):
+        case (TEMPERATURE_REGISTER_START + 64):
+          ret = BUSOP_CALLBACK_RECYCLE;
+          op->sub_addr += 32;
+          break;
+        case (TEMPERATURE_REGISTER_START + 96):
+          _amg_set_flag(GRIDEYE_FLAG_FRAME_UPDATED);
+          _last_read = millis();
+          op->sub_addr = TEMPERATURE_REGISTER_START;
+          break;
+        default:
+          break;
+      }
       return ret;
     }
     else if (INT_TABLE_REGISTER_INT0_START == op->sub_addr) {
@@ -855,6 +901,7 @@ int8_t GridEYE::io_op_callback(BusOp* _op) {
           switch ((AMG88XXRegID) reg_idx) {
             case AMG88XXRegID::POWER_CONTROL:
               _amg_set_flag(GRIDEYE_FLAG_ENABLED, !(value & 0x10));
+              _amg_set_flag(GRIDEYE_FLAG_INITIALIZED);
               break;
             case AMG88XXRegID::RESET:
               // We just reset.

@@ -172,10 +172,14 @@ class BME280 {
 
 
     int8_t poll();
+    int8_t refresh();
 
     inline float temp() {  return _air_temp;  };  // Temperature in real units.
     inline float pres() {  return _pressure;  };  // Pressure in real units.
     inline float hum() {   return _humidity;  };  // Humidity as a percentage.
+
+    inline bool sleeping() {  return (0 == (_shadow_ctrl_mea & 0x03));  };
+
 
     // Calculate the altitude based on the pressure with the
     // specified units.
@@ -267,8 +271,6 @@ class BME280I2C: public BME280, public I2CDevice {
 
 
   private:
-    I2CBusOp      _frame_read;
-
     // Write values to BME280 registers.
     virtual int8_t _write_register(uint8_t addr, uint8_t* data);
     // Read values from BME280 registers.

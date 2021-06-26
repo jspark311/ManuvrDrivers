@@ -94,12 +94,25 @@ int8_t BME280::poll() {
     ret = 0;
     if (wrap_accounted_delta(now, _last_read) >= r_interval) {
       if (!_flags.value(BME280_FLAG_READ_IN_FLIGHT)) {
-        ret = _refresh_data() ? 0 : -1;
+        ret = (_refresh_data() ? 0 : -1);
       }
     }
     if (_flags.value(BME280_FLAG_DATA_FRESH)) {
       _flags.clear(BME280_FLAG_DATA_FRESH);
       ret = 1;
+    }
+  }
+  return ret;
+}
+
+
+int8_t BME280::refresh() {
+  int8_t ret = -3;
+  if (0 == _read_registers(CTRL_HUM_ADDR, &_shadow_ctrl_hum, 1)) {
+    if (0 == _read_registers(CONFIG_ADDR, &_shadow_ctrl, 1)) {
+      if (0 == _read_registers(CTRL_MEAS_ADDR, &_shadow_ctrl_mea, 1)) {
+        ret = 0;
+      }
     }
   }
   return ret;
@@ -113,10 +126,10 @@ bool BME280::WriteSettings() {
   // ctrl_meas register. (ctrl_meas[7:5] = temperature oversampling rate, ctrl_meas[4:2] = pressure oversampling rate, ctrl_meas[1:0] = mode.)
   _shadow_ctrl_mea = ((uint8_t)m_settings.tempOSR << 5) | ((uint8_t)m_settings.presOSR << 2) | (uint8_t)m_settings.mode;
   // config register. (config[7:5] = standby time, config[4:2] = filter, ctrl_meas[0] = spi enable.)
-  _shadow_ctrl = ((uint8_t)m_settings.standbyTime << 5) | ((uint8_t)m_settings.filter << 2) | _useSPI() ? 1 : 0;
+  _shadow_ctrl = ((uint8_t)m_settings.standbyTime << 5) | ((uint8_t)m_settings.filter << 2) | (_useSPI() ? 1 : 0);
   if (0 == _write_register(CTRL_HUM_ADDR, &_shadow_ctrl_hum)) {
-    if (0 == _write_register(CTRL_MEAS_ADDR, &_shadow_ctrl_mea)) {
-      if (0 == _write_register(CONFIG_ADDR, &_shadow_ctrl)) {
+    if (0 == _write_register(CONFIG_ADDR, &_shadow_ctrl)) {
+      if (0 == _write_register(CTRL_MEAS_ADDR, &_shadow_ctrl_mea)) {
         ret = true;
       }
     }
@@ -164,7 +177,7 @@ float BME280::CalculateTemperature(int32_t raw, int32_t& t_fine) {
   var2 = (((((raw >> 4) - ((int32_t)dig_T1)) * ((raw >> 4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
   t_fine = var1 + var2;
   final = (t_fine * 5 + 128) >> 8;
-  return _unit_temp == TempUnit::Celsius ? final/100.0 : final/100.0*9.0/5.0 + 32.0;
+  return ((_unit_temp == TempUnit::Celsius) ? final/100.0 : final/100.0*9.0/5.0 + 32.0);
 }
 
 
@@ -184,8 +197,8 @@ float BME280::CalculateHumidity(int32_t raw, int32_t t_fine) {
    ((int32_t)dig_H3)) >> 11) + ((int32_t)32768))) >> 10) + ((int32_t)2097152)) *
    ((int32_t)dig_H2) + 8192) >> 14));
    var1 = (var1 - (((((var1 >> 15) * (var1 >> 15)) >> 7) * ((int32_t)dig_H1)) >> 4));
-   var1 = (var1 < 0 ? 0 : var1);
-   var1 = (var1 > 419430400 ? 419430400 : var1);
+   var1 = ((var1 < 0) ? 0 : var1);
+   var1 = ((var1 > 419430400) ? 419430400 : var1);
    return ((uint32_t)(var1 >> 12))/1024.0;
 }
 
@@ -247,16 +260,14 @@ float BME280::CalculatePressure(int32_t raw, int32_t t_fine) {
 
 
 bool BME280::_refresh_data() {
-  bool ret = false;
+  bool ret = true;
   // For forced mode we need to write the mode to BME280 register before reading
   // TODO: This was never converted to async. Single-shot mode won't work as expected.
-  ret = (m_settings.mode == BME280Mode::Forced) ? WriteSettings() : true;
+  //ret = (m_settings.mode == BME280Mode::Forced) ? WriteSettings() : true;
   // Registers are in order. So we can start at the pressure register and read 8 bytes.
   if (ret) {
     ret = (0 == _read_registers(PRESS_ADDR, _shadow_sdat, SENSOR_DATA_LENGTH));
-    if (ret) {
-      _flags.set(BME280_FLAG_READ_IN_FLIGHT);
-    }
+    _flags.set(BME280_FLAG_READ_IN_FLIGHT, ret);
   }
   return ret;
 }
@@ -272,7 +283,7 @@ float BME280::Altitude(float pressure, float seaLevelPressure) {
   if (!isnan(pressure) && !isnan(seaLevelPressure)){
     altitude = 1000.0 * (seaLevelPressure - pressure) / 3386.3752577878;
   }
-  return (LengthUnit::Meters == _unit_length) ? altitude : altitude * 0.3048;
+  return ((LengthUnit::Meters == _unit_length) ? altitude : altitude * 0.3048);
 }
 
 
@@ -309,8 +320,7 @@ float BME280::DewPoint(float temp, float hum) {
 * Members and logic specific to the i2c package
 *******************************************************************************/
 BME280I2C::BME280I2C(const BME280Settings& settings) :
-  BME280(settings), I2CDevice(settings.BUS_BYTE),
-  _frame_read(BusOpcode::RX, settings.BUS_BYTE, PRESS_ADDR, _shadow_sdat, 8) {}
+  BME280(settings), I2CDevice(settings.BUS_BYTE) {}
 
 /**
 *
@@ -338,22 +348,13 @@ int8_t BME280I2C::_write_register(uint8_t addr, uint8_t* data) {
 int8_t BME280I2C::_read_registers(uint8_t addr, uint8_t* data, uint8_t length) {
   int8_t ret = -2;
   if (nullptr != _bus) {
-    if (PRESS_ADDR == addr) {
-      if (_frame_read.isIdle()) {
-        if (0 == queue_io_job(&_frame_read)) {
-          ret = 0;
-        }
-      }
-    }
-    else {
-      I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
-      if (nullptr != op) {
-        op->dev_addr = _dev_addr;
-        op->sub_addr = addr;
-        op->setBuffer(data, length);
-        if (0 == queue_io_job(op)) {
-          ret = 0;
-        }
+    I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
+    if (nullptr != op) {
+      op->dev_addr = _dev_addr;
+      op->sub_addr = addr;
+      op->setBuffer(data, length);
+      if (0 == queue_io_job(op)) {
+        ret = 0;
       }
     }
   }
@@ -366,8 +367,6 @@ int8_t BME280I2C::init() {
   int8_t ret = -1;
   if (nullptr != _bus) {
     _flags.clear(BME280_FLAG_USE_SPI);
-    _frame_read.shouldReap(false);
-    _frame_read.callback = this;
     ret = _priv_init() ? 0 : -2;
   }
   return ret;
@@ -383,10 +382,15 @@ void BME280I2C::printDebug(StringBuilder* output) {
   output->concatf("\tPowered:        %c\n", (_flags.value(BME280_FLAG_ENABLED) ? 'y' : 'n'));
   output->concatf("\tFound:          %c\n", (devFound() ? 'y' : 'n'));
   output->concatf("\tCalibrated:     %c\n", (_flags.value(BME280_FLAG_CAL_DATA_READ) ? 'y' : 'n'));
+  output->concatf("\tRead in-flight: %c\n", (_flags.value(BME280_FLAG_READ_IN_FLIGHT) ? 'y' : 'n'));
+  output->concatf("\t_shadow_ctrl_hum: 0x%02x\n", _shadow_ctrl_hum);
+  output->concatf("\t_shadow_ctrl_mea: 0x%02x\n", _shadow_ctrl_mea);
+  output->concatf("\t_shadow_ctrl:     0x%02x\n", _shadow_ctrl);
   output->concatf("\t_last_read:     %u\n", _last_read);
   output->concatf("\t_air_temp:      %.2f\n", _air_temp);
   output->concatf("\t_humidity:      %.2f\n", _humidity);
   output->concatf("\t_pressure:      %.2f\n", _pressure);
+
 }
 
 
@@ -410,6 +414,10 @@ int8_t BME280I2C::io_op_callback(BusOp* _op) {
   I2CBusOp* op = (I2CBusOp*) _op;
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
 
+  // StringBuilder output;
+  // op->printDebug(&output);
+  // Serial.println((char*) output.string());
+
   if (!op->hasFault()) {
     uint8_t* buf     = op->buffer();
     uint8_t  r       = op->sub_addr;
@@ -417,10 +425,10 @@ int8_t BME280I2C::io_op_callback(BusOp* _op) {
       case BusOpcode::TX:
         switch (r) {
           case CTRL_MEAS_ADDR:
+            _flags.set(BME280_FLAG_INITIALIZED);
+            _flags.set(BME280_FLAG_ENABLED, !sleeping());
             break;
           case CONFIG_ADDR:
-            _flags.set(BME280_FLAG_INITIALIZED);
-            _flags.set(BME280_FLAG_ENABLED);
             break;
           case CTRL_HUM_ADDR:
             break;

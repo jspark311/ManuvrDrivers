@@ -7,23 +7,22 @@ A collection of non-blocking flexible hardware drivers written on top of CppPotp
 
 [CppPotpourri](https://github.com/jspark311/CppPotpourri) was developed, in part, to allow asynchronous I/O and to ease the maintenance burden of drivers written to take advantage of it. CppPotpourri provides a platform agnostic collection of embedded-friendly libraries and abstract interfaces to hardware which covers nearly all of the basic stuff that a given driver will need (pin manipulation and interrupts, I2C/SPI/UART, RTCs, RNG, threading and delays). Thus, drivers that stay confined to the API provided by CppPotpourri will be hardware agnostic as well.
 
-One major benefit to this abstraction is that drivers written under one environment can be easily ported to any other supported environment.
+One major benefit to this abstraction is that drivers written under one environment don't require porting for use under any other environment.
 
-
-## Notes on platform support
+### Notes on platform support
 
 In order to use this library, your project must provide the unimplemented functions in CppPotpourri's [AbstractPlatform header](https://github.com/jspark311/CppPotpourri/blob/master/src/AbstractPlatform.h). Some of these are provided by CppPotpourri itself, and your project may not use everything in the `AbstractPlatform` definition (depending on what drivers you include). The easiest way to determine what you need to implement is to write the first-draft of your project, and see what the linker complains about.
 
 I maintain a collection of platform examples in the [ManuvrPlatforms](https://github.com/jspark311/ManuvrPlatforms) repo. But you are advised not to rely on that code in any way. If you _do_ decide to use it, my advice would be to hard-fork the parts you want into your own tree, and build it with the rest of your top-level code. If you are in Arduino, that would mean copying the relevant files into your sketch folder.
 
-### Example projects that have extended CppPotpourri in this manner
+#### Example projects that have extended CppPotpourri in this manner
 
-### [MotherFlux0r](https://github.com/jspark311/Motherflux0r)
+##### [MotherFlux0r](https://github.com/jspark311/Motherflux0r)
 
   * Based on the Teensy4/teensyduino library and automake
   * Makes extensive use of drivers in this repo
 
-### [File-Librarian](https://github.com/jspark311/File-Librarian)
+##### [File-Librarian](https://github.com/jspark311/File-Librarian)
 
   * Linux console application
   * No hardware driver use, but does show how to extend the platform to Linux using automake.

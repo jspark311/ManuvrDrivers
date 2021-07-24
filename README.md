@@ -73,27 +73,4 @@ It is the ultimate goal of CppPotpourri to facilitate integration of cryptograph
 
 Many of the drivers in this repo were ported from synchronous drivers written by others. The original author's commentary was preserved where appropriate, alongside my refactor notes. Such drivers inherit their original author's licensing terms. The [AMG88xx driver](https://github.com/jspark311/ManuvrDrivers/blob/master/src/AMG88xx/AMG88xx.h) is a good example of this.
 
-Those drivers that are my original authorship are covered by the license below.
-
-Copyright (c) 2019 J. Ian Lindsay
-
-Permission is hereby granted, free of charge, to any person
-obtaining a copy of this software and associated documentation
-files (the "Software"), to deal in the Software without
-restriction, including without limitation the rights to use,
-copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the
-Software is furnished to do so, subject to the following
-conditions:
-
-This permission notice shall be included in all copies or
-substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
-OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-OTHER DEALINGS IN THE SOFTWARE.
+Those drivers that are my original authorship are covered by the LICENSE file.

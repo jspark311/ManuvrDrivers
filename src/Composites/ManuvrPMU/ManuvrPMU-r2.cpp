@@ -67,7 +67,7 @@ int callback_pmu_tools(StringBuilder* text_return, StringBuilder* args) {
   else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
     switch (arg1) {
       case 1:
-        text_return->concatf("ltc294x.readSensor() returns %d.\n", INSTANCE->ltc294x.readSensor());
+        text_return->concatf("ltc294x.poll() returns %d.\n", INSTANCE->ltc294x.poll());
         break;
       case 2:
         text_return->concatf("bq24155.refresh() returns %d.\n", INSTANCE->bq24155.refresh());
@@ -91,6 +91,25 @@ int callback_pmu_tools(StringBuilder* text_return, StringBuilder* args) {
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "punch")) {
     text_return->concatf("bq24155.punch_safety_timer() returns %d\n", INSTANCE->bq24155.punch_safety_timer());
+  }
+
+  else if (0 == StringBuilder::strcasecmp(cmd, "usb")) {
+    if (2 == args->count()) {
+      text_return->concatf("usb_current_limit(%u) returns %d\n", arg1, INSTANCE->bq24155.usb_current_limit((int16_t) arg1));
+    }
+    text_return->concatf("usb_current_limit = %d\n", INSTANCE->bq24155.usb_current_limit());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "termination")) {
+    if (2 == args->count()) {
+      INSTANCE->bq24155.charge_current_termination_enabled(1 == arg1);
+    }
+    text_return->concatf("termination is %sabled.\n", INSTANCE->bq24155.charge_current_termination_enabled() ? "en" : "dis");
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "hiz")) {
+    if (2 == args->count()) {
+      INSTANCE->bq24155.hi_z_mode(1 == arg1);
+    }
+    text_return->concatf("hi_z_mode is %sabled.\n", INSTANCE->bq24155.hi_z_mode() ? "en" : "dis");
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "charger")) {
     if (2 == args->count()) {
@@ -153,7 +172,7 @@ int callback_pmu_tools(StringBuilder* text_return, StringBuilder* args) {
     }
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
-    text_return->concat("TODO: Unimplemented\n");
+    text_return->concatf("bq24155.refresh() returns %d\n", INSTANCE->bq24155.refresh());
   }
   else {
     ret = -1;
@@ -276,14 +295,20 @@ void ManuvrPMU::printDebug(StringBuilder* output) {
 int8_t ManuvrPMU::init(I2CAdapter* b) {
   int8_t ret = -1;
   if (0 == _ll_pin_init()) {   // Configure the pins if they are not already.
+    ret--;
     if (nullptr != b) {
+      ret--;
       ltc294x.assignBusInstance(b);
       bq24155.assignBusInstance(b);
-      if (0 == ltc294x.init()) {
+      int8_t ret0 = ltc294x.init();
+      int8_t ret1 = bq24155.init();
+      if (0 == ret0) {
         // We want the gas guage to warn us if the voltage leaves the realm of safety.
         ltc294x.setVoltageThreshold(_battery.voltage_weak, _battery.voltage_max);
+        ltc294x.sleep(false);
       }
-      if (0 == bq24155.init()) {
+      if ((0 == ret0) && (0 == ret1)) {
+        ret = 0;
       }
     }
   }
@@ -326,7 +351,6 @@ int8_t ManuvrPMU::_ll_pin_init() {
     //  //   pitch an event.
     //  //setPinEvent(fuel_gauge_opts->pin, FALLING_PULL_UP, &_battery_alert_msg);
     //}
-
     _flags.set(DIGITAB_PMU_FLAG_PINS_CONFIGURED, (0 == ret));
   }
   return ret;
@@ -340,10 +364,12 @@ int8_t ManuvrPMU::_ll_pin_init() {
 */
 int8_t ManuvrPMU::poll() {
   uint32_t now = millis();
-  int8_t ret = -1;
-  if (bq24155.initComplete()) {
+  int8_t ret = 0;
+  if (ltc294x.initComplete()) {
     if (wrap_accounted_delta(_last_meter_poll, now) >= _polling_period) {
-      ltc294x.readSensor();
+      if (2 == ltc294x.poll()) {
+        ret += 1;
+      }
       _last_meter_poll = now;
     }
   }

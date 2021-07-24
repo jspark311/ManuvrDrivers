@@ -20,6 +20,7 @@ limitations under the License.
 */
 
 #include "SX1503.h"
+#include <ParsingConsole.h>
 #include <StringBuilder.h>
 
 /*******************************************************************************
@@ -819,7 +820,7 @@ int8_t SX1503::io_op_callback(BusOp* _op) {
 *
 */
 void SX1503::printDebug(StringBuilder* output) {
-  output->concat("---< SX1503 >---------------------------------------------------\n");
+  ParsingConsole::styleHeader1(output, "SX1503");
   output->concatf("\tRESET Pin:   %u\n", _RESET_PIN);
   output->concatf("\tIRQ Pin:     %u\n", _IRQ_PIN);
   output->concatf("\tISR fired:   %c\n", sx1503_isr_fired ? 'y' : 'n');

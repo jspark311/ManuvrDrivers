@@ -183,6 +183,10 @@ int8_t LTC294x::poll() {
         }
       }
     }
+    if (_flags.value(LTC294X_FLAG_DATA_FRESH)) {
+      _flags.clear(LTC294X_FLAG_DATA_FRESH);
+      ret = 2;
+    }
   }
   return ret;
 }
@@ -197,22 +201,6 @@ int8_t LTC294x::_post_discovery_init() {
   int8_t ret = -1;
   if (initComplete()) {
     ret = 0;
-  }
-  return ret;
-}
-
-
-int8_t LTC294x::readSensor() {
-  int8_t ret = -1;
-  if (initComplete()) {
-    ret--;
-    if (0 == _read_registers(LTC294xRegID::ACC_CHARGE, 2)) {
-      if (0 == _read_registers(LTC294xRegID::VOLTAGE, 2)) {
-        if (0 == _read_registers(LTC294xRegID::TEMP, 2)) {
-          ret = 0;
-        }
-      }
-    }
   }
   return ret;
 }
@@ -536,6 +524,7 @@ void LTC294x::_update_tracking() {
   _chrg_reading_0 = c;  // Shift the new values into place.
   _volt_reading_0 = v;
   _temp_reading_0 = t;
+  _flags.set(LTC294X_FLAG_DATA_FRESH);
 }
 
 

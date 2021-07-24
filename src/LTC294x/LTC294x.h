@@ -40,6 +40,7 @@ limitations under the License.
 #define LTC294X_FLAG_TRACKING_READY 0x0040  // Tracking data is available.
 #define LTC294X_FLAG_BATTERY_GT55AM 0x0080  // The battery is bigger than 5.5AH.
 #define LTC294X_FLAG_PINS_INITD     0x0100  // The pins have been setup.
+#define LTC294X_FLAG_DATA_FRESH     0x0200  //
 
 #define LTC294X_FLAG_MASK_INIT_CMPLT ( \
   LTC294X_FLAG_INIT_CTRL     | LTC294X_FLAG_INIT_THRESH_V | \
@@ -134,7 +135,6 @@ class LTC294x : public I2CDevice {
 
     int8_t init();
     int8_t poll();
-    int8_t readSensor();
 
     /* Overrides from I2CDevice... */
     int8_t io_op_callahead(BusOp*);

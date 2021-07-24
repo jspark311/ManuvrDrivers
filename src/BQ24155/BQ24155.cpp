@@ -90,17 +90,20 @@ BQ24155::~BQ24155() {}
 
 
 int8_t BQ24155::init() {
-  if (_opts.useISELPin()) {
-    // This is the default value. If we do not set the pin high, we risk interrupting
-    //   our own power supply if a battery is not present.
-    pinMode(_opts.isel_pin, GPIOMode::OUTPUT);
-    setPin(_opts.isel_pin, _isel_state());
-  }
-  if (_opts.useStatPin()) {
-    // TODO: Choose.
-    pinMode(_opts.stat_pin, GPIOMode::INPUT_PULLUP);
-    // int8_t setPinEvent(_opts._stat_pin, uint8_t condition, ManuvrMsg* isr_event);
-    // int8_t setPinFxn(_opts._stat_pin, uint8_t condition, FxnPointer fxn);
+  if (_flgs.value(BQ24155_FLAG_PINS_INITD)) {
+    if (_opts.useISELPin()) {
+      // This is the default value. If we do not set the pin high, we risk interrupting
+      //   our own power supply if a battery is not present.
+      pinMode(_opts.isel_pin, GPIOMode::OUTPUT);
+      setPin(_opts.isel_pin, _isel_state());
+    }
+    if (_opts.useStatPin()) {
+      // TODO: Choose.
+      pinMode(_opts.stat_pin, GPIOMode::INPUT_PULLUP);
+      // int8_t setPinEvent(_opts._stat_pin, uint8_t condition, ManuvrMsg* isr_event);
+      // int8_t setPinFxn(_opts._stat_pin, uint8_t condition, FxnPointer fxn);
+    }
+    _flgs.set(BQ24155_FLAG_PINS_INITD);
   }
 
   // Wipe the init indicators to prevent immediate commit, before we start

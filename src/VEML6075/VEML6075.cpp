@@ -195,6 +195,8 @@ int8_t VEML6075::_post_discovery_init() {
   if (0 == _write_registers(VEML6075RegId::UV_CONF, 2)) {
     ret = 0;
   }
+  //if (0 == _read_registers(VEML6075RegId::UV_CONF, 2)) {
+  //}
   return ret;
 }
 
@@ -298,19 +300,20 @@ VEML6075Err VEML6075::enabled(bool en) {
 */
 void VEML6075::printDebug(StringBuilder* output) {
   output->concatf("-- VEML6075 %sinitialized\n", (initialized() ? "" : "un"));
-  output->concatf("\tPowered:        %c\n", (_veml_flag(VEML6075_FLAG_ENABLED) ? 'y' : 'n'));
+  I2CDevice::printDebug(output);
+  output->concatf("\tFound:          %c\n", (devFound() ? 'y' : 'n'));
+  output->concatf("\tEnabled:        %c\n", (enabled() ? 'y' : 'n'));
   output->concatf("\tAF enabled:     %c\n", (_veml_flag(VEML6075_FLAG_AF_ENABLED) ? 'y' : 'n'));
   output->concatf("\tTrig enabled:   %c\n", (_veml_flag(VEML6075_FLAG_TRIGGER_ENABLED) ? 'y' : 'n'));
   output->concatf("\tDynamic mode:   %s\n", (_veml_flag(VEML6075_FLAG_DYNAMIC_HIGH) ? "HIGH" : "NORM"));
-  output->concatf("\tIntgration time: %u\n", _integrationTime);
+  output->concatf("\tIntgration time: %ums\n", _integrationTime);
+  output->concatf("\t_last_read:     %u\n", _last_read);
   output->concatf("\tCONF:           0x%04x\n", shadows[0]);
   output->concatf("\t_lastCOMP1:     0x%04x\n", _lastCOMP1);
   output->concatf("\t_lastCOMP2:     0x%04x\n", _lastCOMP2);
-  output->concatf("\t_last_read:     %u\n", _last_read);
-  output->concatf("\t_lastUVA:       %.2f\n", _lastUVA);
-  output->concatf("\t_lastUVB:       %.2f\n", _lastUVB);
-  output->concatf("\t_lastIndex:     %.2f\n", _lastIndex);
-  I2CDevice::printDebug(output);
+  output->concatf("\t_lastUVA:       %.3f\n", _lastUVA);
+  output->concatf("\t_lastUVB:       %.3f\n", _lastUVB);
+  output->concatf("\t_lastIndex:     %.3f\n", _lastIndex);
 }
 
 
@@ -373,7 +376,7 @@ int8_t  VEML6075::_read_registers(VEML6075RegId r, uint8_t len) {
     op->dev_addr = _dev_addr;
     op->sub_addr = _reg_addr_from_id(r);
     op->setBuffer(ptr, len);
-    if (0 == _bus->queue_io_job(op)) {
+    if (0 == queue_io_job(op)) {
       ret = 0;
     }
   }
@@ -393,7 +396,7 @@ int8_t  VEML6075::_write_registers(VEML6075RegId r, uint8_t len) {
       op->dev_addr = _dev_addr;
       op->sub_addr = _reg_addr_from_id(r);
       op->setBuffer(ptr, len);
-      if (0 == _bus->queue_io_job(op)) {
+      if (0 == queue_io_job(op)) {
         ret = 0;
       }
     }
@@ -425,7 +428,7 @@ int8_t VEML6075::_process_new_config(uint8_t new_conf) {
   _veml_set_flag(VEML6075_FLAG_AF_ENABLED, (af == veml6075ActiveForce::AF_ENABLE));
   _veml_set_flag(VEML6075_FLAG_ENABLED, (0 == (new_conf & 0x01)));
   if (!initialized()) {
-    _veml_set_flag(VEML6075_FLAG_INITIALIZED, true);
+    _veml_set_flag(VEML6075_FLAG_INITIALIZED);
   }
   return 0;
 }
@@ -476,7 +479,7 @@ int8_t VEML6075::io_op_callback(BusOp* _op) {
           case VEML6075RegId::UVA_DATA:  // The first three data registers are
           case VEML6075RegId::UVB_DATA:  //   observed on the fouth's callback.
           case VEML6075RegId::UVCOMP1_DATA:
-            break;
+            //break;
           case VEML6075RegId::UVCOMP2_DATA:
             {
               uint8_t* uva_ptr = ((uint8_t*) &shadows[1]);
@@ -492,6 +495,11 @@ int8_t VEML6075::io_op_callback(BusOp* _op) {
             }
             break;
           case VEML6075RegId::ID:
+            {
+              StringBuilder output;
+              op->printDebug(&output);
+              Serial.println((char*) output.string());
+            }
             _veml_set_flag(VEML6075_FLAG_DEVICE_PRESENT, (VEML6075_DEVICE_ID == value));
             if (!initialized()) {
               _post_discovery_init();

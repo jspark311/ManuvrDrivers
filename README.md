@@ -3,20 +3,20 @@
 A collection of non-blocking flexible hardware drivers written on top of CppPotpourri.
 
 
-# This repo's relationship to CppPotpourri
+## This repo's relationship to CppPotpourri
 
 [CppPotpourri](https://github.com/jspark311/CppPotpourri) was developed, in part, to allow asynchronous I/O and to ease the maintenance burden of drivers written to take advantage of it. CppPotpourri provides a platform agnostic collection of embedded-friendly libraries and abstract interfaces to hardware which covers nearly all of the basic stuff that a given driver will need (pin manipulation and interrupts, I2C/SPI/UART, RTCs, RNG, threading and delays). Thus, drivers that stay confined to the API provided by CppPotpourri will be hardware agnostic as well.
 
 One major benefit to this abstraction is that drivers written under one environment can be easily ported to any other supported environment.
 
 
-# Notes on platform support
+## Notes on platform support
 
 In order to use this library, your project must provide the unimplemented functions in CppPotpourri's [AbstractPlatform header](https://github.com/jspark311/CppPotpourri/blob/master/src/AbstractPlatform.h). Some of these are provided by CppPotpourri itself, and your project may not use everything in the `AbstractPlatform` definition (depending on what drivers you include). The easiest way to determine what you need to implement is to write the first-draft of your project, and see what the linker complains about.
 
 I maintain a collection of platform examples in the [ManuvrPlatforms](https://github.com/jspark311/ManuvrPlatforms) repo. But you are advised not to rely on that code in any way. If you _do_ decide to use it, my advice would be to hard-fork the parts you want into your own tree, and build it with the rest of your top-level code. If you are in Arduino, that would mean copying the relevant files into your sketch folder.
 
-## Example projects that have extended CppPotpourri in this manner
+### Example projects that have extended CppPotpourri in this manner
 
 ### [MotherFlux0r](https://github.com/jspark311/Motherflux0r)
 
@@ -29,7 +29,7 @@ I maintain a collection of platform examples in the [ManuvrPlatforms](https://gi
   * No hardware driver use, but does show how to extend the platform to Linux using automake.
 
 
-# Which drivers are ready to use?
+## Which drivers are ready to use?
 
 Drivers in the [ManuvrDrivers header file](https://github.com/jspark311/ManuvrDrivers/blob/master/src/ManuvrDrivers.h) are generally useful and won't break builds for platform-dependence reasons. That is, your project should be able to `#include <ManuvrDrivers.h>` and get all the support that is listed there. Your linker should cull any compiled drivers that your project doesn't depend upon (you _are_ using `-gc-sections`, right????). Drivers will be promoted to inclusion in this header when they meet the following criteria:
 
@@ -39,7 +39,7 @@ Drivers in the [ManuvrDrivers header file](https://github.com/jspark311/ManuvrDr
 Drivers not included in ManuvrDrivers.h _might_ be worth using on a given platform, and might contain useful code for your own efforts. But they should not be expected to work.
 
 
-# Possible conflicts in Arduino from other repos
+## Possible conflicts in Arduino from other repos
 
 If you are using any of my atomized Arduino libraries for specific drivers, you might have namespace conflicts. The list of libraries follows:
 
@@ -51,12 +51,14 @@ If you are using any of my atomized Arduino libraries for specific drivers, you 
 My advice would be to abandon those synchronous drivers, and re-work your sketch to use the async version. The synchronous versions of these libraries were written more as demonstration pieces, and aren't maintained unless a major bug is found. Their async counterparts in this repo are much better by all standards except simplicity.
 
 
-# Cryptography hardware
+## Planned changes
+
+### Cryptography hardware
 
 It is the ultimate goal of CppPotpourri to facilitate integration of cryptographic code in a manner similar to how it abstracts hardware. But this is not ready yet, and will be provided by a separate repo. Until such time as that integration is complete, please don't try to enable the cryptographic features. It will only break the build and frustrate you.
 
 
-# Licenses
+## Licenses
 
 Many of the drivers in this repo were ported from synchronous drivers written by others. The original author's commentary was preserved where appropriate, alongside my refactor notes. Such drivers inherit their original author's licensing terms. The [AMG88xx driver](https://github.com/jspark311/ManuvrDrivers/blob/master/src/AMG88xx/AMG88xx.h) is a good example of this.
 

@@ -17,7 +17,6 @@
 #define SHIFTREG_FLAG_INITIALIZED      0x02  // Device initialized.
 #define SHIFTREG_FLAG_ENABLED          0x04  // Is the OE pin asserted?
 #define SHIFTREG_FLAG_PENDING_IO       0x08  // Is I/O ongoing?
-#define SHIFTREG_FLAG_QUEUED_IO        0x10  // Is I/O queued?
 
 #define SHIFTREG_FLAG_RESET_MASK       (SHIFTREG_FLAG_ENABLED | SHIFTREG_FLAG_PINS_CONFIGURED)
 

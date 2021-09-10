@@ -1,6 +1,7 @@
 /*
 * This file started out as a SparkFun driver. The original license is preserved
 *   below.
+* https://github.com/sparkfun/SparkFun_AS3935_Lightning_Detector_Arduino_Library
 *
 *
 *
@@ -283,7 +284,7 @@ class AS3935 {
 
 //////////////////////////////////////////////////////////////////
 /// AS3935I2C - I2C Implementation of AS3935.
-class AS3935I2C: public AS3935, public I2CDevice {
+class AS3935I2C : public AS3935, public I2CDevice {
   public:
     AS3935I2C(const uint8_t i2c_addr);
 

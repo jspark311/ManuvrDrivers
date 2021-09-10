@@ -496,9 +496,9 @@ int8_t VEML6075::io_op_callback(BusOp* _op) {
             break;
           case VEML6075RegId::ID:
             {
-              StringBuilder output;
-              op->printDebug(&output);
-              Serial.println((char*) output.string());
+              //StringBuilder output;
+              //op->printDebug(&output);
+              //Serial.println((char*) output.string());
             }
             _veml_set_flag(VEML6075_FLAG_DEVICE_PRESENT, (VEML6075_DEVICE_ID == value));
             if (!initialized()) {

@@ -1,6 +1,7 @@
 /*
 * This file started out as a SparkFun driver. The original license is preserved
 *   below.
+* https://github.com/sparkfun/SparkFun_AS3935_Lightning_Detector_Arduino_Library
 */
 
 /*
@@ -336,6 +337,7 @@ void AS3935::setIndoorOutdoor(uint8_t _setting) {
     _writeRegister(AFE_GAIN, GAIN_MASK, OUTDOOR, 1);
 }
 
+
 // REG0x00, bits [5:1], manufacturer default: 10010 (INDOOR).
 // This function returns the indoor/outdoor settting.
 uint8_t AS3935::readIndoorOutdoor() {
@@ -375,6 +377,7 @@ void AS3935::setNoiseLevel( uint8_t _floor) {
   _writeRegister(THRESHOLD, NOISE_FLOOR_MASK, _floor, 4);
 }
 
+
 // REG0x01, bits [6:4], manufacturer default: 010 (2).
 // This function will return the set noise level threshold: default is 2.
 uint8_t AS3935::readNoiseLevel() {
@@ -403,7 +406,6 @@ void AS3935::spikeRejection( uint8_t _spSensitivity ) {
 uint8_t AS3935::readSpikeRejection(){
   uint8_t regVal = _readRegister(LIGHTNING_REG);
   return (regVal &= ~SPIKE_MASK);
-
 }
 
 
@@ -473,17 +475,16 @@ void AS3935::clearStatistics(bool _clearStat) {
 // read the interrupt register after lightning is detected, and 1.5 after
 // disturber.
 uint8_t AS3935::readInterruptReg() {
-    // A 2ms delay is added to allow for the memory register to be populated
-    // after the interrupt pin goes HIGH. See "Interrupt Management" in
-    // datasheet.
-    delay(2);
+  // A 2ms delay is added to allow for the memory register to be populated
+  // after the interrupt pin goes HIGH. See "Interrupt Management" in
+  // datasheet.
+  delay(2);
 
-    uint8_t _interValue;
-    _interValue = _readRegister(INT_MASK_ANT);
-    _interValue &= INT_MASK;
+  uint8_t _interValue;
+  _interValue = _readRegister(INT_MASK_ANT);
+  _interValue &= INT_MASK;
 
-    return(_interValue);
-
+  return(_interValue);
 }
 
 
@@ -511,7 +512,6 @@ uint8_t AS3935::readMaskDisturber(){
 // following setting. The accuracy of the antenna must be within 3.5 percent of
 // that value for proper signal validation and distance estimation.
 void AS3935::changeDivRatio(uint8_t _divisionRatio) {
-
   uint8_t bits;
 
   if(_divisionRatio == 16)

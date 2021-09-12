@@ -107,13 +107,13 @@ uint8_t FT6206::touched() {
    currently touched.
 */
 /**************************************************************************/
-TS_Point FT6206::getPoint(uint8_t n) {
+Vector3u16* FT6206::getPoint(uint8_t n) {
   readData();
-  if ((touches == 0) || (n > 1)) {
-    return TS_Point(0, 0, 0);
+  if ((touches == 0) || (n > FT62XX_TOUCH_BACKLOG_LENGTH)) {
+    return &touches[0];
   }
   else {
-    return TS_Point(touchX[n], touchY[n], 1);
+    return &touches[n];
   }
 }
 
@@ -167,13 +167,9 @@ void FT6206::readData() {
 #endif
 
   for (uint8_t i = 0; i < 2; i++) {
-    touchX[i] = i2cdat[0x03 + i * 6] & 0x0F;
-    touchX[i] <<= 8;
-    touchX[i] |= i2cdat[0x04 + i * 6];
-    touchY[i] = i2cdat[0x05 + i * 6] & 0x0F;
-    touchY[i] <<= 8;
-    touchY[i] |= i2cdat[0x06 + i * 6];
-    touchID[i] = i2cdat[0x05 + i * 6] >> 4;
+    uint16_t temp_x = ((i2cdat[0x03 + i * 6] & 0x0F) << 8) | (i2cdat[0x04 + i * 6]);
+    uint16_t temp_y = ((i2cdat[0x05 + i * 6] & 0x0F) << 8) | (i2cdat[0x06 + i * 6]);
+    _advance_touch_list(temp_x, temp_y, 0, (i2cdat[0x05 + i * 6] >> 4));
   }
 
 #ifdef FT6206_DEBUG
@@ -248,52 +244,75 @@ void FT6206::autoCalibrate(void) {
 }
 */
 
+
+void FT6206::_advance_touch_list(int16_t x, int16_t y, int16_t z, uint8_t id) {
+  Vector3u16 temp0(x, y, z);
+  Vector3u16 temp1;
+  uint8_t temp_id0 = id;
+  uint8_t temp_id1 = 0;
+  for (uint8_t i = 0; i < FT62XX_TOUCH_BACKLOG_LENGTH; i++) {
+    temp1.set(&touches[i]);
+    temp_id1 = touchID[i];
+    touches[i].set(&temp0);
+    touchID[i] = temp_id0;
+    temp0.set(&temp1);
+    temp_id0 = temp_id1;
+  }
+}
+
+
 void FT6206::printDebug(StringBuilder* output) {
-
+  output->concat("-- FT6206\n");
+  for (uint8_t i = 0; i < FT62XX_TOUCH_BACKLOG_LENGTH; i++) {
+  }
 }
 
 
 
-/****************/
+/*******************************************************************************
+* ___     _       _                      These members are mandatory overrides
+*  |   / / \ o   | \  _     o  _  _      for implementing I/O callbacks. They
+* _|_ /  \_/ o   |_/ (/_ \/ | (_ (/_     are also implemented by Adapters.
+*******************************************************************************/
 
-/**************************************************************************/
-/*!
-    @brief  Instantiates a new FT6206 class with x, y and z set to 0 by default
+/**
+* Called prior to the given bus operation beginning.
+* Returning 0 will allow the operation to continue.
+* Returning anything else will fail the operation with IO_RECALL.
+*   Operations failed this way will have their callbacks invoked as normal.
+*
+* @param  _op  The bus operation that was completed.
+* @return 0 to run the op, or non-zero to cancel it.
 */
-/**************************************************************************/
-TS_Point::TS_Point() { x = y = z = 0; }
-
-/**************************************************************************/
-/*!
-    @brief  Instantiates a new FT6206 class with x, y and z set by params.
-    @param  _x The X coordinate
-    @param  _y The Y coordinate
-    @param  _z The Z coordinate
-*/
-/**************************************************************************/
-
-TS_Point::TS_Point(int16_t _x, int16_t _y, int16_t _z) {
-  x = _x;
-  y = _y;
-  z = _z;
+int8_t FT6206::io_op_callahead(BusOp* _op) {
+  return 0;   // Permit the transfer, always.
 }
 
-/**************************************************************************/
-/*!
-    @brief  Simple == comparator for two TS_Point objects
-    @returns True if x, y and z are the same for both points, False otherwise.
+/**
+* When a bus operation completes, it is passed back to its issuing class.
+*
+* @param  _op  The bus operation that was completed.
+* @return BUSOP_CALLBACK_NOMINAL on success, or appropriate error code.
 */
-/**************************************************************************/
-bool TS_Point::operator==(TS_Point p1) {
-  return ((p1.x == x) && (p1.y == y) && (p1.z == z));
-}
+int8_t FT6206::io_op_callback(BusOp* _op) {
+  int8_t ret = BUSOP_CALLBACK_NOMINAL;
+  I2CBusOp* op = (I2CBusOp*) _op;
 
-/**************************************************************************/
-/*!
-    @brief  Simple != comparator for two TS_Point objects
-    @returns False if x, y and z are the same for both points, True otherwise.
-*/
-/**************************************************************************/
-bool TS_Point::operator!=(TS_Point p1) {
-  return ((p1.x != x) || (p1.y != y) || (p1.z != z));
+  if (!op->hasFault()) {
+    uint8_t* buf = op->buffer();
+    uint8_t  len = op->bufferLen();
+    switch (op->get_opcode()) {
+      case BusOpcode::TX:
+        break;
+
+      case BusOpcode::RX:  // Only RX in driver is a full refresh.
+        break;
+      default:
+        break;
+    }
+  }
+  else {
+    ret = BUSOP_CALLBACK_ERROR;
+  }
+  return ret;
 }

@@ -247,3 +247,60 @@ uint8_t AS7265X::readByte(uint8_t address, uint8_t subAddress) {
   data = Wire.read();                      // Fill Rx buffer with result
   return data;                             // Return data read from slave register
 }
+
+
+void AS7265X::printDebug(StringBuilder* output) {
+  output->concat("-- AS7265X\n");
+  for (uint8_t i = 0; i < FT62XX_TOUCH_BACKLOG_LENGTH; i++) {
+  }
+}
+
+
+
+/*******************************************************************************
+* ___     _       _                      These members are mandatory overrides
+*  |   / / \ o   | \  _     o  _  _      for implementing I/O callbacks. They
+* _|_ /  \_/ o   |_/ (/_ \/ | (_ (/_     are also implemented by Adapters.
+*******************************************************************************/
+
+/**
+* Called prior to the given bus operation beginning.
+* Returning 0 will allow the operation to continue.
+* Returning anything else will fail the operation with IO_RECALL.
+*   Operations failed this way will have their callbacks invoked as normal.
+*
+* @param  _op  The bus operation that was completed.
+* @return 0 to run the op, or non-zero to cancel it.
+*/
+int8_t AS7265X::io_op_callahead(BusOp* _op) {
+  return 0;   // Permit the transfer, always.
+}
+
+/**
+* When a bus operation completes, it is passed back to its issuing class.
+*
+* @param  _op  The bus operation that was completed.
+* @return BUSOP_CALLBACK_NOMINAL on success, or appropriate error code.
+*/
+int8_t AS7265X::io_op_callback(BusOp* _op) {
+  int8_t ret = BUSOP_CALLBACK_NOMINAL;
+  I2CBusOp* op = (I2CBusOp*) _op;
+
+  if (!op->hasFault()) {
+    uint8_t* buf = op->buffer();
+    uint8_t  len = op->bufferLen();
+    switch (op->get_opcode()) {
+      case BusOpcode::TX:
+        break;
+
+      case BusOpcode::RX:  // Only RX in driver is a full refresh.
+        break;
+      default:
+        break;
+    }
+  }
+  else {
+    ret = BUSOP_CALLBACK_ERROR;
+  }
+  return ret;
+}

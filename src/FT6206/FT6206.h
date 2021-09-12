@@ -9,11 +9,15 @@
 * Refactor log:
 *   Initial import. Broken. Won't compile. Header is merged.
 *                                                  ---J. Ian Lindsay  2021.09.09
+*   Dropped the TS_Point class in favor of Vector3.
+*                                                  ---J. Ian Lindsay  2021.09.11
+*
 */
 
 #include <AbstractPlatform.h>
 #include <FlagContainer.h>
 #include <I2CAdapter.h>
+#include <Vector3.h>
 
 #ifndef ADAFRUIT_FT6206_LIBRARY
 #define ADAFRUIT_FT6206_LIBRARY
@@ -43,24 +47,7 @@
 // calibrated for Adafruit 2.8" ctp screen
 #define FT62XX_DEFAULT_THRESHOLD 128 //!< Default threshold for touch detection
 
-/**************************************************************************/
-/*!
-@brief  Helper class that stores a TouchScreen Point with x, y, and z
-coordinates, for easy math/comparison
-*/
-/**************************************************************************/
-class TS_Point {
-public:
-  TS_Point();
-  TS_Point(int16_t x, int16_t y, int16_t z);
-
-  bool operator==(TS_Point);
-  bool operator!=(TS_Point);
-
-  int16_t x; /*!< X coordinate */
-  int16_t y; /*!< Y coordinate */
-  int16_t z; /*!< Z coordinate (often used for pressure) */
-};
+#define FT62XX_TOUCH_BACKLOG_LENGTH  2  // How many touchs should we retain?
 
 /**************************************************************************/
 /*!
@@ -75,7 +62,7 @@ class FT6206 : public I2CDevice {
 
     int8_t init(uint8_t thresh = FT62XX_DEFAULT_THRESHOLD);
     uint8_t touched();
-    TS_Point getPoint(uint8_t n = 0);
+    Vector3u16* getPoint(uint8_t n = 0);
     // void autoCalibrate();
 
     /* Overrides from I2CDevice... */
@@ -86,13 +73,14 @@ class FT6206 : public I2CDevice {
 
   private:
     uint8_t touches = 0;
-    uint16_t touchX[2];
-    uint16_t touchY[2];
-    uint16_t touchID[2];
+    Vector3u16 touches[FT62XX_TOUCH_BACKLOG_LENGTH];
+    uint8_t touchID[FT62XX_TOUCH_BACKLOG_LENGTH];
 
     void writeRegister8(uint8_t reg, uint8_t val);
     uint8_t readRegister8(uint8_t reg);
     void readData();
+
+    void _advance_touch_list(uint16_t x, uint16_t y, uint16_t z, uint8_t id);
 };
 
 #endif // ADAFRUIT_FT6206_LIBRARY

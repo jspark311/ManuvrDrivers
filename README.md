@@ -9,6 +9,10 @@ A collection of non-blocking flexible hardware drivers written on top of CppPotp
 
 One major benefit to this abstraction is that drivers written under one environment don't require porting for use under any other environment.
 
+### Notes on behavior of destructors
+
+The envisioned use-case for these drivers is to be instantiated once, and never destroyed. This has the benefit of keeping (usually unused) code out of the binary. The toolchain is generally not smart enough to know if a given instance will _actually need_ destructors. Nevertheless, in drivers that do heap allocation, it will (should) be free'd. Any case where heap is NOT free'd in a destructor is a mistake on my part. BusOp hygiene is not as good, and it is conceivable that a BusOp whose life-cycle outlasts that of the class that is assigned as its callback will precipitate a hard-fault if the driver class is torn down. If this untidiness hurts your use-case, I will gladly accept patches.
+
 ### Notes on platform support
 
 In order to use this library, your project must provide the unimplemented functions in CppPotpourri's [AbstractPlatform header](https://github.com/jspark311/CppPotpourri/blob/master/src/AbstractPlatform.h). Some of these are provided by CppPotpourri itself, and your project may not use everything in the `AbstractPlatform` definition (depending on what drivers you include). The easiest way to determine what you need to implement is to write the first-draft of your project, and see what the linker complains about.

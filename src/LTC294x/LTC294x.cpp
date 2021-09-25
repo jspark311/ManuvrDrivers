@@ -25,7 +25,6 @@ TODO: It should be noted that this class assumes an LTC2942-1. This should be
 */
 
 #include "LTC294x.h"
-#include "ParsingConsole.h"
 
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
@@ -435,7 +434,7 @@ void LTC294x::printDebug(StringBuilder* output) {
 * Dump the contents of this device to the logger.
 */
 void LTC294x::printRegisters(StringBuilder* output) {
-  ParsingConsole::styleHeader1(output, "LTC294x shadows");
+  StringBuilder::styleHeader1(output, "LTC294x shadows");
   StringBuilder::printBuffer(output, shadows, sizeof(shadows), "\t");
   output->concat("\n");
 }

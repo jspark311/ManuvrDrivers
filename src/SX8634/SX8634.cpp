@@ -160,7 +160,7 @@ int8_t SX8634::io_op_callahead(BusOp* _op) {
 int8_t SX8634::io_op_callback(BusOp* _op) {
   I2CBusOp* completed = (I2CBusOp*) _op;
   uint8_t* buf     = completed->buffer();
-  uint16_t buf_len = completed->bufferLen();
+  //uint16_t buf_len = completed->bufferLen();
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
   #if defined(CONFIG_SX8634_DEBUG)
     _class_log.concat("SX8634::io_op_callback()\n");
@@ -513,15 +513,15 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
 * @param   StringBuilder* The buffer into which this fxn should write its output.
 */
 void SX8634::printOverview(StringBuilder* output) {
-  output->concatf("Touch sensor (SX8634)%s", PRINT_DIVIDER_1_STR);
-  output->concatf("-- Mode:           %s\n", getModeStr(operationalMode()));
-  output->concatf("-- Found:          %c\n", (devFound() ? 'y':'n'));
-  output->concatf("-- IRQ Inhibit:    %c\n", (_sx8634_flag(SX8634_FLAG_IRQ_INHIBIT) ? 'y': 'n'));
-  output->concatf("-- PWM sync'd:     %c\n", (_sx8634_flag(SX8634_FLAG_PWM_CHANGE_IN_FLIGHT) ? 'n': 'y'));
-  output->concatf("-- Compensations:  %u\n", _compensations);
-  output->concatf("-- FSM Position:   %s\n", getFSMStr(_fsm));
-  output->concatf("-- Reset pin:      %d\n", _opts.reset_pin);
-  output->concatf("-- IRQ pin:        %d\n", _opts.irq_pin);
+  StringBuilder::styleHeader1(output, "Touch sensor (SX8634)");
+  output->concatf("\tMode:           %s\n", getModeStr(operationalMode()));
+  output->concatf("\tFound:          %c\n", (devFound() ? 'y':'n'));
+  output->concatf("\tIRQ Inhibit:    %c\n", (_sx8634_flag(SX8634_FLAG_IRQ_INHIBIT) ? 'y': 'n'));
+  output->concatf("\tPWM sync'd:     %c\n", (_sx8634_flag(SX8634_FLAG_PWM_CHANGE_IN_FLIGHT) ? 'n': 'y'));
+  output->concatf("\tCompensations:  %u\n", _compensations);
+  output->concatf("\tFSM Position:   %s\n", getFSMStr(_fsm));
+  output->concatf("\tReset pin:      %d\n", _opts.reset_pin);
+  output->concatf("\tIRQ pin:        %d\n", _opts.irq_pin);
 
   output->concat("--\n-- Registers:\n");
   StringBuilder::printBuffer(output, _registers, sizeof(_registers), "--\t  ");
@@ -628,8 +628,10 @@ void SX8634::_set_shadow_reg_val(uint8_t addr, uint8_t val) {
 
 void SX8634::_set_shadow_reg_val(uint8_t addr, uint8_t* buf, uint8_t len) {
   int idx = _get_shadow_reg_mem_addr(addr);
-  if ((idx + len) <= sizeof(_registers)) {
-    memcpy(&_registers[idx], buf, len);
+  if (0 <= idx) {
+    if (((uint) idx + len) <= sizeof(_registers)) {
+      memcpy(&_registers[idx], buf, len);
+    }
   }
 }
 

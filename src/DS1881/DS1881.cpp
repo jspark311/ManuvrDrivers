@@ -96,8 +96,7 @@ int8_t DS1881::io_op_callback(BusOp* op) {
 * Dump this item to the dev log.
 */
 void DS1881::printDebug(StringBuilder* output) {
-  output->concat("DS1881 digital potentiometer");
-  output->concat(PRINT_DIVIDER_1_STR);
+  StringBuilder::styleHeader2(output, "DS1881 potentiometer");
   I2CDevice::printDebug(output);
 
   if (!dev_init) {

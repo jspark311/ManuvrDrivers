@@ -164,7 +164,7 @@ uint8_t ShiftRegisterOut::getPinValues(uint8_t dev) {
 *
 */
 void ShiftRegisterOut::printDebug(StringBuilder* output) {
-  //ParsingConsole::styleHeader1(output, "ShiftRegisterOut");
+  //StringBuilder::styleHeader1(output, "ShiftRegisterOut");
   output->concatf("\tChain len:     %u\n", DEVS_IN_CHAIN);
   output->concatf("\tRCLK Pin:      %u\n", RCLK_PIN);
   output->concatf("\tOE Pin:        %u\n", OE_PIN);

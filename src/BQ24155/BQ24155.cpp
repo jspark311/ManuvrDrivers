@@ -22,7 +22,6 @@ Support for the Texas Instruments li-ion charger.
 */
 
 #include "BQ24155.h"
-#include "ParsingConsole.h"
 
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
@@ -621,7 +620,7 @@ void BQ24155::printDebug(StringBuilder* output) {
 * Dump the contents of this device to the logger.
 */
 void BQ24155::printRegisters(StringBuilder* output) {
-  ParsingConsole::styleHeader1(output, "BQ24155 shadows");
+  StringBuilder::styleHeader1(output, "BQ24155 shadows");
   StringBuilder::printBuffer(output, shadows, sizeof(shadows), "\t");
   output->concat("\n");
 }

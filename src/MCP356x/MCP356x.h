@@ -161,11 +161,14 @@ enum class MCP356xState : uint8_t {
 #define MCP356X_FLAG_3RD_ORDER_TEMP   0x00000800  // Spend CPU to make temperature conversion more accurate?
 #define MCP356X_FLAG_GENERATE_MCLK    0x00001000  // MCU is to generate the clock.
 #define MCP356X_FLAG_REFRESH_CYCLE    0x00002000  // We are undergoing a full register refresh.
+#define MCP356X_FLAG_HAS_INTRNL_VREF  0x00004000  // This part was found to support an internal Vref.
+#define MCP356X_FLAG_USE_INTRNL_VREF  0x00008000  // Internal Vref should be enabled.
 
 // Bits to preserve through reset.
 #define MCP356X_FLAG_RESET_MASK  (MCP356X_FLAG_DEVICE_PRESENT | MCP356X_FLAG_PINS_CONFIGURED | \
                                   MCP356X_FLAG_VREF_DECLARED | MCP356X_FLAG_USE_INTERNAL_CLK | \
-                                  MCP356X_FLAG_3RD_ORDER_TEMP | MCP356X_FLAG_GENERATE_MCLK)
+                                  MCP356X_FLAG_3RD_ORDER_TEMP | MCP356X_FLAG_GENERATE_MCLK | \
+                                  MCP356X_FLAG_HAS_INTRNL_VREF | MCP356X_FLAG_USE_INTRNL_VREF)
 
 // Bits indicating calibration steps.
 #define MCP356X_FLAG_ALL_CAL_MASK     (MCP356X_FLAG_SAMPLED_AVDD | MCP356X_FLAG_SAMPLED_VCM | MCP356X_FLAG_SAMPLED_OFFSET)
@@ -254,11 +257,14 @@ class MCP356x : public BusOpCallback {
     int8_t  setScanChannels(int count, ...);
     int8_t  setReferenceRange(float plus, float minus);
     inline void    setMCLKFrequency(double x) {  _mclk_freq = x;  };
-    inline uint8_t getIRQPin() {      return _IRQ_PIN;  };
-    inline bool    adcFound() {       return _mcp356x_flag(MCP356X_FLAG_DEVICE_PRESENT);  };
-    inline bool    adcConfigured() {  return _mcp356x_flag(MCP356X_FLAG_USER_CONFIG);     };
-    inline bool    adcCalibrating() { return (_current_state == MCP356xState::CALIBRATION); };
-    inline bool    adcCalibrated() {  return _mcp356x_flag(MCP356X_FLAG_CALIBRATED);      };
+    inline uint8_t getIRQPin() {        return _IRQ_PIN;  };
+    inline bool    adcFound() {         return _mcp356x_flag(MCP356X_FLAG_DEVICE_PRESENT);    };
+    inline bool    adcConfigured() {    return _mcp356x_flag(MCP356X_FLAG_USER_CONFIG);       };
+    inline bool    adcCalibrating() {   return (_current_state == MCP356xState::CALIBRATION); };
+    inline bool    adcCalibrated() {    return _mcp356x_flag(MCP356X_FLAG_CALIBRATED);        };
+    inline bool    hasInternalVref() {  return _mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF);   };
+    bool usingInternalVref();
+    int8_t useInternalVref(bool);
 
     bool isrFired() {    return isr_fired;   };
 

@@ -180,6 +180,9 @@ int8_t MCP356x::setOption(uint32_t flgs) {
       ret = -1;
     }
   }
+  if (flgs & MCP356X_FLAG_USE_INTRNL_VREF) {
+    _mcp356x_set_flag(MCP356X_FLAG_USE_INTRNL_VREF);
+  }
   if (flgs & MCP356X_FLAG_3RD_ORDER_TEMP) {
     _mcp356x_set_flag(MCP356X_FLAG_3RD_ORDER_TEMP);
   }
@@ -199,7 +202,7 @@ int8_t MCP356x::setOption(uint32_t flgs) {
 */
 int8_t MCP356x::_post_reset_fxn() {
   int8_t ret = -1;
-  uint32_t c0_val = 0x000000C3;
+  uint32_t c0_val = 0x00000083;
 
   // Enable register write.
   ret = _write_register(MCP356xRegister::LOCK, 0x000000A5);
@@ -210,6 +213,17 @@ int8_t MCP356x::_post_reset_fxn() {
       if (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK)) {
         c0_val &= 0xFFFFFFCF;   // Set CLK_SEL to use internal clock with no pin output.
         c0_val |= 0x00000020;
+      }
+      if (_mcp356x_flag(MCP356X_FLAG_USE_INTRNL_VREF)) {
+        if (!_mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF)) {
+          _set_fault("Failed to use internal Vref (unsupported)");
+        }
+        else {
+          c0_val &= 0xFFFFFFBF;   // Set VREF_SEL to use internal VREF with buffered pin output.
+          c0_val |= 0x00000040;
+          _vref_plus  = 2.4;
+          _vref_minus = 0;
+        }
       }
       ret = _write_register(MCP356xRegister::CONFIG0, c0_val);
       if (0 == ret) {

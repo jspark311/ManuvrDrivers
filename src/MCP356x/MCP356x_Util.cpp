@@ -73,7 +73,14 @@ void MCP356x::printTimings(StringBuilder* output) {
 
 
 void MCP356x::printData(StringBuilder* output) {
-  output->concat("    ---< MCP356x >-----------------------------------------------\n");
+  StringBuilder prod_str("MCP356");
+  if (adcFound()) {
+    prod_str.concatf("%d", _channel_count());
+    if (hasInternalVref()) prod_str.concat('R');
+  }
+  else prod_str.concat("x (not found)");
+
+  StringBuilder::styleHeader2(output, (const char*) prod_str.string());
   if (stateStable()) {
     output->concatf("\tState stable:   %s\n", stateStr(_current_state));
   }
@@ -82,36 +89,38 @@ void MCP356x::printData(StringBuilder* output) {
     output->concatf("\tPrior State:  \t%s\n", stateStr(_prior_state));
     output->concatf("\tDesired State:\t%s\n", stateStr(_desired_state));
   }
-  output->concatf("\tFound:          %c\n", (adcFound() ? 'y' : 'n'));
-  output->concatf("\tChannels:       %u\n", _channel_count());
-  output->concatf("\tClock running:  %c\n", (_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING) ? 'y' : 'n'));
-  output->concatf("\tConfigured:     %c\n", (adcConfigured() ? 'y' : 'n'));
-  output->concatf("\tCalibrated:     %c\n", (adcCalibrated() ? 'y' : 'n'));
-  if (!adcCalibrated()) {
-    output->concatf("\t  SAMPLED_OFFSET: %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_OFFSET) ? 'y' : 'n'));
-    output->concatf("\t  SAMPLED_VCM:    %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_VCM) ? 'y' : 'n'));
-    output->concatf("\t  SAMPLED_AVDD:   %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_AVDD) ? 'y' : 'n'));
-  }
-  output->concatf("\tCRC Error:      %c\n", (_mcp356x_flag(MCP356X_FLAG_CRC_ERROR) ? 'y' : 'n'));
-  output->concatf("\tisr_fired:      %c\n", (isr_fired ? 'y' : 'n'));
-  output->concatf("\tRead count:     %u\n", read_count);
-  output->concatf("\tGain:           x%.2f\n", _gain_value());
-  uint8_t _osr_idx = (uint8_t) getOversamplingRatio();
-  output->concatf("\tOversampling:   x%u\n", OSR1_VALUES[_osr_idx] * OSR3_VALUES[_osr_idx]);
-  output->concatf("\tVref declared:  %c\n", (_vref_declared() ? 'y' : 'n'));
-  output->concatf("\tVref range:     %.3f / %.3f\n", _vref_minus, _vref_plus);
-  output->concatf("\tClock SRC:      %sternal\n", (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK) ? "In" : "Ex"));
-  if (_scan_covers_channel(MCP356xChannel::TEMP)) {
-    output->concatf("\tTemperature:    %.2fC\n", getTemperature());
-    output->concatf("\tThermo fitting: %s\n", (_mcp356x_flag(MCP356X_FLAG_3RD_ORDER_TEMP) ? "3rd-order" : "Linear"));
-  }
-  if (adcCalibrated()) {
-    output->concat("\t");
-    printChannel(MCP356xChannel::OFFSET, output);
-    output->concat("\t");
-    printChannel(MCP356xChannel::VCM, output);
-    output->concat("\t");
-    printChannel(MCP356xChannel::AVDD, output);
+  if (adcFound()) {
+    output->concatf("\tChannels:       %u\n", _channel_count());
+    output->concatf("\tClock running:  %c\n", (_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING) ? 'y' : 'n'));
+    output->concatf("\tConfigured:     %c\n", (adcConfigured() ? 'y' : 'n'));
+    output->concatf("\tCalibrated:     %c\n", (adcCalibrated() ? 'y' : 'n'));
+    if (!adcCalibrated()) {
+      output->concatf("\t  SAMPLED_OFFSET: %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_OFFSET) ? 'y' : 'n'));
+      output->concatf("\t  SAMPLED_VCM:    %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_VCM) ? 'y' : 'n'));
+      output->concatf("\t  SAMPLED_AVDD:   %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_AVDD) ? 'y' : 'n'));
+    }
+    output->concatf("\tCRC Error:      %c\n", (_mcp356x_flag(MCP356X_FLAG_CRC_ERROR) ? 'y' : 'n'));
+    output->concatf("\tisr_fired:      %c\n", (isr_fired ? 'y' : 'n'));
+    output->concatf("\tRead count:     %u\n", read_count);
+    output->concatf("\tGain:           x%.2f\n", _gain_value());
+    uint8_t _osr_idx = (uint8_t) getOversamplingRatio();
+    output->concatf("\tOversampling:   x%u\n", OSR1_VALUES[_osr_idx] * OSR3_VALUES[_osr_idx]);
+    output->concatf("\tVref source:    %sternal\n", (usingInternalVref() ? "In": "Ex"));
+    output->concatf("\tVref declared:  %c\n", (_vref_declared() ? 'y' : 'n'));
+    output->concatf("\tVref range:     %.3f / %.3f\n", _vref_minus, _vref_plus);
+    output->concatf("\tClock SRC:      %sternal\n", (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK) ? "In" : "Ex"));
+    if (_scan_covers_channel(MCP356xChannel::TEMP)) {
+      output->concatf("\tTemperature:    %.2fC\n", getTemperature());
+      output->concatf("\tThermo fitting: %s\n", (_mcp356x_flag(MCP356X_FLAG_3RD_ORDER_TEMP) ? "3rd-order" : "Linear"));
+    }
+    if (adcCalibrated()) {
+      output->concat("\t");
+      printChannel(MCP356xChannel::OFFSET, output);
+      output->concat("\t");
+      printChannel(MCP356xChannel::VCM, output);
+      output->concat("\t");
+      printChannel(MCP356xChannel::AVDD, output);
+    }
   }
 }
 

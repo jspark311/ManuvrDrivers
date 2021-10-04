@@ -75,7 +75,7 @@ void MCP356x::printTimings(StringBuilder* output) {
 void MCP356x::printData(StringBuilder* output) {
   StringBuilder prod_str("MCP356");
   if (adcFound()) {
-    prod_str.concatf("%d", _channel_count());
+    prod_str.concatf("%d", _channel_count() >> 1);
     if (hasInternalVref()) prod_str.concat('R');
   }
   else prod_str.concat("x (not found)");

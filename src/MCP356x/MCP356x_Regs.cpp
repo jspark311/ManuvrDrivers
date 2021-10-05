@@ -201,6 +201,42 @@ MCP356xOversamplingRatio MCP356x::getOversamplingRatio() {
 }
 
 
+/**
+* Application-facing accessor for VREF selection, if available.
+*
+* @return true if Vref is using the internally generated value.
+*/
+bool MCP356x::usingInternalVref() {
+  bool ret = false;
+  if (_mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF)) {
+    ret = (0 != (_get_shadow_value(MCP356xRegister::CONFIG0) & 0x00000040));
+  }
+  return ret;
+}
+
+
+/**
+* Application-facing accessor for VREF selection, if available.
+*
+* @param x true will enable the internal Vref, if available.
+* @return 0 on success, -1 on "not supported", or -2 on I/O failure.
+*/
+int8_t MCP356x::useInternalVref(bool x) {
+  int8_t ret = -1;
+  if (_mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF)) {
+    uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0) & 0x00FFFFBF;
+    if (x) {
+      c0_val |= 0x00000040;
+      _vref_plus  = 2.4;
+      _vref_minus = 0;
+    }
+    ret = (0 == _write_register(MCP356xRegister::CONFIG0, c0_val)) ? 0 : -2;
+  }
+  return ret;
+}
+
+
+
 /*******************************************************************************
 * Internal functions
 *******************************************************************************/
@@ -512,12 +548,25 @@ int8_t MCP356x::_write_register(MCP356xRegister r, uint32_t val) {
   if (nullptr != _BUS) {
     switch (r) {
       // Filter out the unimplemented bits.
-      case MCP356xRegister::CONFIG1:   safe_val = val & 0xFFFFFFFC;    break;
-      case MCP356xRegister::CONFIG2:   safe_val = val | 0x00000003;    break;
-      case MCP356xRegister::SCAN:      safe_val = val & 0xFFE0FFFF;    break;
-      case MCP356xRegister::RESERVED0: safe_val = 0x00900000;          break;
-      case MCP356xRegister::RESERVED1: safe_val = 0x00000050;          break;
-      case MCP356xRegister::RESERVED2: safe_val = val & 0x0000000F;    break;
+      case MCP356xRegister::CONFIG1:
+        safe_val = val & 0xFFFFFFFC;
+        break;
+      case MCP356xRegister::CONFIG2:
+        safe_val = val | (_mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF) ? 0x00000001 : 0x00000003);
+        break;
+      case MCP356xRegister::SCAN:
+        safe_val = val & 0xFFE0FFFF;
+        break;
+      case MCP356xRegister::RESERVED0:
+        safe_val = 0x00900000;
+        break;
+      case MCP356xRegister::RESERVED1:
+        safe_val = (_mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF) ? 0x00000030 : 0x00000050);
+        break;
+      case MCP356xRegister::RESERVED2:
+        safe_val = val & 0x0000000F;
+        break;
+
       // No safety required.
       case MCP356xRegister::CONFIG0:
       case MCP356xRegister::CONFIG3:
@@ -727,20 +776,29 @@ int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
       break;
     case MCP356xRegister::RESERVED2:
       if (0x00900000 == _get_shadow_value(MCP356xRegister::RESERVED0)) {
-        if (0x50 == (uint8_t) _get_shadow_value(MCP356xRegister::RESERVED1)) {
-          switch ((uint8_t) _get_shadow_value(MCP356xRegister::RESERVED2)) {
-            case 0x0C:
-            case 0x0D:
-            case 0x0F:
-              _mcp356x_set_flag(MCP356X_FLAG_DEVICE_PRESENT);
-              ret = 0;
-              break;
-            default:
-              _local_log.concat("bad RESERVED2 value\n");
-              break;
-          }
+        uint8_t res1_val = (uint8_t) _get_shadow_value(MCP356xRegister::RESERVED1);
+        switch (res1_val) {
+          case 0x30:
+          case 0x50:
+            // If the chip has an internal Vref, it will start up running and
+            //   connected.
+            _mcp356x_set_flag(MCP356X_FLAG_HAS_INTRNL_VREF, (res1_val == 0x30));
+            switch ((uint8_t) _get_shadow_value(MCP356xRegister::RESERVED2)) {
+              case 0x0C:
+              case 0x0D:
+              case 0x0F:
+                _mcp356x_set_flag(MCP356X_FLAG_DEVICE_PRESENT);
+                ret = 0;
+                break;
+              default:
+                _local_log.concat("bad RESERVED2 value\n");
+                break;
+            }
+            break;
+          default:
+            _local_log.concat("bad RESERVED1 value\n");
+            break;
         }
-        else _local_log.concat("bad RESERVED1 value\n");
       }
       else _local_log.concat("bad RESERVED0 value\n");
       break;

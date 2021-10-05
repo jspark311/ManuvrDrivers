@@ -20,16 +20,18 @@ int8_t ShiftRegisterOut::reset() {
       *(_shadows + i) = 0;
     }
     ret--;
-    // Write the changes.
-    if (255 != SRCLR_PIN) {
-      setPin(SRCLR_PIN, false);
-      setPin(RCLK_PIN, false);
-      setPin(RCLK_PIN, true);
-      setPin(SRCLR_PIN, true);
-      ret = 0;
-    }
-    else if (0 == _write_chain()){
-      ret = 0;
+    // Write the changes, if possible.
+    if (_class_flag(SHIFTREG_FLAG_PINS_CONFIGURED)) {
+      if (255 != SRCLR_PIN) {
+        setPin(SRCLR_PIN, false);
+        setPin(RCLK_PIN, false);
+        setPin(RCLK_PIN, true);
+        setPin(SRCLR_PIN, true);
+        ret = 0;
+      }
+      else if (0 == _write_chain()){
+        ret = 0;
+      }
     }
   }
   return ret;
@@ -39,7 +41,7 @@ int8_t ShiftRegisterOut::reset() {
 /**
 * Resets the class and makes the hardware state match.
 *
-* @return 0 on success, or -1 on allocation failure, or -2 on I/O error.
+* @return 0 on success, -1 on bad pin config, or -2 on allocation failure.
 */
 int8_t ShiftRegisterOut::init() {
   int8_t ret = -1;
@@ -162,12 +164,13 @@ uint8_t ShiftRegisterOut::getPinValues(uint8_t dev) {
 *
 */
 void ShiftRegisterOut::printDebug(StringBuilder* output) {
-  //ParsingConsole::styleHeader1(output, "ShiftRegisterOut");
+  //StringBuilder::styleHeader1(output, "ShiftRegisterOut");
   output->concatf("\tChain len:     %u\n", DEVS_IN_CHAIN);
   output->concatf("\tRCLK Pin:      %u\n", RCLK_PIN);
   output->concatf("\tOE Pin:        %u\n", OE_PIN);
   output->concatf("\tSRCLR Pin:     %u\n", SRCLR_PIN);
   output->concatf("\toutputEnabled: %c\n", outputEnabled() ? 'y' : 'n');
+  output->concatf("\tpendingIO:     %c\n", pendingIO() ? 'y' : 'n');
   output->concatf("\t_pins_initd:   %c\n", _class_flag(SHIFTREG_FLAG_PINS_CONFIGURED) ? 'y' : 'n');
   output->concatf("\tinitialized:   %c\n", initialized() ? 'y' : 'n');
   output->concatf("\tallocated:     %c\n", allocated() ? 'y' : 'n');
@@ -181,25 +184,27 @@ void ShiftRegisterOut::printDebug(StringBuilder* output) {
 * @return 0 on success. -1 otherwise.
 */
 int8_t ShiftRegisterOut::_ll_pin_init() {
-  if (255 != RCLK_PIN) {
-    pinMode(RCLK_PIN, GPIOMode::OUTPUT);
-    setPin(RCLK_PIN, true);
-    if (255 != SRCLR_PIN) {
-      pinMode(SRCLR_PIN, GPIOMode::OUTPUT);
-      // Store the zero state in the output registers.
-      setPin(SRCLR_PIN, false);
-      setPin(SRCLR_PIN, true);
-      setPin(RCLK_PIN, false);
+  if (!_class_flag(SHIFTREG_FLAG_PINS_CONFIGURED)) {
+    if (255 != RCLK_PIN) {
+      pinMode(RCLK_PIN, GPIOMode::OUTPUT);
       setPin(RCLK_PIN, true);
+      if (255 != SRCLR_PIN) {
+        pinMode(SRCLR_PIN, GPIOMode::OUTPUT);
+        // Store the zero state in the output registers.
+        setPin(SRCLR_PIN, false);
+        setPin(RCLK_PIN, false);
+        setPin(RCLK_PIN, true);
+        setPin(SRCLR_PIN, true);
+      }
+      // The driver will initialize the hardware with
+      //   outputs disabled if it has the choice.
+      _class_set_flag(SHIFTREG_FLAG_ENABLED, (255 == OE_PIN));
+      if (255 != OE_PIN) {
+        pinMode(OE_PIN, GPIOMode::OUTPUT);
+        setPin(OE_PIN, true);
+      }
+      _class_set_flag(SHIFTREG_FLAG_PINS_CONFIGURED);
     }
-    // The driver will initialize the hardware with
-    //   outputs disabled if it has the choice.
-    _class_set_flag(SHIFTREG_FLAG_ENABLED, (255 == OE_PIN));
-    if (255 != OE_PIN) {
-      pinMode(OE_PIN, GPIOMode::OUTPUT);
-      setPin(OE_PIN, true);
-    }
-    _class_set_flag(SHIFTREG_FLAG_PINS_CONFIGURED);
   }
   return (_class_flag(SHIFTREG_FLAG_PINS_CONFIGURED) ? 0 : -1);
 }

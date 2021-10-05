@@ -462,7 +462,10 @@ int8_t SSD1306::_ll_pin_init() {
 * @param   StringBuilder* The buffer into which this fxn should write its output.
 */
 void SSD1306::printDebug(StringBuilder* output) {
-  output->concatf("SSD1306 (%u x %u) %s", x(), y(), PRINT_DIVIDER_1_STR);
+  StringBuilder temp;
+  temp.concatf("SSD1306 (%u x %u)", x(), y());
+  StringBuilder::styleHeader1(output, temp.string());
+  temp.clear();
   output->concatf("\tLocked:    %c\n", (locked() ? 'y': 'n'));
   output->concatf("\tInitd:     %c (state %u)\n", (initialized() ? 'y': 'n'), _init_state);
   output->concatf("\tEnabled:   %c\n", (_enabled ? 'y': 'n'));

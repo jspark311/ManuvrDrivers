@@ -791,7 +791,7 @@ int16_t GridEYE::getPixelRaw(uint8_t pixel) {
 
 
 void GridEYE::printDebug(StringBuilder* output) {
-  StringBuilder::styleHeader2(output, "GridEYE");
+  StringBuilder::styleHeader1(output, "GridEYE");
   I2CDevice::printDebug(output);
   if (255 != _IRQ_PIN) {
     output->concatf("\tIRQ Pin:      %u\n", _IRQ_PIN);

@@ -282,7 +282,7 @@ void ManuvrPMU::printBattery(StringBuilder* output) {
 */
 void ManuvrPMU::printDebug(StringBuilder* output) {
   const char* aux_reg_state = auxRegLowPower() ? "2.5v" : "3.3v";
-  ParsingConsole::styleHeader1(output, "ManuvrPMU");
+  StringBuilder::styleHeader1(output, "ManuvrPMU");
   output->concatf("\tVS/RE pins          %u/%u\n", _opts.vs_pin, _opts.re_pin);
   output->concatf("\tAuxiliary regulator %s\n", auxRegEnabled() ? aux_reg_state : "Disabled");
   output->concatf("\tCharge state        %s\n", getChargeStateString());

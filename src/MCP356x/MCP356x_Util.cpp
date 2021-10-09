@@ -94,7 +94,15 @@ void MCP356x::printData(StringBuilder* output) {
     output->concatf("\tClock running:  %c\n", (_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING) ? 'y' : 'n'));
     output->concatf("\tConfigured:     %c\n", (adcConfigured() ? 'y' : 'n'));
     output->concatf("\tCalibrated:     %c\n", (adcCalibrated() ? 'y' : 'n'));
-    if (!adcCalibrated()) {
+    if (adcCalibrated()) {
+      output->concat("\t");
+      printChannel(MCP356xChannel::OFFSET, output);
+      output->concat("\t");
+      printChannel(MCP356xChannel::VCM, output);
+      output->concat("\t");
+      printChannel(MCP356xChannel::AVDD, output);
+    }
+    else {
       output->concatf("\t  SAMPLED_OFFSET: %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_OFFSET) ? 'y' : 'n'));
       output->concatf("\t  SAMPLED_VCM:    %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_VCM) ? 'y' : 'n'));
       output->concatf("\t  SAMPLED_AVDD:   %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_AVDD) ? 'y' : 'n'));
@@ -112,14 +120,6 @@ void MCP356x::printData(StringBuilder* output) {
     if (_scan_covers_channel(MCP356xChannel::TEMP)) {
       output->concatf("\tTemperature:    %.2fC\n", getTemperature());
       output->concatf("\tThermo fitting: %s\n", (_mcp356x_flag(MCP356X_FLAG_3RD_ORDER_TEMP) ? "3rd-order" : "Linear"));
-    }
-    if (adcCalibrated()) {
-      output->concat("\t");
-      printChannel(MCP356xChannel::OFFSET, output);
-      output->concat("\t");
-      printChannel(MCP356xChannel::VCM, output);
-      output->concat("\t");
-      printChannel(MCP356xChannel::AVDD, output);
     }
   }
 }

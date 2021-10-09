@@ -56,10 +56,7 @@ enum class MCP356xMode : uint8_t {
   CONTINUOUS       = 3
 };
 
-/*
-* ADC gain ratio.
-* Enum values convert directly into register values.
-*/
+/* ADC gain ratio. Enum values convert directly into register values. */
 enum class MCP356xGain : uint8_t {
   GAIN_ONETHIRD = 0,
   GAIN_1        = 1,
@@ -71,10 +68,7 @@ enum class MCP356xGain : uint8_t {
   GAIN_64       = 7
 };
 
-/*
-* Bias current.
-* Enum values convert directly into register values.
-*/
+/* Bias current. Enum values convert directly into register values. */
 enum class MCP356xBiasCurrent : uint8_t {
   NONE           = 0,
   NANOAMPS_900   = 1,
@@ -82,10 +76,7 @@ enum class MCP356xBiasCurrent : uint8_t {
   NANOAMPS_15000 = 3
 };
 
-/*
-* Bias current boost ratio.
-* Enum values convert directly into register values.
-*/
+/* Enum value converts directly into register value.*/
 enum class MCP356xBiasBoost : uint8_t {
   HALF      = 0,
   TWOTHIRDS = 1,
@@ -93,9 +84,7 @@ enum class MCP356xBiasBoost : uint8_t {
   DOUBLE    = 3
 };
 
-/*
-* Enum values convert directly into register values.
-*/
+/* Enum values convert directly into register values. */
 enum class MCP356xOversamplingRatio : uint8_t {
   OSR_32    = 0x00,
   OSR_64    = 0x01,

@@ -459,7 +459,7 @@ int8_t SSD1309::_ll_pin_init() {
 void SSD1309::printDebug(StringBuilder* output) {
   StringBuilder temp;
   temp.concatf("SSD1309 (%u x %u)", x(), y());
-  StringBuilder::styleHeader1(output, temp.string());
+  StringBuilder::styleHeader1(output, (const char*) temp.string());
   temp.clear();
   output->concatf("\tLocked:    %c\n", (locked() ? 'y': 'n'));
   output->concatf("\tInitd:     %c (state %u)\n", (initialized() ? 'y': 'n'), _init_state);

@@ -1,6 +1,8 @@
 /*
 * This file started out as a SparkFun driver. I have mutated it.
 *   ---J. Ian Lindsay
+*
+* BusOp conversion.
 */
 
 /******************************************************************************
@@ -23,6 +25,39 @@ Distributed as-is; no warranty is given.
 #define T_HIGH_REGISTER 0x03
 
 
+/*******************************************************************************
+*      _______.___________.    ___   .___________. __    ______     _______.
+*     /       |           |   /   \  |           ||  |  /      |   /       |
+*    |   (----`---|  |----`  /  ^  \ `---|  |----`|  | |  ,----'  |   (----`
+*     \   \       |  |      /  /_\  \    |  |     |  | |  |        \   \
+* .----)   |      |  |     /  _____  \   |  |     |  | |  `----.----)   |
+* |_______/       |__|    /__/     \__\  |__|     |__|  \______|_______/
+*
+* Static members and initializers should be located here.
+*******************************************************************************/
+
+/**
+* Static function to convert enum to string.
+*/
+const char* TMP102::odrStr(const TMP102DataRate e) {
+  switch (e) {
+    case TMP102DataRate::RATE_0_25_HZ:  return "RATE_0_25_HZ";
+    case TMP102DataRate::RATE_1_HZ:     return "RATE_1_HZ";
+    case TMP102DataRate::RATE_4_HZ:     return "RATE_4_HZ";
+    case TMP102DataRate::RATE_8_HZ:     return "RATE_8_HZ";
+    default:                            return "INVALID";
+  }
+}
+
+
+/*******************************************************************************
+*   ___ _              ___      _ _              _      _
+*  / __| |__ _ ______ | _ ) ___(_) |___ _ _ _ __| |__ _| |_ ___
+* | (__| / _` (_-<_-< | _ \/ _ \ | / -_) '_| '_ \ / _` |  _/ -_)
+*  \___|_\__,_/__/__/ |___/\___/_|_\___|_| | .__/_\__,_|\__\___|
+*                                          |_|
+* Constructors/destructors, class initialization functions and so-forth...
+*******************************************************************************/
 
 TMP102::TMP102(uint8_t addr, uint8_t alrt_pin) : I2CDevice(addr), _ALRT_PIN(alrt_pin) {}
 
@@ -31,27 +66,27 @@ TMP102::~TMP102() {}
 
 int8_t TMP102::init(I2CAdapter* b) {
   int8_t ret = _ll_pin_init();
+  _tmp_clear_flag(TMP102_FLAG_DEVICE_PRESENT | TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
   if (nullptr != b) {
     _bus = b;
     if (0 == ret) {
-      // Here (and only here) we replicate the code for _open_ptr_register and
-      //   write a formed config byte. Since this part doesn't have an identity
-      //   register, we cope by basing our idea of its presence on success here.
-      if (ping_device()) {
+      //if (ping_device()) {
         // uint8_t registerByte[2] = {0, 0};   // Default (bit-cleared) state is enabled.
         // registerByte[1] |= ((uint8_t) TMP102DataRate::RATE_4_HZ) << 6;  // Conversion rate
         // registerByte[1] |= 1 << 4;  // Exentended mode
-        ret = _write_registers(CONFIG_REGISTER, 2);
+        uint16_t conf_value = ((uint8_t) TMP102DataRate::RATE_4_HZ) << 14;  // Conversion rate
+        conf_value |= (1 << 12);  // Extended mode
+        //conf_value |= 0x0100;     // Eanbled
+        ret = _write_register(CONFIG_REGISTER, conf_value);
         if (0 == ret) {
-          _tmp_set_flag(TMP102_FLAG_DEVICE_PRESENT);
           if (0 == ret) {
             _tmp_set_flag(TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
           }
         }
-      }
-      else {
-        _tmp_clear_flag(TMP102_FLAG_DEVICE_PRESENT | TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
-      }
+      //}
+      //else {
+      //  _tmp_clear_flag(TMP102_FLAG_DEVICE_PRESENT | TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
+      //}
     }
   }
   return ret;
@@ -88,78 +123,90 @@ int8_t TMP102::poll() {
 }
 
 
-int8_t TMP102::_open_ptr_register(uint8_t pointerReg) {
+int8_t TMP102::_open_ptr_register(uint8_t reg) {
   int8_t ret = -1;
   if (devFound()) {
+    ret--;
     //_bus->beginTransmission(_ADDR); // Connect to TMP102
     //_bus->write(pointerReg); // Open specified register
     //ret = _bus->endTransmission(); // Close communication with TMP102
+    I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
+    if (nullptr != op) {
+      ret--;
+      op->dev_addr = _dev_addr;
+      op->sub_addr = reg;
+      if (0 == queue_io_job(op)) {
+        _tmp_clear_flag(TMP102_FLAG_PTR_VALID);
+        ret = 0;
+      }
+    }
   }
   return ret;
 }
 
 
-uint8_t TMP102::_read_register(bool registerNumber){
-  uint8_t registerByte[2] = {0, 0};
+int8_t TMP102::_read_register(uint8_t reg) {
+  int8_t ret = -1;
+  if (devFound()) {
+    ret--;
+    //if (_ptr_val != reg) {
+      if (0 != _open_ptr_register(reg)) {
+        return -4;
+      }
+    //}
+    ret--;
+
+    I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
+    if (nullptr != op) {
+      ret--;
+      op->dev_addr = _dev_addr;
+      op->sub_addr = reg;
+      op->setBuffer((uint8_t*) &_shadows[reg], 2);
+      if (0 == queue_io_job(op)) {
+        ret = 0;
+      }
+    }
+  }
+
   // Read current configuration register value
   //_bus->requestFrom((uint8_t) _ADDR, (uint8_t) 2);   // Read two bytes from TMP102
   //if (_bus->available()) {
   //  registerByte[0] = (_bus->read());  // Read first byte
   //  registerByte[1] = (_bus->read());  // Read second byte
   //}
-  return registerByte[registerNumber];
+  return ret;
 }
 
 
 int8_t TMP102::_write_register(uint8_t reg, uint16_t val) {
   int8_t ret = -1;
+  if (nullptr != _bus) {
+    ret--;
+    I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
+    if (nullptr != op) {
+      ret--;
+      //uint16_t _be_value = (val >> 8) | ((val & 0x00FF) << 8);
+      //_shadows[reg] = _be_value;
+      _shadows[reg] = val;
+      op->dev_addr = _dev_addr;
+      op->sub_addr = reg;
+      op->setBuffer((uint8_t*) &_shadows[reg], 2);
+      if (0 == queue_io_job(op)) {
+        _tmp_clear_flag(TMP102_FLAG_PTR_VALID);
+        ret = 0;
+      }
+    }
+  }
   return ret;
 }
-
-
-int8_t TMP102::_write_registers(uint8_t reg, uint8_t len) {
-  int8_t ret = -1;
-  return ret;
-}
-
-
 
 
 
 int8_t TMP102::_read_temp() {
-  uint8_t registerByte[2] = {0, 0};
-  int8_t ret = -1;
-  int16_t digitalTemp = 0;    // Temperature stored in TMP102 register
-  // Read Temperature
-  // Change pointer address to temperature register (0)
-  if (0 == _open_ptr_register(TEMPERATURE_REGISTER)) {
-    // Read from temperature register
-    registerByte[0] = _read_register(0);
-    registerByte[1] = _read_register(1);
+  // Read from temperature register
+  int8_t ret = _read_register(0);
+  if (0 == ret) {
     _last_read = millis();
-
-    // Bit 0 of second byte will always be 0 in 12-bit readings and 1 in 13-bit
-    if(registerByte[1]&0x01) {  // 13 bit mode
-      // Combine bytes to create a signed int
-      digitalTemp = ((registerByte[0]) << 5) | (registerByte[1] >> 3);
-      // Temperature data can be + or -, if it should be negative,
-      // convert 13 bit to 16 bit and use the 2s compliment.
-      if(digitalTemp > 0xFFF) {
-        digitalTemp |= 0xE000;
-      }
-    }
-    else {  // 12 bit mode
-      // Combine bytes to create a signed int
-      digitalTemp = ((registerByte[0]) << 4) | (registerByte[1] >> 4);
-      // Temperature data can be + or -, if it should be negative,
-      // convert 12 bit to 16 bit and use the 2s compliment.
-      if(digitalTemp > 0x7FF) {
-        digitalTemp |= 0xF000;
-      }
-    }
-    ret = 0;
-    // Convert digital reading to analog temperature (1-bit is equal to 0.0625 C)
-    _temp = digitalTemp * 0.0625;
   }
   return ret;
 }
@@ -241,9 +288,13 @@ int8_t TMP102::enabled(bool x) {
     // Change pointer address to configuration register (0x01)
     if (0 == _open_ptr_register(CONFIG_REGISTER)) {
       // Read current configuration register value and clear or set SD (bit 0 of first byte)
-      uint8_t registerByte = _read_register(0);
-      registerByte = x ? (registerByte &= 0xFE) : (registerByte |= 0x01);
+      const uint16_t MASK       = 0x0100;
+      const uint16_t CUR_VAL    = _shadows[1];
+      const uint16_t MASKED_VAL = CUR_VAL & ~MASK;
+      ret = _write_register(1, (x ? MASKED_VAL : (MASKED_VAL | MASK)));
 
+      //uint8_t registerByte = _read_register(0);
+      //registerByte = x ? (registerByte &= 0xFE) : (registerByte |= 0x01);
       //_bus->beginTransmission(_ADDR);  // ...and re-write it.
       //_bus->write(CONFIG_REGISTER);    // Point to configuration register.
       //_bus->write(registerByte);       // Write first byte.
@@ -385,7 +436,7 @@ float TMP102::readLowTemp() {
 
 
 float TMP102::readHighTemp() {
-  int16_t digitalTemp;    // Store the digital temperature value here
+  int16_t digitalTemp = 0;    // Store the digital temperature value here
 
   if (0 == _open_ptr_register(T_HIGH_REGISTER)) {
     uint8_t registerByte[2];  // Store the data from the register here
@@ -496,9 +547,128 @@ int8_t TMP102::_ll_pin_init() {
   if (!_tmp_flag(TMP102_FLAG_PINS_CONFIGURED)) {
     if (255 != _ALRT_PIN) {
       pinMode(_ALRT_PIN, GPIOMode::INPUT);
+      // TODO: I'm sick of having to dance around ISR limitations that push drivers
+      //   toward a singleton pattern. Migrate this abstraction to AbstrctPlatform.
       //attachInterrupt(digitalPinToInterrupt(_ALRT_PIN), tmp102_isr_fxn, FALLING);
     }
     _tmp_set_flag(TMP102_FLAG_PINS_CONFIGURED);
   }
   return ret;
+}
+
+
+/*******************************************************************************
+* ___     _       _                      These members are mandatory overrides
+*  |   / / \ o   | \  _     o  _  _      for implementing I/O callbacks. They
+* _|_ /  \_/ o   |_/ (/_ \/ | (_ (/_     are also implemented by Adapters.
+*******************************************************************************/
+
+/* Transfers always permitted. */
+int8_t TMP102::io_op_callahead(BusOp* _op) {   return 0;   }
+
+
+/*
+* Register I/O calls back to this function for BOTH devices (MAG/IMU). So we
+*   split the function up into two halves in private scope in the superclass.
+* Bus operations that call back with errors are ignored.
+*/
+int8_t TMP102::io_op_callback(BusOp* _op) {
+  I2CBusOp* op  = (I2CBusOp*) _op;
+  int8_t    ret = BUSOP_CALLBACK_NOMINAL;
+
+  if (!op->hasFault()) {
+    uint     len = op->bufferLen();
+    if (!_tmp_flag(TMP102_FLAG_DEVICE_PRESENT)) {
+      // With no ID register to check, we construe no failure on bus operation
+      //   as the condition "device found".
+      _tmp_set_flag(TMP102_FLAG_DEVICE_PRESENT);
+    }
+    switch (op->get_opcode()) {
+      case BusOpcode::TX:
+        // The part requires that the first byte of any write is the pointer.
+        _ptr_val = (uint8_t) op->sub_addr;
+        _tmp_set_flag(TMP102_FLAG_PTR_VALID);
+        if (len > 0) {
+          switch (_ptr_val) {
+            case 1:
+              _tmp_set_flag(TMP102_FLAG_INITIALIZED);
+              break;
+            case 2:
+            case 3:
+            default:
+              break;
+          }
+        }
+        break;
+
+      case BusOpcode::RX:
+        switch (_ptr_val) {
+          case 0:
+            if (_tmp_flag(TMP102_FLAG_INITIALIZED)) {
+              int16_t digitalTemp = 0;    // Temperature stored in TMP102 register
+              uint8_t* buf = op->buffer();
+
+              // Bit 0 of second byte will always be 0 in 12-bit readings and 1 in 13-bit
+              if (*(buf + 1) & 0x01) {  // 13 bit mode
+                // Combine bytes to create a signed int
+                digitalTemp = (*(buf + 0) << 5) | (*(buf + 1) >> 3);
+                // Temperature data can be + or -, if it should be negative,
+                // convert 13 bit to 16 bit and use the 2s compliment.
+                if (digitalTemp > 0xFFF) {
+                  digitalTemp |= 0xE000;
+                }
+              }
+              else {  // 12 bit mode
+                // Combine bytes to create a signed int
+                digitalTemp = (*(buf + 0) << 4) | (*(buf + 0) >> 4);
+                // Temperature data can be + or -, if it should be negative,
+                // convert 12 bit to 16 bit and use the 2s compliment.
+                if (digitalTemp > 0x7FF) {
+                  digitalTemp |= 0xF000;
+                }
+              }
+              // Convert digital reading to analog temperature (1-bit is equal to 0.0625 C)
+              _temp = digitalTemp * 0.0625;
+              ret = 0;
+            }
+            break;
+          case 1:
+            _tmp_set_flag(TMP102_FLAG_INITIALIZED);
+            break;
+          case 2:
+          case 3:
+          default:
+            break;
+        }
+        break;
+
+      default:
+        break;
+    }
+  }
+  return ret;
+}
+
+
+/*
+*
+*/
+void TMP102::printDebug(StringBuilder* output) {
+  StringBuilder::styleHeader1(output, "TMP102");
+  output->concatf("\tAlert Pin:   %u\n", _ALRT_PIN);
+  output->concatf("\tPins setup:  %c\n", _tmp_flag(TMP102_FLAG_PINS_CONFIGURED) ? 'y' : 'n');
+  output->concatf("\tDev found:   %c\n", devFound() ? 'y' : 'n');
+  if (devFound()) {
+    output->concatf("\tInitialized: %c\n", initialized() ? 'y' : 'n');
+    if (initialized()) {
+      output->concatf("\tSample rate: %s\n", odrStr(conversionRate()));
+      output->concatf("\tLast read:   %u\n", _last_read);
+      output->concatf("\tTemperature: %.2f\n", _temp);
+    }
+  }
+  output->concat("\t");
+  for (int i = 0; i < 8; i++) {
+    output->concatf("0x%02x  ", *(((uint8_t*) &_shadows[0]) + i));
+  }
+  output->concat("\n");
 }

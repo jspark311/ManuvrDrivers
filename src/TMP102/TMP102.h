@@ -22,14 +22,16 @@ Distributed as-is; no warranty is given.
 #define __TMP102_DRIVER_H_
 
 /* Class flags */
-#define TMP102_FLAG_DEVICE_PRESENT   0x0001  // Part was found.
-#define TMP102_FLAG_PINS_CONFIGURED  0x0002  // Low-level pin setup is complete.
-#define TMP102_FLAG_INITIALIZED      0x0004  // Registers are initialized.
-#define TMP102_FLAG_ENABLED          0x0008  // Device is measuring.
-#define TMP102_FLAG_EXTENDED_MODE    0x0010  // 13-bit temperature allows read out to 150C.
-#define TMP102_FLAG_FREEDOM_UNITS    0x0020  // Units in Fahrenheit if true. Celcius if not.
-#define TMP102_FLAG_DATA_RATE_MASK   0x00C0  // Hold 2-bit rate setting.
-#define TMP102_FLAG_ALRT_ACTIVE_HIGH 0x0100  // Alert pin is active high.
+#define TMP102_FLAG_DEVICE_PRESENT     0x0001  // Part was found.
+#define TMP102_FLAG_PINS_CONFIGURED    0x0002  // Low-level pin setup is complete.
+#define TMP102_FLAG_INITIALIZED        0x0004  // Registers are initialized.
+#define TMP102_FLAG_ENABLED            0x0008  // Device is measuring.
+#define TMP102_FLAG_EXTENDED_MODE      0x0010  // 13-bit temperature allows read out to 150C.
+#define TMP102_FLAG_MOON_LANDING_UNITS 0x0020  // Units in Fahrenheit if true. Celcius if not.
+#define TMP102_FLAG_DATA_RATE_MASK     0x00C0  // Hold 2-bit rate setting.
+#define TMP102_FLAG_ALRT_ACTIVE_HIGH   0x0100  // Alert pin is active high.
+#define TMP102_FLAG_PTR_VALID          0x0200  // The shadow of the pointer register is correct.
+
 
 enum class TMP102DataRate : uint8_t {
   RATE_0_25_HZ  = 0x00,    // 0 - 0.25 Hz
@@ -47,12 +49,14 @@ class TMP102 : public I2CDevice {
     int8_t init(I2CAdapter* bus);
     int8_t poll();
 
+    void printDebug(StringBuilder*);
+
     inline bool  devFound() {         return _tmp_flag(TMP102_FLAG_DEVICE_PRESENT);  };
     inline bool  enabled() {          return _tmp_flag(TMP102_FLAG_ENABLED);         };
     inline bool  initialized() {      return _tmp_flag(TMP102_FLAG_INITIALIZED);     };
     inline bool  extendedMode() {     return _tmp_flag(TMP102_FLAG_EXTENDED_MODE);   };
-    inline bool  unitsFahrenheit() {  return _tmp_flag(TMP102_FLAG_FREEDOM_UNITS);   };
-    inline void  unitsFahrenheit(bool x) {   _tmp_set_flag(TMP102_FLAG_FREEDOM_UNITS, x); };
+    inline bool  unitsFahrenheit() {  return _tmp_flag(TMP102_FLAG_MOON_LANDING_UNITS);   };
+    inline void  unitsFahrenheit(bool x) {   _tmp_set_flag(TMP102_FLAG_MOON_LANDING_UNITS, x); };
     inline float temperature() {      return _normalize_units_returned(_temp);       };
 
     bool   dataReady();        // Is data waiting for retrieval?
@@ -65,7 +69,7 @@ class TMP102 : public I2CDevice {
 
     int8_t conversionRate(TMP102DataRate);
     inline TMP102DataRate conversionRate() {
-      return (TMP102DataRate)((_flags >> 6) & 0x03);
+      return (TMP102DataRate)((_shadows[1] >> 14) & 0x03);
     };
 
     int8_t alertPolarity(bool);  // Set the polarity of Alert
@@ -90,23 +94,28 @@ class TMP102 : public I2CDevice {
     // 1 - Thermostat Mode: Active when temp > T_HIGH until any read operation occurs
     int8_t setAlertMode(bool mode);
 
+    /* Overrides from the BusOpCallback interface */
+    int8_t io_op_callahead(BusOp*);
+    int8_t io_op_callback(BusOp*);
+
+    static const char* odrStr(const TMP102DataRate);
+
 
   private:
-    const uint8_t _ADDR;        // 0x48, 0x49, 0x4A, 0x4B
     const uint8_t _ALRT_PIN;
+    uint8_t       _ptr_val    = 0;
     uint16_t      _flags      = 0;
     uint32_t      _last_read  = 0;
     float         _temp       = 0.0;   // Stored as Celcius.
-    uint8_t       _shadows[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    uint16_t      _shadows[4] = {0, 0, 0, 0};
 
     int8_t  _open_ptr_register(uint8_t pointerReg); // Changes the pointer register
-    uint8_t _read_register(bool registerNumber);  // reads 1 byte of from register
+
     int8_t  _read_temp();
 
     int8_t   _ll_pin_init();
+    int8_t   _read_register(uint8_t reg);
     int8_t   _write_register(uint8_t reg, uint16_t val);
-    int8_t   _write_registers(uint8_t reg, uint8_t len);
-    int8_t   _read_registers(uint8_t reg, uint8_t len);
     float    _normalize_units_accepted(float deg);
     float    _normalize_units_returned(float deg);
     uint16_t _data_period_ms();

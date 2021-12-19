@@ -46,7 +46,7 @@ class TMP102 : public I2CDevice {
     TMP102(uint8_t addr, uint8_t alert_pin);
     ~TMP102();
 
-    int8_t init(I2CAdapter* bus);
+    int8_t init(I2CAdapter* bus = nullptr);
     int8_t poll();
 
     void printDebug(StringBuilder*);

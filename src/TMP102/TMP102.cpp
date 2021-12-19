@@ -69,6 +69,8 @@ int8_t TMP102::init(I2CAdapter* b) {
   _tmp_clear_flag(TMP102_FLAG_DEVICE_PRESENT | TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
   if (nullptr != b) {
     _bus = b;
+  }
+  if (nullptr != _bus) {
     if (0 == ret) {
       //if (ping_device()) {
         // uint8_t registerByte[2] = {0, 0};   // Default (bit-cleared) state is enabled.

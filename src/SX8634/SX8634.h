@@ -222,6 +222,7 @@ typedef void (*SX8634LongpressCB)(int, uint32_t);
 #define SX8634_FLAG_PWM_CHANGE_IN_FLIGHT  0x1000
 #define SX8634_FLAG_INITIAL_IRQ_READ      0x2000
 #define SX8634_FLAG_PINS_CONFIGURED       0x4000
+#define SX8634_FLAG_BUSOP_INIT            0x8000
 
 
 #define SX8634_DEFAULT_I2C_ADDR      0x2B

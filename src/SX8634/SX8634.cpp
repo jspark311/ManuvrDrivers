@@ -502,6 +502,10 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
     default:
       break;
   }
+
+  if (completed == &_irq_register_read) {
+    completed->markForRequeue();
+  }
   return ret;
 }
 
@@ -663,13 +667,15 @@ int8_t SX8634::reset() {
   int8_t ret = -1;
   _clear_registers();
   _ll_pin_init();
-
-  _irq_register_read.set_opcode(BusOpcode::RX);
-  _irq_register_read.shouldReap(false);
-  _irq_register_read.callback = this;
-  _irq_register_read.dev_addr = _opts.i2c_addr;
-  _irq_register_read.sub_addr = 0x00;
-  _irq_register_read.setBuffer(_registers, 10);
+  if (!_sx8634_flag(SX8634_FLAG_BUSOP_INIT)) {
+    _sx8634_set_flag(SX8634_FLAG_BUSOP_INIT);
+    _irq_register_read.set_opcode(BusOpcode::RX);
+    _irq_register_read.shouldReap(false);
+    _irq_register_read.callback = this;
+    _irq_register_read.dev_addr = _opts.i2c_addr;
+    _irq_register_read.sub_addr = 0x00;
+    _irq_register_read.setBuffer(_registers, 10);
+  }
 
   if (_opts.haveIRQPin()) {
     _sx8634_set_flag(SX8634_FLAG_IRQ_INHIBIT);
@@ -1158,6 +1164,7 @@ int8_t SX8634::_ll_pin_init() {
   if (!_sx8634_flag(SX8634_FLAG_PINS_CONFIGURED)) {
     if (_opts.haveResetPin()) {
       pinMode(_opts.reset_pin, GPIOMode::OUTPUT);
+      setPin(_opts.reset_pin, false);  // Leave the part in reset state.
     }
     if (_opts.haveIRQPin()) {
       _sx8634_set_flag(SX8634_FLAG_IRQ_INHIBIT);

@@ -174,102 +174,105 @@ int8_t SSD13xx::io_op_callahead(BusOp* _op) {
 */
 int8_t SSD13xx::io_op_callback(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
-  int8_t ret = BUSOP_CALLBACK_NOMINAL;
+  int8_t ret = BUSOP_CALLBACK_ERROR;
 
   // There is zero chance this object will be a null pointer unless it was done on purpose.
-  if (op->hasFault()) {
-    return BUSOP_CALLBACK_ERROR;
+  if (!op->hasFault()) {
+    ret = BUSOP_CALLBACK_NOMINAL;
+    if (op->transferParamLength() == 0) {  // Was this a frame refresh?
+      _lock(false);
+      _stopwatch.markStop();
+      if (_enabled && _initd) {
+        //ret = BUSOP_CALLBACK_RECYCLE;
+      }
+    }
+    else {
+      uint8_t arg_buf[4];
+      switch (op->getTransferParam(0)) {
+        case SSD13XX_CMD_DISPLAYON:
+          _enabled = true;
+          //commitFrameBuffer();
+          break;
+        case SSD13XX_CMD_DISPLAYOFF:   _enabled = false;      break;
+        case SSD13XX_CMD_SETREMAP:
+          arg_buf[0] = 0x00;
+          _send_command(SSD13XX_CMD_STARTLINE, arg_buf, 1);   // 0xA1
+          break;
+        case SSD13XX_CMD_STARTLINE:
+          arg_buf[0] = 0x00;
+          _send_command(SSD13XX_CMD_DISPLAYOFFSET, arg_buf, 1);   // 0xA2
+          break;
+        case SSD13XX_CMD_DISPLAYOFFSET:
+          _send_command(SSD13XX_CMD_NORMALDISPLAY);    // 0xA4
+          break;
+        case SSD13XX_CMD_NORMALDISPLAY:
+          arg_buf[0] = 0x3F;  // 0x3F 1/64 duty
+          _send_command(SSD13XX_CMD_SETMULTIPLEX, arg_buf, 1);   // 0xA8
+          break;
+        case SSD13XX_CMD_SETMULTIPLEX:
+          arg_buf[0] = 0x8E;
+          _send_command(SSD13XX_CMD_SETMASTER, arg_buf, 1);    // 0xAD
+          break;
+        case SSD13XX_CMD_SETMASTER:
+          arg_buf[0] = 0x0B;
+          _send_command(SSD13XX_CMD_POWERMODE, arg_buf, 1);    // 0xB0
+          break;
+        case SSD13XX_CMD_POWERMODE:
+          arg_buf[0] = 0x31;
+          _send_command(SSD13XX_CMD_PRECHARGE, arg_buf, 1);    // 0xB1
+          break;
+        case SSD13XX_CMD_PRECHARGE:
+          arg_buf[0] = 0xF0;  // 7:4 = Oscillator Frequency, 3:0 = CLK Div Ratio (A[3:0]+1 = 1..16)
+          _send_command(SSD13XX_CMD_CLOCKDIV, arg_buf, 1);    // 0xB3
+          break;
+        case SSD13XX_CMD_CLOCKDIV:
+          arg_buf[0] = 0x64;
+          _send_command(SSD13XX_CMD_PRECHARGEA, arg_buf, 1);    // 0x8A
+          break;
+        case SSD13XX_CMD_PRECHARGEA:
+          arg_buf[0] = 0x78;
+          _send_command(SSD13XX_CMD_PRECHARGEB, arg_buf, 1);    // 0x8B
+          break;
+        case SSD13XX_CMD_PRECHARGEB:
+          arg_buf[0] = 0x64;
+          _send_command(SSD13XX_CMD_PRECHARGEC, arg_buf, 1);    // 0x8C
+          break;
+        case SSD13XX_CMD_PRECHARGEC:
+          arg_buf[0] = 0x3A;
+          _send_command(SSD13XX_CMD_PRECHARGELEVEL, arg_buf, 1);    // 0xBB
+          break;
+        case SSD13XX_CMD_PRECHARGELEVEL:
+          arg_buf[0] = 0x3E;
+          _send_command(SSD13XX_CMD_VCOMH, arg_buf, 1);      // 0xBE
+          break;
+        case SSD13XX_CMD_VCOMH:
+          arg_buf[0] = 0x06;
+          _send_command(SSD13XX_CMD_MASTERCURRENT, arg_buf, 1);    // 0x87
+          break;
+        case SSD13XX_CMD_MASTERCURRENT:
+          arg_buf[0] = 0x91;
+          _send_command(SSD13XX_CMD_CONTRASTA, arg_buf, 1);    // 0x81
+          break;
+        case SSD13XX_CMD_CONTRASTA:
+          arg_buf[0] = 0x50;
+          _send_command(SSD13XX_CMD_CONTRASTB, arg_buf, 1);    // 0x82
+          break;
+        case SSD13XX_CMD_CONTRASTB:
+          arg_buf[0] = 0x7D;
+          _send_command(SSD13XX_CMD_CONTRASTC, arg_buf, 1);    // 0x83
+          break;
+        case SSD13XX_CMD_CONTRASTC:
+          _initd = true;  // This is the last register written in the init sequence.
+          _send_command(SSD13XX_CMD_DISPLAYON);  //--turn on oled panel
+          break;
+        default:
+          break;
+      }
+    }
   }
 
-  if (op->transferParamLength() == 0) {  // Was this a frame refresh?
-    _lock(false);
-    _stopwatch.markStop();
-    if (_enabled && _initd) {
-      //ret = BUSOP_CALLBACK_RECYCLE;
-    }
-  }
-  else {
-    uint8_t arg_buf[4];
-    switch (op->getTransferParam(0)) {
-      case SSD13XX_CMD_DISPLAYON:
-        _enabled = true;
-        //commitFrameBuffer();
-        break;
-      case SSD13XX_CMD_DISPLAYOFF:   _enabled = false;      break;
-      case SSD13XX_CMD_SETREMAP:
-        arg_buf[0] = 0x00;
-        _send_command(SSD13XX_CMD_STARTLINE, arg_buf, 1);   // 0xA1
-        break;
-      case SSD13XX_CMD_STARTLINE:
-        arg_buf[0] = 0x00;
-        _send_command(SSD13XX_CMD_DISPLAYOFFSET, arg_buf, 1);   // 0xA2
-        break;
-      case SSD13XX_CMD_DISPLAYOFFSET:
-        _send_command(SSD13XX_CMD_NORMALDISPLAY);    // 0xA4
-        break;
-      case SSD13XX_CMD_NORMALDISPLAY:
-        arg_buf[0] = 0x3F;  // 0x3F 1/64 duty
-        _send_command(SSD13XX_CMD_SETMULTIPLEX, arg_buf, 1);   // 0xA8
-        break;
-      case SSD13XX_CMD_SETMULTIPLEX:
-        arg_buf[0] = 0x8E;
-        _send_command(SSD13XX_CMD_SETMASTER, arg_buf, 1);    // 0xAD
-        break;
-      case SSD13XX_CMD_SETMASTER:
-        arg_buf[0] = 0x0B;
-        _send_command(SSD13XX_CMD_POWERMODE, arg_buf, 1);    // 0xB0
-        break;
-      case SSD13XX_CMD_POWERMODE:
-        arg_buf[0] = 0x31;
-        _send_command(SSD13XX_CMD_PRECHARGE, arg_buf, 1);    // 0xB1
-        break;
-      case SSD13XX_CMD_PRECHARGE:
-        arg_buf[0] = 0xF0;  // 7:4 = Oscillator Frequency, 3:0 = CLK Div Ratio (A[3:0]+1 = 1..16)
-        _send_command(SSD13XX_CMD_CLOCKDIV, arg_buf, 1);    // 0xB3
-        break;
-      case SSD13XX_CMD_CLOCKDIV:
-        arg_buf[0] = 0x64;
-        _send_command(SSD13XX_CMD_PRECHARGEA, arg_buf, 1);    // 0x8A
-        break;
-      case SSD13XX_CMD_PRECHARGEA:
-        arg_buf[0] = 0x78;
-        _send_command(SSD13XX_CMD_PRECHARGEB, arg_buf, 1);    // 0x8B
-        break;
-      case SSD13XX_CMD_PRECHARGEB:
-        arg_buf[0] = 0x64;
-        _send_command(SSD13XX_CMD_PRECHARGEC, arg_buf, 1);    // 0x8C
-        break;
-      case SSD13XX_CMD_PRECHARGEC:
-        arg_buf[0] = 0x3A;
-        _send_command(SSD13XX_CMD_PRECHARGELEVEL, arg_buf, 1);    // 0xBB
-        break;
-      case SSD13XX_CMD_PRECHARGELEVEL:
-        arg_buf[0] = 0x3E;
-        _send_command(SSD13XX_CMD_VCOMH, arg_buf, 1);      // 0xBE
-        break;
-      case SSD13XX_CMD_VCOMH:
-        arg_buf[0] = 0x06;
-        _send_command(SSD13XX_CMD_MASTERCURRENT, arg_buf, 1);    // 0x87
-        break;
-      case SSD13XX_CMD_MASTERCURRENT:
-        arg_buf[0] = 0x91;
-        _send_command(SSD13XX_CMD_CONTRASTA, arg_buf, 1);    // 0x81
-        break;
-      case SSD13XX_CMD_CONTRASTA:
-        arg_buf[0] = 0x50;
-        _send_command(SSD13XX_CMD_CONTRASTB, arg_buf, 1);    // 0x82
-        break;
-      case SSD13XX_CMD_CONTRASTB:
-        arg_buf[0] = 0x7D;
-        _send_command(SSD13XX_CMD_CONTRASTC, arg_buf, 1);    // 0x83
-        break;
-      case SSD13XX_CMD_CONTRASTC:
-        _initd = true;  // This is the last register written in the init sequence.
-        _send_command(SSD13XX_CMD_DISPLAYON);  //--turn on oled panel
-        break;
-      default:
-        break;
-    }
+  if (&_fb_data_op == op) {
+    _fb_data_op.markForRequeue();
   }
   return ret;
 }
@@ -329,11 +332,32 @@ void SSD13xx::setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
 }
 
 
+/**
+* Dispatch the framebuffer write operation. The display must be initialized and
+*   there must not already be such an I/O operation already in progress.
+*
+* @param  _op  The bus operation to execute.
+* @return 0 on success
+*        -1 on display not initd
+*        -2 if write is already in progress
+*        -3 on I/O rejection by adapter
+*/
 int8_t SSD13xx::commitFrameBuffer() {
-  int8_t ret = -3;
-  if (_fb_data_op.isIdle()) {
-    //_fb_data_op.setBuffer(_buffer, bytesUsed());  // Buffer is in Image superclass.
-    ret = _BUS->queue_io_job(&_fb_data_op);
+  int8_t ret = -1;
+  if (_initd) {
+    ret--;
+    if (_fb_data_op.hasFault()) {
+      // If there was a bus fault, the BusOp might be left in a COMPLTE state.
+      // Try to reset the BusOp to satisfy the caller.
+      _fb_data_op.markForRequeue();
+    }
+    if (_fb_data_op.isIdle()) {
+      ret--;
+      //_fb_data_op.setBuffer(_buffer, bytesUsed());  // Buffer is in Image superclass.
+      if (0 == _BUS->queue_io_job(&_fb_data_op)) {
+        ret = 0;
+      }
+    }
   }
   return ret;
 }
@@ -351,10 +375,12 @@ int8_t SSD13xx::invertDisplay(bool flipped) {
 */
 int8_t SSD13xx::init(SPIAdapter* b) {
   int8_t ret = -1;
-  _BUS = b;
+  _initd = false;
+  if ( nullptr != b) {
+    _BUS = b;
+  }
   if (nullptr != _BUS) {
     ret--;
-    _initd    = false;
     _fb_data_op.setAdapter(_BUS);
     _fb_data_op.shouldReap(false);
     _fb_data_op.maxFreq(10000000);
@@ -504,6 +530,10 @@ void SSD13xx::printDebug(StringBuilder* output) {
   temp.concatf("SSD13xx (%u x %u)", x(), y());
   StringBuilder::styleHeader1(output, (const char*) temp.string());
   temp.clear();
+  output->concatf("\tFB BusOp state: %s\n", BusOp::getStateString(_fb_data_op.get_state()));
+  if (_fb_data_op.getFault() != XferFault::NONE) {
+    output->concatf("\tFB BusOp fault: %s\n", BusOp::getErrorString(_fb_data_op.getFault()));
+  }
   output->concatf("\tLocked:    %c\n", (locked() ? 'y': 'n'));
   output->concatf("\tInitd:     %c\n", (_initd ? 'y': 'n'));
   output->concatf("\tEnabled:   %c\n", (_enabled ? 'y': 'n'));

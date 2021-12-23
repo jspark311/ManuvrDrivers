@@ -391,6 +391,7 @@ int8_t SSD13xx::init(SPIAdapter* b) {
       ret--;
       if (reallocate()) {
         ret--;
+        orientation(_opts.orientation);
         _fb_data_op.setBuffer(_buffer, bytesUsed());  // Buffer is in Image superclass.
         uint8_t arg_buf[4];
         // Initialization Sequence begins here and is carried forward by the

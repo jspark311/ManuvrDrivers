@@ -112,15 +112,17 @@ void sx8634_isr() {  sx8634_isr_fired = true;  }
 
 
 int8_t SX8634::read_irq_registers() {
+  int8_t ret = -1;
   if (!_sx8634_flag(SX8634_FLAG_IRQ_INHIBIT)) {
+    ret--;
     // If IRQ service is not inhibited, read all the IRQ-related
     //   registers in one shot.
     if (_irq_register_read.isIdle()) {
       _bus->queue_io_job(&_irq_register_read);
-      return 0;
+      ret = 0;
     }
   }
-  return -1;
+  return ret;
 }
 
 
@@ -448,7 +450,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
             // If the IRQ pin is still low, recycle this bus op.
             if (_opts.haveIRQPin() && !_sx8634_flag(SX8634_FLAG_IRQ_INHIBIT)) {
               if (SX8634_FSM::READY == _get_fsm_position()) {
-                if (!readPin(_opts.irq_pin)) {
+                if (0 == readPin(_opts.irq_pin)) {
                   ret = BUSOP_CALLBACK_RECYCLE;
                 }
               }
@@ -525,7 +527,11 @@ void SX8634::printOverview(StringBuilder* output) {
   output->concatf("\tCompensations:  %u\n", _compensations);
   output->concatf("\tFSM Position:   %s\n", getFSMStr(_fsm));
   output->concatf("\tReset pin:      %d\n", _opts.reset_pin);
-  output->concatf("\tIRQ pin:        %d\n", _opts.irq_pin);
+  output->concatf("\tIRQ pin:        %d %s\n", _opts.irq_pin, (255 == _opts.irq_pin) ? "":(readPin(_opts.irq_pin)? "(HI)":"(LO)"));
+  output->concatf("\tIRQ BusOp state %s\n", BusOp::getStateString(_irq_register_read.get_state()));
+  if (_irq_register_read.hasFault()) {
+    output->concatf("\tIRQ BusOp fault %s\n", BusOp::getErrorString(_irq_register_read.getFault()));
+  }
 
   output->concat("--\n-- Registers:\n");
   StringBuilder::printBuffer(output, _registers, sizeof(_registers), "--\t  ");
@@ -665,6 +671,7 @@ int8_t SX8634::_write_register(uint8_t addr, uint8_t val) {
 */
 int8_t SX8634::reset() {
   int8_t ret = -1;
+  _flags &= SX8634_FLAG_RESET_MASK;
   _clear_registers();
   _ll_pin_init();
   if (!_sx8634_flag(SX8634_FLAG_BUSOP_INIT)) {
@@ -680,7 +687,6 @@ int8_t SX8634::reset() {
   if (_opts.haveIRQPin()) {
     _sx8634_set_flag(SX8634_FLAG_IRQ_INHIBIT);
   }
-  _flags = 0;
   _set_fsm_position(SX8634_FSM::RESETTING);
 
   if (_opts.haveResetPin()) {

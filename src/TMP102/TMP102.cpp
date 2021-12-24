@@ -136,7 +136,8 @@ int8_t TMP102::_open_ptr_register(uint8_t reg) {
     if (nullptr != op) {
       ret--;
       op->dev_addr = _dev_addr;
-      op->sub_addr = reg;
+      op->sub_addr = -1;
+      op->setBuffer(&_ptr_val, 1);
       if (0 == queue_io_job(op)) {
         _tmp_clear_flag(TMP102_FLAG_PTR_VALID);
         ret = 0;
@@ -151,11 +152,11 @@ int8_t TMP102::_read_register(uint8_t reg) {
   int8_t ret = -1;
   if (devFound()) {
     ret--;
-    //if (_ptr_val != reg) {
+    if (_ptr_val != reg) {
       if (0 != _open_ptr_register(reg)) {
         return -4;
       }
-    //}
+    }
     ret--;
 
     I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);

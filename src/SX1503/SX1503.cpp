@@ -563,15 +563,27 @@ int8_t SX1503::_write_registers(SX1503RegId reg, uint8_t len) {
 }
 
 
+/**
+*
+* @param reg is the register to read.
+* @param val is the number of registers to read.
+* @return 0 on success
+*        -1 on null bus assignment
+*        -2 zero length
+*        -3 BusOp allocation failure
+*        -4 BusAdapter job rejection
+*/
 int8_t SX1503::_read_registers(SX1503RegId reg, uint8_t len) {
-  int8_t ret = -2;
+  int8_t ret = -1;
   if (nullptr != _bus) {
     // TODO: Address continuity check.
+    ret--;
     uint8_t reg_idx = (uint8_t) reg;
     if (len > 0) {
-      ret++;
+      ret--;
       I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
       if (nullptr != op) {
+        ret--;
         op->dev_addr = _dev_addr;
         op->sub_addr = SX1503_REG_ADDR[reg_idx];
         op->setBuffer(&registers[reg_idx], len);

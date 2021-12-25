@@ -24,12 +24,17 @@ Distributed as-is; no warranty is given.
 /* Class flags */
 #define TMP102_FLAG_DEVICE_PRESENT     0x0001  // Part was found.
 #define TMP102_FLAG_PINS_CONFIGURED    0x0002  // Low-level pin setup is complete.
-#define TMP102_FLAG_INITIALIZED        0x0004  // Registers are initialized.
+#define TMP102_FLAG_RESERVED           0x0004
 #define TMP102_FLAG_PTR_VALID          0x0008  // The shadow of the pointer register is correct.
 #define TMP102_FLAG_IO_IN_FLIGHT       0x0010  // There is I/O happening.
+#define TMP102_FLAG_REG_1_KNOWN        0x0020  // The value of this register is known.
+#define TMP102_FLAG_REG_2_KNOWN        0x0040  // The value of this register is known.
+#define TMP102_FLAG_REG_3_KNOWN        0x0080  // The value of this register is known.
+
+#define TMP102_FLAG_INIT_MASK   (TMP102_FLAG_REG_1_KNOWN | TMP102_FLAG_REG_2_KNOWN | TMP102_FLAG_REG_3_KNOWN)
 
 
-
+/* Enums for settings */
 enum class TMP102DataRate : uint8_t {
   RATE_0_25_HZ  = 0x00,    // 0 - 0.25 Hz
   RATE_1_HZ     = 0x01,    // 1 - 1 Hz
@@ -39,9 +44,50 @@ enum class TMP102DataRate : uint8_t {
 };
 
 
+class TMP102Opts {
+  public:
+    const uint8_t  ADDR;
+    const uint8_t  ALRT_PIN;
+    bool           extended_mode;
+    bool           active_low_alert;
+    TMP102DataRate rate;
+
+    /** Copy constructor. */
+    TMP102Opts(const TMP102Opts* o) :
+      ADDR(o->ADDR),
+      ALRT_PIN(o->ALRT_PIN),
+      extended_mode(o->extended_mode),
+      active_low_alert(o->active_low_alert),
+      rate(o->rate) {};
+
+    /**
+    * Constructor that accepts desired configuration.
+    *
+    * @param i2c address
+    * @param ALERT pin
+    * @param Extended mode
+    * @param Active-low alert pin
+    * @param Conversion Rate
+    */
+    TMP102Opts(uint8_t addr, uint8_t a_pin, bool em, bool al, TMP102DataRate cr) :
+      ADDR(addr),
+      ALRT_PIN(a_pin),
+      extended_mode(em),
+      active_low_alert(al),
+      rate(cr) {};
+
+    uint16_t getConfValue() {
+      uint16_t ret = (extended_mode << 4) | (!active_low_alert << 10);
+      ret |= ((((uint16_t) rate) & 0x0003) << 6);
+      return ret;
+    }
+};
+
+
+
 class TMP102 : public I2CDevice {
   public:
-    TMP102(uint8_t addr, uint8_t alert_pin);
+    TMP102(const TMP102Opts*);
     ~TMP102();
 
     int8_t init(I2CAdapter* bus = nullptr);
@@ -50,7 +96,7 @@ class TMP102 : public I2CDevice {
     void printDebug(StringBuilder*);
 
     inline bool  devFound() {         return _tmp_flag(TMP102_FLAG_DEVICE_PRESENT);  };
-    inline bool  initialized() {      return _tmp_flag(TMP102_FLAG_INITIALIZED);     };
+    inline bool  initialized() {      return (TMP102_FLAG_INIT_MASK == (_flags & TMP102_FLAG_INIT_MASK));     };
     inline float temperature() {      return _temp;  };
 
     bool   dataReady();        // Is data waiting for retrieval?
@@ -94,7 +140,7 @@ class TMP102 : public I2CDevice {
 
 
   private:
-    const uint8_t _ALRT_PIN;
+    TMP102Opts    _opts;
     uint8_t       _ptr_val    = 0;
     uint16_t      _flags      = 0;
     uint32_t      _last_read  = 0;

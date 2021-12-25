@@ -61,14 +61,14 @@ const char* TMP102::odrStr(const TMP102DataRate e) {
 * Constructors/destructors, class initialization functions and so-forth...
 *******************************************************************************/
 
-TMP102::TMP102(uint8_t addr, uint8_t alrt_pin) : I2CDevice(addr), _ALRT_PIN(alrt_pin) {}
+TMP102::TMP102(const TMP102Opts* o) : I2CDevice(o->ADDR), _opts(o) {}
 
 TMP102::~TMP102() {}
 
 
 int8_t TMP102::init(I2CAdapter* b) {
+  _tmp_clear_flag(TMP102_FLAG_DEVICE_PRESENT | TMP102_FLAG_INIT_MASK | TMP102_FLAG_PTR_VALID | TMP102_FLAG_IO_IN_FLIGHT);
   int8_t ret = _ll_pin_init();
-  _tmp_clear_flag(TMP102_FLAG_DEVICE_PRESENT | TMP102_FLAG_INITIALIZED | TMP102_FLAG_PTR_VALID | TMP102_FLAG_IO_IN_FLIGHT);
   if (nullptr != b) {
     _bus = b;
   }
@@ -106,7 +106,7 @@ int8_t TMP102::poll() {
       }
     }
 
-    if (255 != _ALRT_PIN) {
+    if (255 != _opts.ALRT_PIN) {
       // TODO: Read pin.
     }
     else {
@@ -512,28 +512,29 @@ float TMP102::readLowTemp() {
 
 float TMP102::readHighTemp() {
   int16_t digitalTemp = 0;    // Store the digital temperature value here
+  if (initialized()) {
+    if (0 == _open_ptr_register(T_HIGH_REGISTER)) {
+      uint8_t registerByte[2];  // Store the data from the register here
+      registerByte[0] = _read_register(0);
+      registerByte[1] = _read_register(1);
 
-  if (0 == _open_ptr_register(T_HIGH_REGISTER)) {
-    uint8_t registerByte[2];  // Store the data from the register here
-    registerByte[0] = _read_register(0);
-    registerByte[1] = _read_register(1);
-
-    if (extendedMode()) { // 13 bit mode
-      // Combine bytes to create a signed int
-      digitalTemp = ((registerByte[0]) << 5) | (registerByte[1] >> 3);
-      // Temperature data can be + or -, if it should be negative,
-      // convert 13 bit to 16 bit and use the 2s compliment.
-      if (digitalTemp > 0xFFF) {
-        digitalTemp |= 0xE000;
+      if (extendedMode()) { // 13 bit mode
+        // Combine bytes to create a signed int
+        digitalTemp = ((registerByte[0]) << 5) | (registerByte[1] >> 3);
+        // Temperature data can be + or -, if it should be negative,
+        // convert 13 bit to 16 bit and use the 2s compliment.
+        if (digitalTemp > 0xFFF) {
+          digitalTemp |= 0xE000;
+        }
       }
-    }
-    else {  // 12 bit mode
-      // Combine bytes to create a signed int
-      digitalTemp = ((registerByte[0]) << 4) | (registerByte[1] >> 4);
-      // Temperature data can be + or -, if it should be negative,
-      // convert 12 bit to 16 bit and use the 2s compliment.
-      if(digitalTemp > 0x7FF) {
-        digitalTemp |= 0xF000;
+      else {  // 12 bit mode
+        // Combine bytes to create a signed int
+        digitalTemp = ((registerByte[0]) << 4) | (registerByte[1] >> 4);
+        // Temperature data can be + or -, if it should be negative,
+        // convert 12 bit to 16 bit and use the 2s compliment.
+        if(digitalTemp > 0x7FF) {
+          digitalTemp |= 0xF000;
+        }
       }
     }
   }
@@ -602,11 +603,11 @@ float TMP102::_normalize_units_accepted(float temperature) {
 int8_t TMP102::_ll_pin_init() {
   int8_t ret = 0;
   if (!_tmp_flag(TMP102_FLAG_PINS_CONFIGURED)) {
-    if (255 != _ALRT_PIN) {
-      pinMode(_ALRT_PIN, GPIOMode::INPUT);
+    if (255 != _opts.ALRT_PIN) {
+      pinMode(_opts.ALRT_PIN, GPIOMode::INPUT);
       // TODO: I'm sick of having to dance around ISR limitations that push drivers
       //   toward a singleton pattern. Migrate this abstraction to AbstrctPlatform.
-      //attachInterrupt(digitalPinToInterrupt(_ALRT_PIN), tmp102_isr_fxn, FALLING);
+      //attachInterrupt(digitalPinToInterrupt(_opts.ALRT_PIN), tmp102_isr_fxn, FALLING);
     }
     _tmp_set_flag(TMP102_FLAG_PINS_CONFIGURED);
   }
@@ -643,13 +644,10 @@ int8_t TMP102::io_op_callback(BusOp* _op) {
         _tmp_clear_flag(TMP102_FLAG_IO_IN_FLIGHT);
         if (len > 1) {
           switch (_ptr_val) {
-            case CONFIG_REGISTER:
-              _tmp_set_flag(TMP102_FLAG_INITIALIZED);
-              break;
-            case T_LOW_REGISTER:
-            case T_HIGH_REGISTER:
-            default:
-              break;
+            case CONFIG_REGISTER:  _tmp_set_flag(TMP102_FLAG_REG_1_KNOWN);   break;
+            case T_LOW_REGISTER:   _tmp_set_flag(TMP102_FLAG_REG_2_KNOWN);   break;
+            case T_HIGH_REGISTER:  _tmp_set_flag(TMP102_FLAG_REG_3_KNOWN);   break;
+            default:  break;
           }
         }
         else if (1 == len) {
@@ -665,7 +663,7 @@ int8_t TMP102::io_op_callback(BusOp* _op) {
         if (_tmp_flag(TMP102_FLAG_PTR_VALID)) {
           switch (_ptr_val) {
             case TEMPERATURE_REGISTER:
-              if (_tmp_flag(TMP102_FLAG_INITIALIZED)) {
+              if (initialized()) {
                 int16_t digitalTemp = 0;    // Temperature stored in TMP102 register
                 uint8_t* buf = op->buffer();
 
@@ -693,10 +691,36 @@ int8_t TMP102::io_op_callback(BusOp* _op) {
               }
               break;
             case CONFIG_REGISTER:
-              _tmp_set_flag(TMP102_FLAG_INITIALIZED);
+              _tmp_set_flag(TMP102_FLAG_REG_1_KNOWN);
+              if (!_tmp_flag(TMP102_FLAG_REG_2_KNOWN)) {
+                _read_register(T_LOW_REGISTER);
+              }
+              else if (!_tmp_flag(TMP102_FLAG_REG_3_KNOWN)) {
+                _read_register(T_HIGH_REGISTER);
+              }
               break;
             case T_LOW_REGISTER:
+              _tmp_set_flag(TMP102_FLAG_REG_2_KNOWN);
+              if (!_tmp_flag(TMP102_FLAG_REG_1_KNOWN)) {
+                _read_register(CONFIG_REGISTER);
+              }
+              else if (!_tmp_flag(TMP102_FLAG_REG_3_KNOWN)) {
+                _read_register(T_HIGH_REGISTER);
+              }
+              break;
             case T_HIGH_REGISTER:
+              _tmp_set_flag(TMP102_FLAG_REG_3_KNOWN);
+              if (!_tmp_flag(TMP102_FLAG_REG_1_KNOWN)) {
+                _read_register(CONFIG_REGISTER);
+              }
+              else if (!_tmp_flag(TMP102_FLAG_REG_2_KNOWN)) {
+                _read_register(T_LOW_REGISTER);
+              }
+
+              if (_get_shadow_value(CONFIG_REGISTER) != _opts.getConfValue()) {
+                _write_register(CONFIG_REGISTER, _opts.getConfValue());
+              }
+              break;
             default:
               break;
           }
@@ -724,7 +748,7 @@ int8_t TMP102::io_op_callback(BusOp* _op) {
 */
 void TMP102::printDebug(StringBuilder* output) {
   StringBuilder::styleHeader1(output, "TMP102");
-  output->concatf("\tAlert Pin:   %u\n", _ALRT_PIN);
+  output->concatf("\tAlert Pin:   %u\n", _opts.ALRT_PIN);
   output->concatf("\tPins setup:  %c\n", _tmp_flag(TMP102_FLAG_PINS_CONFIGURED) ? 'y' : 'n');
   output->concatf("\tDev found:   %c\n", devFound() ? 'y' : 'n');
   if (devFound()) {
@@ -736,12 +760,13 @@ void TMP102::printDebug(StringBuilder* output) {
       output->concatf("\tEnabled:     %c\n", enabled() ? 'y' : 'n');
       output->concatf("\tExtnd mode:  %c\n", extendedMode() ? 'y' : 'n');
       output->concatf("\tLast read:   %u\n", _last_read);
+      output->concatf("\tLow/High:    %.2f / %.2f\n", readLowTemp(), readHighTemp());
       output->concatf("\tTemperature: %.2f\n", _temp);
     }
   }
-  output->concat("\t");
-  for (int i = 0; i < 8; i++) {
-    output->concatf("0x%02x  ", *(((uint8_t*) &_shadows[0]) + i));
-  }
+  //output->concat("\t");
+  //for (int i = 0; i < 8; i++) {
+  //  output->concatf("0x%02x  ", *(((uint8_t*) &_shadows[0]) + i));
+  //}
   output->concat("\n");
 }

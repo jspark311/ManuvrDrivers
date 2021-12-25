@@ -25,19 +25,17 @@ Distributed as-is; no warranty is given.
 #define TMP102_FLAG_DEVICE_PRESENT     0x0001  // Part was found.
 #define TMP102_FLAG_PINS_CONFIGURED    0x0002  // Low-level pin setup is complete.
 #define TMP102_FLAG_INITIALIZED        0x0004  // Registers are initialized.
-#define TMP102_FLAG_ENABLED            0x0008  // Device is measuring.
-#define TMP102_FLAG_EXTENDED_MODE      0x0010  // 13-bit temperature allows read out to 150C.
-#define TMP102_FLAG_MOON_LANDING_UNITS 0x0020  // Units in Fahrenheit if true. Celcius if not.
-#define TMP102_FLAG_DATA_RATE_MASK     0x00C0  // Hold 2-bit rate setting.
-#define TMP102_FLAG_ALRT_ACTIVE_HIGH   0x0100  // Alert pin is active high.
-#define TMP102_FLAG_PTR_VALID          0x0200  // The shadow of the pointer register is correct.
+#define TMP102_FLAG_PTR_VALID          0x0008  // The shadow of the pointer register is correct.
+#define TMP102_FLAG_IO_IN_FLIGHT       0x0010  // There is I/O happening.
+
 
 
 enum class TMP102DataRate : uint8_t {
   RATE_0_25_HZ  = 0x00,    // 0 - 0.25 Hz
   RATE_1_HZ     = 0x01,    // 1 - 1 Hz
   RATE_4_HZ     = 0x02,    // 2 - 4 Hz (default)
-  RATE_8_HZ     = 0x03     // 3 - 8 Hz
+  RATE_8_HZ     = 0x03,    // 3 - 8 Hz
+  RATE_INVALID  = 0x04     // Invalid. Not repesented in hardware.
 };
 
 
@@ -52,15 +50,12 @@ class TMP102 : public I2CDevice {
     void printDebug(StringBuilder*);
 
     inline bool  devFound() {         return _tmp_flag(TMP102_FLAG_DEVICE_PRESENT);  };
-    inline bool  enabled() {          return _tmp_flag(TMP102_FLAG_ENABLED);         };
     inline bool  initialized() {      return _tmp_flag(TMP102_FLAG_INITIALIZED);     };
-    inline bool  extendedMode() {     return _tmp_flag(TMP102_FLAG_EXTENDED_MODE);   };
-    inline bool  unitsFahrenheit() {  return _tmp_flag(TMP102_FLAG_MOON_LANDING_UNITS);   };
-    inline void  unitsFahrenheit(bool x) {   _tmp_set_flag(TMP102_FLAG_MOON_LANDING_UNITS, x); };
-    inline float temperature() {      return _normalize_units_returned(_temp);       };
+    inline float temperature() {      return _temp;  };
 
     bool   dataReady();        // Is data waiting for retrieval?
     int8_t enabled(bool);      // Sensor should be awake or asleep?
+    bool   enabled();
     bool   alert();            // Returns state of Alert register
     int8_t setLowTemp(float degrees);  // Sets T_LOW alert threshold
     int8_t setHighTemp(float degrees); // Sets T_HIGH alert threshold
@@ -68,19 +63,16 @@ class TMP102 : public I2CDevice {
     float  readHighTemp();     // Reads T_HIGH register
 
     int8_t conversionRate(TMP102DataRate);
-    inline TMP102DataRate conversionRate() {
-      return (TMP102DataRate)((_shadows[1] >> 14) & 0x03);
-    };
+    TMP102DataRate conversionRate();
 
-    int8_t alertPolarity(bool);  // Set the polarity of Alert
-    inline bool alertPolarity() {
-      return _tmp_flag(TMP102_FLAG_ALRT_ACTIVE_HIGH);
-    };
+    int8_t alertActiveLow(bool);  // Set the polarity of Alert
+    bool   alertActiveLow();
 
     // Enable or disable extended mode
     // 0 - disabled (-55C to +128C)
     // 1 - enabled  (-55C to +150C)
     int8_t extendedMode(bool mode);
+    bool   extendedMode();
 
     // Set the number of consecutive faults
     // 0 - 1 fault
@@ -114,10 +106,10 @@ class TMP102 : public I2CDevice {
     int8_t  _read_temp();
 
     int8_t   _ll_pin_init();
+    uint16_t _get_shadow_value(uint8_t reg);
     int8_t   _read_register(uint8_t reg);
     int8_t   _write_register(uint8_t reg, uint16_t val);
     float    _normalize_units_accepted(float deg);
-    float    _normalize_units_returned(float deg);
     uint16_t _data_period_ms();
 
     /* Flag manipulation inlines */

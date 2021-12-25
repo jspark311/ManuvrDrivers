@@ -19,10 +19,12 @@ Distributed as-is; no warranty is given.
 ******************************************************************************/
 #include "TMP102.h"
 
-#define TEMPERATURE_REGISTER 0x00
-#define CONFIG_REGISTER 0x01
-#define T_LOW_REGISTER 0x02
-#define T_HIGH_REGISTER 0x03
+#define TEMPERATURE_REGISTER        0x00
+#define CONFIG_REGISTER             0x01
+#define T_LOW_REGISTER              0x02
+#define T_HIGH_REGISTER             0x03
+
+#define TMP102_DEG_C_PER_BIT     0.0625f
 
 
 /*******************************************************************************
@@ -66,28 +68,18 @@ TMP102::~TMP102() {}
 
 int8_t TMP102::init(I2CAdapter* b) {
   int8_t ret = _ll_pin_init();
-  _tmp_clear_flag(TMP102_FLAG_DEVICE_PRESENT | TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
+  _tmp_clear_flag(TMP102_FLAG_DEVICE_PRESENT | TMP102_FLAG_INITIALIZED | TMP102_FLAG_PTR_VALID | TMP102_FLAG_IO_IN_FLIGHT);
   if (nullptr != b) {
     _bus = b;
   }
   if (nullptr != _bus) {
     if (0 == ret) {
-      //if (ping_device()) {
-        // uint8_t registerByte[2] = {0, 0};   // Default (bit-cleared) state is enabled.
-        // registerByte[1] |= ((uint8_t) TMP102DataRate::RATE_4_HZ) << 6;  // Conversion rate
-        // registerByte[1] |= 1 << 4;  // Exentended mode
-        uint16_t conf_value = ((uint8_t) TMP102DataRate::RATE_4_HZ) << 14;  // Conversion rate
-        conf_value |= (1 << 12);  // Extended mode
-        //conf_value |= 0x0100;     // Eanbled
-        ret = _write_register(CONFIG_REGISTER, conf_value);
-        if (0 == ret) {
-          if (0 == ret) {
-            _tmp_set_flag(TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
-          }
-        }
-      //}
-      //else {
-      //  _tmp_clear_flag(TMP102_FLAG_DEVICE_PRESENT | TMP102_FLAG_EXTENDED_MODE | TMP102_FLAG_ENABLED | TMP102_FLAG_INITIALIZED);
+      ret = ping_device();
+      //if (0 == ret) {
+      //  uint16_t conf_value = ((uint8_t) TMP102DataRate::RATE_4_HZ) << 6;  // Conversion rate
+      //  conf_value |= (3 << 13);  // R[1..0] = 0b11 mode
+      //  //conf_value |= (1 << 4);   // Extended mode
+      //  ret = _write_register(CONFIG_REGISTER, conf_value);
       //}
     }
   }
@@ -125,21 +117,31 @@ int8_t TMP102::poll() {
 }
 
 
+/**
+* Sends a Bus TX to set the device's internal register pointer. This is the
+*   first step of a read operation, since writes can send (and reset) this value
+*   in the same operation as the data transfer.
+*
+* @param reg is the register address
+* @return 0 on success
+*        -1 if the device isn't yet found
+*        -2 on BusOp allocation failure
+*        -3 I/O rejection
+*/
 int8_t TMP102::_open_ptr_register(uint8_t reg) {
   int8_t ret = -1;
   if (devFound()) {
     ret--;
-    //_bus->beginTransmission(_ADDR); // Connect to TMP102
-    //_bus->write(pointerReg); // Open specified register
-    //ret = _bus->endTransmission(); // Close communication with TMP102
     I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
     if (nullptr != op) {
       ret--;
+      _tmp_clear_flag(TMP102_FLAG_PTR_VALID);
+      _ptr_val = reg;
       op->dev_addr = _dev_addr;
       op->sub_addr = -1;
       op->setBuffer(&_ptr_val, 1);
       if (0 == queue_io_job(op)) {
-        _tmp_clear_flag(TMP102_FLAG_PTR_VALID);
+        _tmp_set_flag(TMP102_FLAG_IO_IN_FLIGHT);
         ret = 0;
       }
     }
@@ -148,55 +150,90 @@ int8_t TMP102::_open_ptr_register(uint8_t reg) {
 }
 
 
+/**
+* Get the register's shadow value.
+*
+* @param reg is the register address
+* @return the endian-native representation of the given register.
+*/
+uint16_t TMP102::_get_shadow_value(uint8_t reg) {
+  uint8_t msb = *(((uint8_t*) &_shadows[reg & 0x03]) + 0);
+  uint8_t lsb = *(((uint8_t*) &_shadows[reg & 0x03]) + 1);
+  return (((uint16_t) msb << 8) | lsb);
+}
+
+
+/**
+* Reads the given register from the hardware.
+*
+* @param reg is the register address
+* @return 0 on success
+*        -1 if the device isn't yet found
+*        -2 if there is already I/O in flight
+*        -3 I/O failure
+*/
 int8_t TMP102::_read_register(uint8_t reg) {
   int8_t ret = -1;
   if (devFound()) {
     ret--;
-    if (_ptr_val != reg) {
-      if (0 != _open_ptr_register(reg)) {
-        return -4;
-      }
-    }
-    ret--;
-
-    I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
-    if (nullptr != op) {
+    if (!_tmp_flag(TMP102_FLAG_IO_IN_FLIGHT)) {
       ret--;
-      op->dev_addr = _dev_addr;
-      op->sub_addr = reg;
-      op->setBuffer((uint8_t*) &_shadows[reg], 2);
-      if (0 == queue_io_job(op)) {
-        ret = 0;
+      if ((_ptr_val != reg) | !_tmp_flag(TMP102_FLAG_PTR_VALID)) {
+        if (0 == _open_ptr_register(reg)) {
+          // The read operation will be picked back up on the callback.
+          ret = 0;
+        }
+      }
+      else {
+        // The PTR reg is already set as needed.
+        I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
+        if (nullptr != op) {
+          op->dev_addr = _dev_addr;
+          op->sub_addr = -1;
+          op->setBuffer((uint8_t*) &_shadows[reg], 2);
+          if (0 == queue_io_job(op)) {
+            _tmp_set_flag(TMP102_FLAG_IO_IN_FLIGHT);
+            ret = 0;
+          }
+        }
       }
     }
   }
-
-  // Read current configuration register value
-  //_bus->requestFrom((uint8_t) _ADDR, (uint8_t) 2);   // Read two bytes from TMP102
-  //if (_bus->available()) {
-  //  registerByte[0] = (_bus->read());  // Read first byte
-  //  registerByte[1] = (_bus->read());  // Read second byte
-  //}
   return ret;
 }
 
 
+/**
+* Writes the given register with the given value to the hardware.
+*
+* @param reg is the register address
+* @param val is the 16-bit value to write (in native endianness)
+* @return 0 on success
+*        -1 if the device isn't yet found
+*        -2 if there is already I/O in flight
+*        -3 on BusOp allocation failure
+*        -4 I/O rejection
+*/
 int8_t TMP102::_write_register(uint8_t reg, uint16_t val) {
   int8_t ret = -1;
-  if (nullptr != _bus) {
+  if (devFound()) {
     ret--;
-    I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
-    if (nullptr != op) {
+    if (!_tmp_flag(TMP102_FLAG_IO_IN_FLIGHT)) {
       ret--;
-      //uint16_t _be_value = (val >> 8) | ((val & 0x00FF) << 8);
-      //_shadows[reg] = _be_value;
-      _shadows[reg] = val;
-      op->dev_addr = _dev_addr;
-      op->sub_addr = reg;
-      op->setBuffer((uint8_t*) &_shadows[reg], 2);
-      if (0 == queue_io_job(op)) {
+      I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
+      if (nullptr != op) {
+        ret--;
+        uint16_t _be_value = (val >> 8) | ((val & 0x00FF) << 8);
+        _shadows[reg] = _be_value;
+        _ptr_val = reg;
         _tmp_clear_flag(TMP102_FLAG_PTR_VALID);
-        ret = 0;
+        op->dev_addr = _dev_addr;
+        op->sub_addr = reg;
+        op->setBuffer((uint8_t*) &_shadows[reg], 2);
+        if (0 == queue_io_job(op)) {
+          _tmp_set_flag(TMP102_FLAG_IO_IN_FLIGHT);
+          ret = 0;
+        }
       }
     }
   }
@@ -247,11 +284,18 @@ int8_t TMP102::conversionRate(TMP102DataRate r) {
       //_bus->write(registerByte[0]);  // Write first byte
       //_bus->write(registerByte[1]);  // Write second byte
       //ret = _bus->endTransmission();      // Close communication with TMP102
-      if (0 == ret) {
-        _tmp_clear_flag(TMP102_FLAG_DATA_RATE_MASK);
-        _tmp_set_flag((uint16_t)(rate << 6));
-      }
     }
+  }
+  return ret;
+}
+
+
+TMP102DataRate TMP102::conversionRate() {
+  TMP102DataRate ret = TMP102DataRate::RATE_INVALID;
+  if (initialized()) {
+    const uint16_t MASK       = 0x00C0;
+    const uint16_t MASKED_VAL = _get_shadow_value(CONFIG_REGISTER) & MASK;
+    ret = (TMP102DataRate) (MASKED_VAL >> 6);
   }
   return ret;
 }
@@ -277,9 +321,6 @@ int8_t TMP102::extendedMode(bool mode) {
     //_bus->write(registerByte[0]);    // Write first byte
     //_bus->write(registerByte[1]);    // Write second byte
     //ret = _bus->endTransmission();   // Close communication with TMP102
-    if (0 == ret) {
-      _tmp_set_flag(TMP102_FLAG_EXTENDED_MODE, mode);
-    }
   }
   return ret;
 }
@@ -302,17 +343,39 @@ int8_t TMP102::enabled(bool x) {
       //_bus->write(CONFIG_REGISTER);    // Point to configuration register.
       //_bus->write(registerByte);       // Write first byte.
       //ret = _bus->endTransmission();   // Close communication with TMP102.
-      if (0 == ret) {       // Only change the flag if the write worked.
-        _tmp_set_flag(TMP102_FLAG_ENABLED, x);
-      }
     }
   }
   return ret;
 }
 
 
+bool TMP102::enabled() {
+  bool ret = false;
+  if (initialized()) {
+    const uint16_t MASK       = 0x0100;
+    const uint16_t MASKED_VAL = _get_shadow_value(CONFIG_REGISTER) & MASK;
+    if (MASKED_VAL != MASK) {   // Bit unset implies enablement.
+      ret = true;
+    }
+  }
+  return ret;
+}
 
-int8_t TMP102::alertPolarity(bool polarity) {
+
+bool TMP102::extendedMode() {
+  bool ret = false;
+  if (initialized()) {
+    const uint16_t MASK       = 0x0010;
+    const uint16_t MASKED_VAL = _get_shadow_value(CONFIG_REGISTER) & MASK;
+    if (MASKED_VAL == MASK) {
+      ret = true;
+    }
+  }
+  return ret;
+}
+
+
+int8_t TMP102::alertActiveLow(bool active_low) {
   int8_t ret = -1;
   uint8_t registerByte; // Store the data from the register here
 
@@ -323,15 +386,25 @@ int8_t TMP102::alertPolarity(bool polarity) {
 
     // Load new value for polarity
     registerByte &= 0xFB; // Clear POL (bit 2 of registerByte)
-    registerByte |= polarity<<2;  // Shift in new POL bit
+    registerByte |= ((!active_low) << 2);  // Shift in new POL bit
 
     // Set configuration register
     //_bus->beginTransmission(_ADDR);
     //_bus->write(CONFIG_REGISTER);  // Point to configuration register
     //_bus->write(registerByte);      // Write first byte
     //ret = _bus->endTransmission();       // Close communication with TMP102
-    if (0 == ret) {
-      _tmp_set_flag(TMP102_FLAG_ALRT_ACTIVE_HIGH, polarity);
+  }
+  return ret;
+}
+
+
+bool TMP102::alertActiveLow() {
+  bool ret = false;
+  if (initialized()) {
+    const uint16_t MASK       = 0x0400;
+    const uint16_t MASKED_VAL = _get_shadow_value(CONFIG_REGISTER) & MASK;
+    if (MASKED_VAL != MASK) {   // Bit unset implies active low.
+      ret = true;
     }
   }
   return ret;
@@ -356,7 +429,7 @@ int8_t TMP102::setLowTemp(float degrees) {
     float temperature = _normalize_units_accepted(degrees);
     uint8_t registerByte[2];  // Store the data from the register here
     // Convert analog temperature to digital value
-    temperature = temperature / 0.0625;
+    temperature = temperature / TMP102_DEG_C_PER_BIT;
     // Split temperature into separate bytes
     if (extendedMode()) {  // 13-bit mode
       registerByte[0] = int(temperature)>>5;
@@ -384,7 +457,7 @@ int8_t TMP102::setHighTemp(float degrees) {
     uint8_t registerByte[2];  // Store the data from the register here
     float temperature = _normalize_units_accepted(degrees);
 
-    temperature = temperature / 0.0625;
+    temperature = temperature / TMP102_DEG_C_PER_BIT;
     // Split temperature into separate bytes
     if(extendedMode()) {  // 13-bit mode
       registerByte[0] = int(temperature)>>5;
@@ -433,8 +506,7 @@ float TMP102::readLowTemp() {
       }
     }
   }
-  // Convert digital reading to analog temperature (1-bit is equal to 0.0625 C)
-  return _normalize_units_returned(digitalTemp * 0.0625);
+  return (digitalTemp * TMP102_DEG_C_PER_BIT);   // Convert value to Celcius.
 }
 
 
@@ -465,8 +537,7 @@ float TMP102::readHighTemp() {
       }
     }
   }
-  // Convert digital reading to analog temperature (1-bit is equal to 0.0625 C)
-  return _normalize_units_returned(digitalTemp * 0.0625);
+  return (digitalTemp * TMP102_DEG_C_PER_BIT);   // Convert value to Celcius.
 }
 
 
@@ -516,28 +587,11 @@ int8_t TMP102::setAlertMode(bool mode) {
 
 
 /**
-* Used to automatically convert from Fahrenheit if that is how the class is
-*   configured to operate.
+* Used to automatically prevent temperature from exceeding hardware bounds.
 */
 float TMP102::_normalize_units_accepted(float temperature) {
-  if (unitsFahrenheit()) {
-    temperature = (temperature - 32) / 1.8;
-  }
-  // Prevent temperature from exceeding hardware bounds.
   if(temperature > 150.0f) {    temperature = 150.0f;   }
   if(temperature < -55.0) {     temperature = -55.0f;   }
-  return temperature;
-}
-
-
-/**
-* Used to automatically convert to Fahrenheit if that is how the class is
-*   configured to operate.
-*/
-float TMP102::_normalize_units_returned(float temperature) {
-  if (unitsFahrenheit()) {
-    temperature = temperature * 1.8 + 32;
-  }
   return temperature;
 }
 
@@ -558,6 +612,7 @@ int8_t TMP102::_ll_pin_init() {
   }
   return ret;
 }
+
 
 
 /*******************************************************************************
@@ -581,72 +636,83 @@ int8_t TMP102::io_op_callback(BusOp* _op) {
 
   if (!op->hasFault()) {
     uint     len = op->bufferLen();
-    if (!_tmp_flag(TMP102_FLAG_DEVICE_PRESENT)) {
-      // With no ID register to check, we construe no failure on bus operation
-      //   as the condition "device found".
-      _tmp_set_flag(TMP102_FLAG_DEVICE_PRESENT);
-    }
     switch (op->get_opcode()) {
       case BusOpcode::TX:
         // The part requires that the first byte of any write is the pointer.
-        _ptr_val = (uint8_t) op->sub_addr;
         _tmp_set_flag(TMP102_FLAG_PTR_VALID);
-        if (len > 0) {
+        _tmp_clear_flag(TMP102_FLAG_IO_IN_FLIGHT);
+        if (len > 1) {
           switch (_ptr_val) {
-            case 1:
+            case CONFIG_REGISTER:
               _tmp_set_flag(TMP102_FLAG_INITIALIZED);
               break;
-            case 2:
-            case 3:
+            case T_LOW_REGISTER:
+            case T_HIGH_REGISTER:
+            default:
+              break;
+          }
+        }
+        else if (1 == len) {
+          // A prelude to a value read from hardware is the only reason to have
+          //   a single byte transaction in this driver. Make the _read_register()
+          //   call again.
+          _read_register(_ptr_val);
+        }
+        break;
+
+      case BusOpcode::RX:
+        _tmp_clear_flag(TMP102_FLAG_IO_IN_FLIGHT);
+        if (_tmp_flag(TMP102_FLAG_PTR_VALID)) {
+          switch (_ptr_val) {
+            case TEMPERATURE_REGISTER:
+              if (_tmp_flag(TMP102_FLAG_INITIALIZED)) {
+                int16_t digitalTemp = 0;    // Temperature stored in TMP102 register
+                uint8_t* buf = op->buffer();
+
+                // Bit 0 of second byte will always be 0 in 12-bit readings and 1 in 13-bit
+                if (*(buf + 1) & 0x01) {  // 13 bit mode
+                  // Combine bytes to create a signed int
+                  digitalTemp = (*(buf + 0) << 5) | (*(buf + 1) >> 3);
+                  // Temperature data can be + or -, if it should be negative,
+                  // convert 13 bit to 16 bit and use the 2s compliment.
+                  if (digitalTemp > 0xFFF) {
+                    digitalTemp |= 0xE000;
+                  }
+                }
+                else {  // 12 bit mode
+                  // Combine bytes to create a signed int
+                  digitalTemp = (*(buf + 0) << 4) | (*(buf + 0) >> 4);
+                  // Temperature data can be + or -, if it should be negative,
+                  // convert 12 bit to 16 bit and use the 2s compliment.
+                  if (digitalTemp > 0x7FF) {
+                    digitalTemp |= 0xF000;
+                  }
+                }
+                _temp = digitalTemp * TMP102_DEG_C_PER_BIT;
+                ret = 0;
+              }
+              break;
+            case CONFIG_REGISTER:
+              _tmp_set_flag(TMP102_FLAG_INITIALIZED);
+              break;
+            case T_LOW_REGISTER:
+            case T_HIGH_REGISTER:
             default:
               break;
           }
         }
         break;
 
-      case BusOpcode::RX:
-        switch (_ptr_val) {
-          case 0:
-            if (_tmp_flag(TMP102_FLAG_INITIALIZED)) {
-              int16_t digitalTemp = 0;    // Temperature stored in TMP102 register
-              uint8_t* buf = op->buffer();
-
-              // Bit 0 of second byte will always be 0 in 12-bit readings and 1 in 13-bit
-              if (*(buf + 1) & 0x01) {  // 13 bit mode
-                // Combine bytes to create a signed int
-                digitalTemp = (*(buf + 0) << 5) | (*(buf + 1) >> 3);
-                // Temperature data can be + or -, if it should be negative,
-                // convert 13 bit to 16 bit and use the 2s compliment.
-                if (digitalTemp > 0xFFF) {
-                  digitalTemp |= 0xE000;
-                }
-              }
-              else {  // 12 bit mode
-                // Combine bytes to create a signed int
-                digitalTemp = (*(buf + 0) << 4) | (*(buf + 0) >> 4);
-                // Temperature data can be + or -, if it should be negative,
-                // convert 12 bit to 16 bit and use the 2s compliment.
-                if (digitalTemp > 0x7FF) {
-                  digitalTemp |= 0xF000;
-                }
-              }
-              // Convert digital reading to analog temperature (1-bit is equal to 0.0625 C)
-              _temp = digitalTemp * 0.0625;
-              ret = 0;
-            }
-            break;
-          case 1:
-            _tmp_set_flag(TMP102_FLAG_INITIALIZED);
-            break;
-          case 2:
-          case 3:
-          default:
-            break;
+      case BusOpcode::TX_CMD:
+        if (!_tmp_flag(TMP102_FLAG_DEVICE_PRESENT)) {
+          // With no ID register to check, we construe no failure on bus ping
+          //   as the condition "device found".
+          _tmp_set_flag(TMP102_FLAG_DEVICE_PRESENT);
+          _read_register(CONFIG_REGISTER);
         }
         break;
 
-      default:
-        break;
+      default: break;
     }
   }
   return ret;
@@ -663,8 +729,12 @@ void TMP102::printDebug(StringBuilder* output) {
   output->concatf("\tDev found:   %c\n", devFound() ? 'y' : 'n');
   if (devFound()) {
     output->concatf("\tInitialized: %c\n", initialized() ? 'y' : 'n');
+    output->concatf("\t_reg_ptr:    %u (%svalid)\n", _ptr_val, _tmp_flag(TMP102_FLAG_PTR_VALID) ? "": "in");
+    output->concatf("\tIO inflight: %c\n", _tmp_flag(TMP102_FLAG_IO_IN_FLIGHT) ? 'y' : 'n');
     if (initialized()) {
       output->concatf("\tSample rate: %s\n", odrStr(conversionRate()));
+      output->concatf("\tEnabled:     %c\n", enabled() ? 'y' : 'n');
+      output->concatf("\tExtnd mode:  %c\n", extendedMode() ? 'y' : 'n');
       output->concatf("\tLast read:   %u\n", _last_read);
       output->concatf("\tTemperature: %.2f\n", _temp);
     }

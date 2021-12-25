@@ -75,12 +75,6 @@ int8_t TMP102::init(I2CAdapter* b) {
   if (nullptr != _bus) {
     if (0 == ret) {
       ret = ping_device();
-      //if (0 == ret) {
-      //  uint16_t conf_value = ((uint8_t) TMP102DataRate::RATE_4_HZ) << 6;  // Conversion rate
-      //  conf_value |= (3 << 13);  // R[1..0] = 0b11 mode
-      //  //conf_value |= (1 << 4);   // Extended mode
-      //  ret = _write_register(CONFIG_REGISTER, conf_value);
-      //}
     }
   }
   return ret;

@@ -44,7 +44,6 @@ static const uint8_t SX1503_REG_ADDR[31] = {
 };
 
 
-
 /**
 * This is an ISR.
 */
@@ -145,34 +144,51 @@ bool SX1503::isrFired() {
 *   against the application's notification preferences for each input pin.
 *
 * @param b Is the bus that is hosting the hardware.
-* @return 0 on success, non-zero otherwise.
+* @return 0 on success
+*        -1 on failure to setup pins
+*        -2 on no assigned I2CAdapter
+*        -3 on failure to restore serialized hardware state
+*        -4 on failure to refresh
+*        -5 on failure to reset
 */
 int8_t SX1503::init(I2CAdapter* b) {
   int8_t ret = -1;
   _sx_clear_flag(SX1503_FLAG_INITIALIZED);
-  _ll_pin_init();
   if (nullptr != b) {
     _bus = b;
   }
-
-  if (_from_blob()) {
-    // Copy the blob-imparted values and clear the flag so we don't do this again.
-    _sx_clear_flag(SX1503_FLAG_FROM_BLOB);
-    int8_t ret = _write_registers(SX1503RegId::DATA_B, 0x12);
-    if (0 == ret) {  ret = _write_registers(SX1503RegId::PLD_MODE_B, 0x0C);  }
-    if (0 == ret) {  ret = _write_registers(SX1503RegId::ADVANCED, 1);       }
-    if (0 != ret) {
-      return -3;
+  if (0 == _ll_pin_init()) {
+    ret = -2;
+    if (nullptr != _bus) {
+      if (_from_blob()) {
+        ret = -2;
+        // Copy the blob-imparted values.
+        if (0 == _write_registers(SX1503RegId::DATA_B, 0x12)) {
+          if (0 == _write_registers(SX1503RegId::PLD_MODE_B, 0x0C)) {
+            if (0 == _write_registers(SX1503RegId::ADVANCED, 1)) {
+              // Clear the flag on success so we don't do this again.
+              _sx_clear_flag(SX1503_FLAG_FROM_BLOB);
+              _read_registers(SX1503RegId::DATA_B, 2);   // Read back initial input states.
+              ret = 0;
+            }
+          }
+        }
+      }
+      else if (preserveOnDestroy()) {
+        ret = -3;
+        if (0 == refresh()) {
+          // We take no action against the present hardware state. Just read it.
+          ret = 0;
+        }
+      }
+      else if (0 == reset()) {
+        // Reset ahead of baseline class configuration.
+        ret = 0;
+      }
+      else {
+        ret = -4;
+      }
     }
-    ret = 0;
-  }
-  else if (preserveOnDestroy()) {
-    // We take no action against the present hardware state. Just read it.
-    ret = refresh();
-  }
-  else {
-    // Reset ahead of baseline class configuration.
-    ret = reset();
   }
   return ret;
 }
@@ -233,6 +249,9 @@ int8_t SX1503::reset() {
     ret = _write_registers(SX1503RegId::DATA_B, 0x12);
     if (0 == ret) {  ret = _write_registers(SX1503RegId::PLD_MODE_B, 0x0C);  }
     if (0 == ret) {  ret = _write_register(SX1503RegId::ADVANCED, 0x04);     }
+    if (0 == ret) {
+      _read_registers(SX1503RegId::DATA_B, 2);   // Read back initial input states.
+    }
   }
   return ret;
 }
@@ -497,23 +516,32 @@ int8_t SX1503::_invoke_pin_callback(uint8_t pin, bool value) {
 
 /**
 * Setup the low-level pin details.
-* Both pins are optional, so this can't fail.
+* Both pins are optional, so this can't fail if no GPIO pins are assigned to the
+*   driver.
+* If the reset pin is provided, this function will not assert it.
 *
-* @return 0 on success, nonzero otherwise.
+* @return 0 on success, -1 on pin setup failure.
 */
 int8_t SX1503::_ll_pin_init() {
-  if (_sx_flag(SX1503_FLAG_PINS_CONFD)) {
+  int8_t ret = 0;
+  if (!_sx_flag(SX1503_FLAG_PINS_CONFD)) {
     if (255 != _IRQ_PIN) {
-      pinMode(_IRQ_PIN, GPIOMode::INPUT_PULLUP);
-      sx1503_isr_fired = !readPin(_IRQ_PIN);
-      setPinFxn(_IRQ_PIN, IRQCondition::FALLING, sx1503_isr);
+      ret = -1;
+      if (0 == pinMode(_IRQ_PIN, GPIOMode::INPUT_PULLUP)) {
+        sx1503_isr_fired = !readPin(_IRQ_PIN);
+        setPinFxn(_IRQ_PIN, IRQCondition::FALLING, sx1503_isr);
+        ret = 0;
+      }
     }
-    if (255 != _RESET_PIN) {
-      pinMode(_RESET_PIN, GPIOMode::OUTPUT);
+    if ((0 == ret) & (255 != _RESET_PIN)) {
+      ret = -1;
+      if (0 == pinMode(_RESET_PIN, GPIOMode::OUTPUT)) {
+        ret = 0;
+      }
     }
-    _sx_set_flag(SX1503_FLAG_PINS_CONFD);
+    _sx_set_flag(SX1503_FLAG_PINS_CONFD, (0 == ret));
   }
-  return 0;
+  return ret;
 }
 
 

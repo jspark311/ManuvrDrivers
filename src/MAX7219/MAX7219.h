@@ -158,9 +158,6 @@ class MAX7219 : public BusOpCallback {
 
     /* Send out a single command to the device */
     int8_t spiTransfer(int addr, uint8_t opcode, uint8_t data);
-
-
-
 };
 
 #endif  // MAX7219_H

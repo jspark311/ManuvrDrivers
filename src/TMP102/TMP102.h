@@ -24,7 +24,7 @@ Distributed as-is; no warranty is given.
 /* Class flags */
 #define TMP102_FLAG_DEVICE_PRESENT     0x0001  // Part was found.
 #define TMP102_FLAG_PINS_CONFIGURED    0x0002  // Low-level pin setup is complete.
-#define TMP102_FLAG_RESERVED           0x0004
+#define TMP102_FLAG_FRESH_VALUE        0x0004  // Set when the value is unread.
 #define TMP102_FLAG_PTR_VALID          0x0008  // The shadow of the pointer register is correct.
 #define TMP102_FLAG_IO_IN_FLIGHT       0x0010  // There is I/O happening.
 #define TMP102_FLAG_REG_1_KNOWN        0x0020  // The value of this register is known.
@@ -96,10 +96,10 @@ class TMP102 : public I2CDevice {
     void printDebug(StringBuilder*);
 
     inline bool  devFound() {         return _tmp_flag(TMP102_FLAG_DEVICE_PRESENT);  };
+    inline bool  dataReady() {        return _tmp_flag(TMP102_FLAG_FRESH_VALUE);     };
     inline bool  initialized() {      return (TMP102_FLAG_INIT_MASK == (_flags & TMP102_FLAG_INIT_MASK));     };
-    inline float temperature() {      return _temp;  };
+    inline float temperature() {      _tmp_clear_flag(TMP102_FLAG_FRESH_VALUE);  return _temp;  };
 
-    bool   dataReady();        // Is data waiting for retrieval?
     int8_t enabled(bool);      // Sensor should be awake or asleep?
     bool   enabled();
     bool   alert();            // Returns state of Alert register
@@ -149,6 +149,7 @@ class TMP102 : public I2CDevice {
 
     int8_t  _open_ptr_register(uint8_t pointerReg); // Changes the pointer register
 
+    bool    _need_to_read();        // Is data waiting for retrieval?
     int8_t  _read_temp();
 
     int8_t   _ll_pin_init();

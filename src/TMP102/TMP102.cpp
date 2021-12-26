@@ -94,7 +94,8 @@ int8_t TMP102::poll() {
   int8_t ret = -3;
   if (initialized() && enabled()) {
     ret = 0;
-    if (dataReady()) {
+    if (_need_to_read()) {
+      ret = -1;
       if (0 == _read_temp()) {
         ret = 1;
       }
@@ -252,7 +253,7 @@ uint16_t TMP102::_data_period_ms() {
 }
 
 
-bool TMP102::dataReady() {
+bool TMP102::_need_to_read() {
   return (millis() >= (_last_read + _data_period_ms()));
 }
 
@@ -681,6 +682,7 @@ int8_t TMP102::io_op_callback(BusOp* _op) {
                   }
                 }
                 _temp = digitalTemp * TMP102_DEG_C_PER_BIT;
+                _tmp_set_flag(TMP102_FLAG_FRESH_VALUE);
                 ret = 0;
               }
               break;

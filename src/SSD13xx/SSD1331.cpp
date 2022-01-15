@@ -387,6 +387,7 @@ int8_t SSD13xx::init(SPIAdapter* b) {
     _fb_data_op.bitsPerFrame(SPIFrameSize::BITS_8);
     _fb_data_op.cpol(true);
     _fb_data_op.cpha(true);
+    _fb_data_op.markForRequeue();
     if (0 == _ll_pin_init()) {
       ret--;
       if (reallocate()) {

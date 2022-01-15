@@ -131,9 +131,11 @@ class SX1503 : public I2CDevice {
       _sx_set_flag(SX1503_FLAG_PRESERVE_STATE, x);
     };
 
-    // Debugging fxns. Mask out if debugging isn't desired.
+    // Debugging fxns. If you don't want them in the build, don't call them, and
+    //   let --gc-sections do the rest.
     void printDebug(StringBuilder*);
     void printRegs(StringBuilder*);
+    int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
 
 
   private:

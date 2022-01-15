@@ -1252,5 +1252,46 @@ int8_t SX8634::load_spm_from_buffer(uint8_t* buf) {
   return 0;
 }
 
-
 #endif  // CONFIG_SX8634_PROVISIONING
+
+
+/*******************************************************************************
+* Console callback
+* These are built-in handlers for using this instance via a console.
+*******************************************************************************/
+
+int8_t SX8634::console_handler(StringBuilder* text_return, StringBuilder* args) {
+  int ret = 0;
+  char* cmd = args->position_trimmed(0);
+  if (0 < args->count()) {
+    if (0 == StringBuilder::strcasecmp(cmd, "info")) {
+      printDebug(text_return);
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "poll")) {
+      text_return->concatf("SX8634 poll() returns %d.\n", poll());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "init")) {
+      text_return->concatf("SX8634 init() returns %d.\n", init());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "irq")) {
+      text_return->concatf("SX8634 read_irq_registers() returns %d.\n", read_irq_registers());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "reset")) {
+      text_return->concatf("SX8634 reset() returns %d.\n", reset());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "ping")) {
+      text_return->concatf("SX8634 ping() returns %d\n", ping());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "mode")) {
+      if (1 < args->count()) {
+        int mode_int = args->position_as_int(1);
+        text_return->concatf("SX8634 setMode(%s) returns %d.\n", getModeStr((SX8634OpMode) mode_int), setMode((SX8634OpMode) mode_int));
+      }
+      text_return->concatf("SX8634 mode set to %s.\n", getModeStr(operationalMode()));
+    }
+    else ret = -1;
+  }
+  else ret = -1;
+
+  return ret;
+}

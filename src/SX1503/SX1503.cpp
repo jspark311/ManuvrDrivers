@@ -879,3 +879,84 @@ void SX1503::printRegs(StringBuilder* output) {
     output->concatf("\t0x%02x:\t0x%02x\n", SX1503_REG_ADDR[i], registers[i]);
   }
 }
+
+
+/*******************************************************************************
+* Console callback
+* These are built-in handlers for using this instance via a console.
+*******************************************************************************/
+
+int8_t SX1503::console_handler(StringBuilder* text_return, StringBuilder* args) {
+  int ret = 0;
+  char* cmd = args->position_trimmed(0);
+  uint8_t arg0 = args->position_as_int(1);
+  uint8_t arg1 = args->position_as_int(2);
+
+  if (0 == StringBuilder::strcasecmp(cmd, "init")) {
+    text_return->concatf("sx1503.init() returns %d\n", init());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "reset")) {
+    text_return->concatf("sx1503.reset() returns %d\n", reset());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "mode")) {
+    switch (args->count()) {
+      case 3:
+        switch ((GPIOMode) arg1) {
+          case GPIOMode::INPUT:
+          case GPIOMode::OUTPUT:
+          case GPIOMode::INPUT_PULLUP:
+          case GPIOMode::INPUT_PULLDOWN:
+          case GPIOMode::OUTPUT_OD:
+          case GPIOMode::BIDIR_OD:
+          case GPIOMode::BIDIR_OD_PULLUP:
+          case GPIOMode::ANALOG_OUT:
+          case GPIOMode::ANALOG_IN:
+            text_return->concatf("gpioMode(%u, %s) Returns %d.\n", arg0, getPinModeStr((GPIOMode) arg1), gpioMode(arg0, (GPIOMode)arg1));
+            break;
+          default:
+            text_return->concat("Invalid GPIO mode.\n");
+            break;
+        }
+        break;
+      default:
+        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::INPUT,           getPinModeStr(GPIOMode::INPUT));
+        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::OUTPUT,          getPinModeStr(GPIOMode::OUTPUT));
+        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::INPUT_PULLUP,    getPinModeStr(GPIOMode::INPUT_PULLUP));
+        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::INPUT_PULLDOWN,  getPinModeStr(GPIOMode::INPUT_PULLDOWN));
+        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::OUTPUT_OD,       getPinModeStr(GPIOMode::OUTPUT_OD));
+        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::BIDIR_OD,        getPinModeStr(GPIOMode::BIDIR_OD));
+        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::BIDIR_OD_PULLUP, getPinModeStr(GPIOMode::BIDIR_OD_PULLUP));
+        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::ANALOG_OUT,      getPinModeStr(GPIOMode::ANALOG_OUT));
+        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::ANALOG_IN,       getPinModeStr(GPIOMode::ANALOG_IN));
+        break;
+    }
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "val")) {
+    text_return->concatf("GPIO %d ", arg0);
+    switch (args->count()) {
+      case 3:
+        {
+          int8_t ret0 = this->digitalWrite(arg0, (0 != arg1));
+          text_return->concatf("set to %s. Returns %d.\n", (0 != arg1) ? "high" : "low", ret0);
+        }
+        break;
+      default:
+        {
+          int8_t ret0 = this->digitalRead(arg0);
+          text_return->concatf("reads %s.\n", ret0 ? "high" : "low");
+        }
+        break;
+    }
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
+    text_return->concatf("sx1503.refresh() returns %d\n", refresh());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "regs")) {
+    printRegs(text_return);
+  }
+  else {
+    printDebug(text_return);
+  }
+
+  return ret;
+}

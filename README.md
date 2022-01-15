@@ -9,15 +9,11 @@ A collection of non-blocking flexible hardware drivers written on top of CppPotp
 
 One major benefit to this abstraction is that drivers written under one environment don't require porting for use under any other environment.
 
-### Notes on behavior of destructors
-
-The envisioned use-case for these drivers is to be instantiated once, and never destroyed. This has the benefit of keeping (usually unused) code out of the binary. The toolchain is generally not smart enough to know if a given instance will _actually need_ destructors. Nevertheless, in drivers that do heap allocation, it will (should) be free'd. Any case where heap is NOT free'd in a destructor is a mistake on my part. BusOp hygiene is not as good, and it is conceivable that a BusOp whose life-cycle outlasts that of the class that is assigned as its callback will precipitate a hard-fault if the driver class is torn down. If this untidiness hurts your use-case, I will gladly accept patches.
-
 ### Notes on platform support
 
 In order to use this library, your project must provide the unimplemented functions in CppPotpourri's [AbstractPlatform header](https://github.com/jspark311/CppPotpourri/blob/master/src/AbstractPlatform.h). Some of these are provided by CppPotpourri itself, and your project may not use everything in the `AbstractPlatform` definition (depending on what drivers you include). The easiest way to determine what you need to implement is to write the first-draft of your project, and see what the linker complains about.
 
-I maintain a collection of platform examples in the [ManuvrPlatforms](https://github.com/jspark311/ManuvrPlatforms) repo. But you are advised not to rely on that code in any way. If you _do_ decide to use it, my advice would be to hard-fork the parts you want into your own tree, and build it with the rest of your top-level code. If you are in Arduino, that would mean copying the relevant files into your sketch folder.
+I maintain a collection of platform examples in the [ManuvrPlatforms](https://github.com/jspark311/ManuvrPlatforms) repo. But you are advised not to rely on that code in any way. If you _do_ decide to use it as it stands, my advice for each supported platform would be found in those README files.
 
 #### Example projects that have extended CppPotpourri in this manner
 
@@ -25,6 +21,11 @@ I maintain a collection of platform examples in the [ManuvrPlatforms](https://gi
 
   * Based on the Teensy4/teensyduino library and automake
   * Makes extensive use of drivers in this repo
+
+##### [Calor Sentinam](https://github.com/jspark311/CalorSentinam)
+
+  * Based on an ESP32 under the ESP-IDF environment
+  * Uses many of the same drivers and application code as MotherFlux0r
 
 ##### [File-Librarian](https://github.com/jspark311/File-Librarian)
 
@@ -39,7 +40,7 @@ Drivers in the [ManuvrDrivers header file](https://github.com/jspark311/ManuvrDr
   * The driver operates asynchronously with regard to all I/O (it never blocks).
   * The driver has no reliance on any concrete platform features, unless it is cased-off in the preprocessor.
 
-Drivers not included in ManuvrDrivers.h _might_ be worth using on a given platform, and might contain useful code for your own efforts. But they should not be expected to work.
+Drivers not included in `ManuvrDrivers.h` _might_ be worth using on a given platform, and might contain useful code for your own efforts. But they should not be expected to work.
 
 ### General philosophy of driver construction
 
@@ -52,6 +53,10 @@ Drivers should be able to cope as much as possible if the best-case resources ar
 CppPotpourri is heap-heavy. The `BusAdapter` class offers a preallocation pool of ready-to-use jobs that drivers can pull from. But sometimes, it is faster and more flexible to hard-allocate private `BusOp` objects for I/O operations that are (commonly used) and/or (require special treatment). See the `_fb_data_op` member in the [SSD13xx driver](https://github.com/jspark311/ManuvrDrivers/blob/master/src/SSD13xx/SSD13xx.h#L199) for an example of such a case. The memory location of the private `SPIBusOp` allows the driver to recognize it among the torrent of other I/O operations, and quickly change the module's D/~C pin. It also allows the driver to not dispatch redundant framebuffer writes (which take a lot of time on the bus).
 
 I/O can be minimized by keeping memory-resident copies of the hardware's registers, and then answering application calls against register accessors from the shadows, rather than invoking redundant I/O and blocking while waiting for the value to come back. Put differently: Drivers should cache the known states of their hardware, and (optionally) provide a callback mechanism and concurrency guards so that I/O in-progress (which might still fail) isn't mistaken for the current state of the hardware. See the [74HCT595 shift-register driver](https://github.com/jspark311/ManuvrDrivers/blob/master/src/ShiftRegister/ShiftRegister.h) for an example of this assurance being implemented.
+
+#### Notes on behavior of destructors
+
+The envisioned use-case for these drivers is to be instantiated once, and never destroyed. This has the benefit of keeping (usually unused) code out of the binary. The toolchain is generally not smart enough to know if a given instance will _actually need_ destructors. Nevertheless, in drivers that do heap allocation, it will (should) be free'd. Any case where heap is NOT free'd in a destructor is a mistake on my part. BusOp hygiene is not as good, and it is conceivable that a BusOp whose life-cycle outlasts that of the class that is assigned as its callback will precipitate a hard-fault if the driver class is torn down. If this untidiness hurts your use-case, I will gladly accept patches.
 
 
 ## Possible conflicts in Arduino from other repos

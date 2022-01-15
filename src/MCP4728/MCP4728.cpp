@@ -302,6 +302,7 @@ int8_t MCP4728::chanValue(uint8_t chan, uint16_t value) {
           op->dev_addr = _dev_addr;
           op->setBuffer(buf, 3);
           op->shouldFreeBuffer(true);
+          _mcp4728_set_flag(MCP4728_FLAG_CHAN_A_DIRTY << (chan & 0x03));
           if (0 == _bus->queue_io_job(op)) {
             ret = 0;
           }
@@ -619,6 +620,74 @@ int8_t MCP4728::io_op_callback(BusOp* _op) {
     else {
       ret = BUSOP_CALLBACK_ERROR;
     }
+  }
+  return ret;
+}
+
+
+/*******************************************************************************
+* Console callback
+* These are built-in handlers for using this instance via a console.
+*******************************************************************************/
+
+int8_t MCP4728::console_handler(StringBuilder* text_return, StringBuilder* args) {
+  int8_t ret = 0;
+  char*  cmd = args->position_trimmed(0);
+  int   chan = args->position_as_int(1);
+  switch (args->count()) {
+    case 0:
+      printDebug(text_return);
+      break;
+    case 1:
+      if (0 == StringBuilder::strcasecmp(cmd, "init")) {
+        text_return->concatf("MCP4728 init() returns %d.\n", init());
+      }
+      else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
+        text_return->concatf("MCP4728 refresh() returns %d.\n", refresh());
+      }
+      else if (0 == StringBuilder::strcasecmp(cmd, "store")) {
+        text_return->concatf("MCP4728 storeToNVM() returns %d.\n", storeToNVM());
+      }
+      else { ret = -1; }
+      break;
+    case 2:
+      if (chan > 3) {
+        ret = -1;
+      }
+      else if (0 == StringBuilder::strcasecmp(cmd, "val")) {
+        text_return->concatf("DAC channel %u value: %u  (%.4f volts)\n", chan, chanValue(chan), chanVoltage(chan));
+        text_return->concatf("\tOutput mode: %s\n", MCP4728::pwrStateStr(chanPowerState(chan)));
+      }
+      else if (0 == StringBuilder::strcasecmp(cmd, "store")) {
+        text_return->concatf("MCP4728 storeToNVM() returns %d.\n", chanStore(chan));
+      }
+      else { ret = -1; }
+      break;
+    case 3:
+      if (chan > 3) {
+        ret = -1;
+      }
+      else if (0 == StringBuilder::strcasecmp(cmd, "val")) {
+        int val = args->position_as_int(2);
+        text_return->concatf("Set DAC channel %u to %u returns %u.\n", chan, val, chanValue(chan, val));
+      }
+      else if (0 == StringBuilder::strcasecmp(cmd, "enable")) {
+        MCP4728PwrState mode = (0 != args->position_as_int(2)) ? MCP4728PwrState::NORMAL : MCP4728PwrState::GND_VIA_1K;
+        text_return->concatf("Set DAC channel %u to mode %s returns %u.\n", chan, MCP4728::pwrStateStr(mode), chanPowerState(chan, mode));
+      }
+      else if (0 == StringBuilder::strcasecmp(cmd, "gain")) {
+        int gain = args->position_as_int(2);
+        text_return->concatf("Set DAC channel %u to gain %d returns %u.\n", chan, gain, chanGain(chan, gain));
+      }
+      else if (0 == StringBuilder::strcasecmp(cmd, "ref")) {
+        MCP4728Vref vref = (0 != args->position_as_int(2)) ? MCP4728Vref::INTERNAL : MCP4728Vref::VDD;
+        text_return->concatf("Set DAC channel %u to ref %s returns %u.\n", chan, MCP4728::vrefStr(vref), chanVref(chan, vref));
+      }
+      else { ret = -1; }
+      break;
+    default:
+      ret = -1;
+      break;
   }
   return ret;
 }

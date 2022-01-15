@@ -382,6 +382,7 @@ class SX8634 : public I2CDevice {
       int8_t  burn_nvm();
     #endif  // CONFIG_SX8634_PROVISIONING
 
+    /* Built-in per-instance console handler. */
     int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
 
     static int8_t render_stripped_spm(uint8_t*);

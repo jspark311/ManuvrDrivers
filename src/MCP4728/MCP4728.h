@@ -53,7 +53,7 @@ class MCP4728 : public I2CDevice {
     int8_t io_op_callahead(BusOp*);
     int8_t io_op_callback(BusOp*);
 
-    int8_t  init(I2CAdapter* b);
+    int8_t  init(I2CAdapter* b = nullptr);
     int8_t  refresh();
 
     int8_t          chanPowerState(uint8_t chan, MCP4728PwrState);
@@ -78,6 +78,9 @@ class MCP4728 : public I2CDevice {
     };
 
     void printDebug(StringBuilder*);
+
+    /* Built-in per-instance console handler. */
+    int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
 
     static const char* pwrStateStr(MCP4728PwrState);
     static const char* vrefStr(MCP4728Vref);

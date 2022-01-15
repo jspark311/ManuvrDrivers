@@ -547,3 +547,48 @@ void SSD13xx::printDebug(StringBuilder* output) {
   StopWatch::printDebugHeader(output);
   _stopwatch.printDebug("Redraw", output);
 }
+
+
+/*******************************************************************************
+* Console callback
+* These are built-in handlers for using this instance via a console.
+*******************************************************************************/
+
+int8_t SSD13xx::console_handler(StringBuilder* text_return, StringBuilder* args) {
+  int ret = 0;
+  char* cmd = args->position_trimmed(0);
+  uint32_t millis_0 = millis();
+  bool print_timer = false;
+
+  if (0 == StringBuilder::strcasecmp(cmd, "init")) {
+    text_return->concatf("display.init() returns %d\n", init());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "reset")) {
+    text_return->concatf("display.reset() returns %d\n", reset());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "commit")) {
+    text_return->concatf("commitFrameBuffer() returns %d\n", commitFrameBuffer());
+    print_timer = true;
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "fill")) {
+    uint color = (uint) args->position_as_int(1);
+    fill(color);
+    text_return->concatf("display.fill(%u)\n", color);
+    print_timer = true;
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "enable")) {
+    if (0 < args->count()) {
+      enableDisplay(0 != arg0);
+    }
+    text_return->concatf("display.enabled(): %c\n", enabled() ? 'y':'n');
+  }
+  else {
+    printDebug(text_return);
+  }
+
+  if (print_timer) {
+    uint32_t millis_1 = millis();
+    text_return->concatf("Display update took %ums\n", wrap_accounted_delta(millis_1, millis_0));
+  }
+  return ret;
+}

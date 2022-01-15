@@ -102,6 +102,11 @@ class SSD13xxOpts {
 
 // Class to manage hardware interface with SSD13xx chipset
 class SSD13xx : public Image, public BusOpCallback {
+  // TODO: For now, this class only deals with the SSD1331. Due to early
+  //   brain-damage in this abstraction, support was replicated. This is no
+  //   longer necessary, and we can now gracefully degrade back into a proper
+  //   inheritance pattern.
+  // NOTE: As of this writing (2022.01.15), this class's copy-pasta is freshest.
   public:
     SSD13xx(const SSD13xxOpts* opts);
     ~SSD13xx();
@@ -126,6 +131,9 @@ class SSD13xx : public Image, public BusOpCallback {
     int8_t io_op_callback(BusOp*);
     int8_t queue_io_job(BusOp*);
 
+    /* Built-in per-instance console handler. */
+    int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
+
 
   private:
     const SSD13xxOpts _opts;
@@ -145,7 +153,7 @@ class SSD13xx : public Image, public BusOpCallback {
 
 
 
-// Class to manage hardware interface with SSD13xx chipset
+// Class to manage hardware interface with SSD1306 chipset
 class SSD1306 : public Image, public BusOpCallback {
   public:
     SSD1306(const SSD13xxOpts* opts);
@@ -208,7 +216,7 @@ class SSD1306 : public Image, public BusOpCallback {
 };
 
 
-// Class to manage hardware interface with SSD13xx chipset
+// Class to manage hardware interface with SSD1309 chipset
 class SSD1309 : public Image, public BusOpCallback {
   public:
     SSD1309(const SSD13xxOpts* opts);
@@ -279,4 +287,3 @@ class SSD1309 : public Image, public BusOpCallback {
 };
 
 #endif   // __SSD13XX_DRIVER_H_
-

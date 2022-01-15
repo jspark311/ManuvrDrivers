@@ -171,3 +171,89 @@ void MCP356x::fetchLog(StringBuilder* l) {
     }
   }
 }
+
+
+/*******************************************************************************
+* Console callback
+* These are built-in handlers for using this instance via a console.
+*******************************************************************************/
+
+int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args) {
+  int ret = 0;
+  if (0 < args->count()) {
+    char* cmd = args->position_trimmed(0);
+
+    if (0 == StringBuilder::strcasecmp(cmd, "info")) {
+      switch (args->position_as_int(1)) {
+        default:
+        case 4:   printChannelValues(text_return);  break;
+        case 5:   printRegs(text_return);        break;
+        case 6:   printPins(text_return);        break;
+        case 7:   printData(text_return);        break;
+        case 8:   printTimings(text_return);     break;
+        case 9:
+          text_return->concatf("MCP356x temperature: %u.\n", (uint8_t) getTemperature());
+          break;
+        case 10:  printChannelValues(text_return);  break;
+      }
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "gain")) {
+      if (1 < args->count()) {
+        ret = setGain((MCP356xGain) args->position_as_int(1));
+      }
+      text_return->concatf("MCP356x gain is now %u.\n", 1 << ((uint8_t) getGain()));
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "oversampling")) {
+      if (1 < args->count()) {
+        ret = setOversamplingRatio((MCP356xOversamplingRatio) args->position_as_int(1));
+      }
+      text_return->concatf("Oversampling ratio is now %u.\n", (uint8_t) getOversamplingRatio());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
+      text_return->concatf("MCP356x refresh() returns %d.\n", refresh());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "init")) {
+      text_return->concatf("MCP356x init() returns %d.\n", init());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "read")) {
+      text_return->concatf("MCP356x read() returns %d\n", read());
+    }
+
+    else if (0 == StringBuilder::strcasecmp(cmd, "state")) {
+      bool print_state_map = (2 > args->count());
+      if (!print_state_map) {
+        MCP356xState state = (MCP356xState) args->position_as_int(1);
+        switch (state) {
+          case MCP356xState::PREINIT:
+          case MCP356xState::RESETTING:
+          case MCP356xState::DISCOVERY:
+          case MCP356xState::REGINIT:
+          case MCP356xState::CLK_MEASURE:
+          case MCP356xState::CALIBRATION:
+          case MCP356xState::USR_CONF:
+          case MCP356xState::IDLE:
+          case MCP356xState::READING:
+            text_return->concatf("MCP356x setDesiredState(%s)\n", MCP356x::stateStr(state));
+            break;
+          case MCP356xState::UNINIT:
+          case MCP356xState::FAULT:
+            text_return->concatf("MCP356x illegal desired state (%s).\n", MCP356x::stateStr(state));
+            setDesiredState(state);
+            break;
+          default:
+            print_state_map = true;
+            break;
+        }
+      }
+
+      if (print_state_map) {
+        for (uint8_t i = 0; i < 11; i++) {
+          text_return->concatf("%u:\t%s\n", MCP356x::stateStr((MCP356xState) i));
+        }
+      }
+    }
+  }
+  else ret = -1;
+
+  return ret;
+}

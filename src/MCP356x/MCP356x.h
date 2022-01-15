@@ -285,6 +285,9 @@ class MCP356x : public BusOpCallback {
     void printChannel(MCP356xChannel, StringBuilder*);
     void fetchLog(StringBuilder*);
 
+    /* Built-in per-instance console handler. */
+    int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
+
     // TODO: Below should eventually be protected.
     inline MCP356xState getPriorState() {       return _prior_state;     };
     inline MCP356xState getCurrentState() {     return _current_state;   };

@@ -578,7 +578,7 @@ int8_t SSD13xx::console_handler(StringBuilder* text_return, StringBuilder* args)
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "enable")) {
     if (0 < args->count()) {
-      enableDisplay(0 != arg0);
+      enableDisplay(0 != args->position_as_int(1));
     }
     text_return->concatf("display.enabled(): %c\n", enabled() ? 'y':'n');
   }

@@ -150,11 +150,6 @@ class SX1276 : public BusOpCallback {
 
     void printDebug(StringBuilder*);
     void printRegs(StringBuilder*);
-    inline void fetchLogs(StringBuilder* output) {
-      if (local_log.length() > 0) {
-        output->concatHandoff(&local_log);
-      }
-    };
 
 
   private:
@@ -164,7 +159,6 @@ class SX1276 : public BusOpCallback {
     uint8_t _tx_buffer[512] = {0, };
     uint8_t _rx_buffer[512] = {0, };
     uint8_t _shadows[27]    = {0, };
-    StringBuilder local_log;
     SPIBusOp _tx_busop;
     SPIBusOp _rx_busop;
 

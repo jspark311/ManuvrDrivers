@@ -92,7 +92,6 @@ class ManuvrPMU {
 
     /* Console config */
     int8_t configureConsole(ParsingConsole*);
-    void fetchLog(StringBuilder*);
     inline uint8_t logVerbosity() {           return _verbosity;    };
     inline void    logVerbosity(uint8_t x) {     _verbosity = x;    };
 
@@ -132,7 +131,6 @@ class ManuvrPMU {
     ChargeState    _charge_state    = ChargeState::UNKNOWN;
     uint8_t        _verbosity       = 5;   // How chatty is the debug log?
     FlagContainer8 _flags;
-    StringBuilder  _local_log;
 
     int8_t  _ll_pin_init();
     int8_t _invoke_batt_callback(ChargeState);

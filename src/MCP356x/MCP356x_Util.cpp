@@ -158,20 +158,6 @@ void MCP356x::printChannelValues(StringBuilder* output) {
 }
 
 
-/**
-* Allow the application to retreive the log.
-*
-* @param l is a reference to the buffer which should receive the log.
-*/
-void MCP356x::fetchLog(StringBuilder* l) {
-  if (_local_log.length() > 0) {
-    if (nullptr != l) {
-      _local_log.string();
-      l->concatHandoff(&_local_log);
-    }
-  }
-}
-
 
 /*******************************************************************************
 * Console callback

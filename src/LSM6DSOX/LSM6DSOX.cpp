@@ -638,7 +638,7 @@ int8_t LSM6DSOX::io_op_callback(BusOp* _op) {
 
   // There is zero chance this object will be a null pointer unless it was done on purpose.
   if (op->hasFault()) {
-    //if (getVerbosity() > 3) local_log.concat("io_op_callback() rejected a callback because the bus op failed.\n");
+    c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "Rejected a callback because the BusOp failed.");
     return BUSOP_CALLBACK_ERROR;
   }
   uint8_t* buf = op->buffer();

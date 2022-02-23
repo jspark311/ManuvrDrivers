@@ -617,7 +617,7 @@ int8_t MCP356x::_detect_adc_clock() {
         if (micros_passed < SAMPLE_TIME_MAX) {
           ret = 1;
           _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);  // This must be reality.
-          _local_log.concatf("Took %u samples in %luus.\n", rcount, micros_passed);
+          c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "Took %u samples in %luus.", rcount, micros_passed);
           _mclk_freq = _calculate_input_clock(micros_passed);
           if (_mclk_in_bounds()) {
             _recalculate_clk_tree();
@@ -908,7 +908,7 @@ int8_t MCP356x::_step_state_machine() {
 * @return 0 always
 */
 void MCP356x::_set_state(MCP356xState e) {
-  _local_log.concatf("MCP356x::_set_state()  %s --> %s\n", stateStr(_current_state), stateStr(e));
+  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_set_state()  %s --> %s", stateStr(_current_state), stateStr(e));
   switch (e) {
     case MCP356xState::PREINIT:
     case MCP356xState::RESETTING:
@@ -939,7 +939,7 @@ void MCP356x::_set_state(MCP356xState e) {
 * @param msg is a debug string to be added to the log.
 */
 void MCP356x::_set_fault(const char* msg) {
-  _local_log.concatf("MCP356x fault: %s\n", msg);
+  c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "MCP356x fault: %s", msg);
   _prior_state = _current_state;
   _current_state = MCP356xState::FAULT;
 }

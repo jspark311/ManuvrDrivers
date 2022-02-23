@@ -144,7 +144,7 @@ int8_t BQ24155::_post_discovery_init() {
       }
     }
   }
-  //_local_log.concatf("_post_discovery_init(): %d\n", ret);
+  c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "_post_discovery_init(): %d", ret);
   return ret;
 }
 
@@ -624,18 +624,3 @@ void BQ24155::printRegisters(StringBuilder* output) {
   StringBuilder::printBuffer(output, shadows, sizeof(shadows), "\t");
   output->concat("\n");
 }
-
-
-/**
-* Allow the application to retreive the log.
-*
-* @param l is a reference to the buffer which should receive the log.
-*/
-// void BQ24155::fetchLog(StringBuilder* l) {
-//   if (_local_log.length() > 0) {
-//     if (nullptr != l) {
-//       _local_log.string();
-//       l->concatHandoff(&_local_log);
-//     }
-//   }
-// }

@@ -53,9 +53,7 @@ ADG2128_ERROR ADG2128::init() {
   for (int i = 0; i < 12; i++) {
     if (readback(i) != ADG2128_ERROR::NO_ERROR) {
       dev_init = false;
-      #ifdef MANUVR_DEBUG
-        //Kernel::log("Failed to init switch.\n");
-      #endif
+      c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "Failed to init ADG2128.");
       return ADG2128_ERROR::BUS;
     }
   }
@@ -223,7 +221,7 @@ int8_t ADG2128::io_op_callback(BusOp* op) {
               _values[s_row] = s_set ? (_values[s_row] | (1 << (s_col+8))) : (_values[s_row] & ~(1 << (s_col+8)));
             }
             else {
-              //Kernel::log("An i2c operation requested by the ADG2128 came back failed.\n");
+              c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "A BusOp requested by the ADG2128 failed");
             }
             break;
         }

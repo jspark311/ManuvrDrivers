@@ -689,9 +689,7 @@ bool LSM9DS1::integrity_check() {
     if (io_test_val_1 == _get_shadow_value(LSM9DS1RegID::M_OFFSET_Z)) {
         // We will call this successful init.
         if (getVerbosity() > 5) {
-          //StringBuilder local_log;
-          //local_log.concat("Successful readback!");
-          //Kernel::log(&local_log);
+          c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "Successful readback!");
         }
         // Rewrite valid values to those registers if necessary.
         //writeDirtyRegisters();
@@ -700,17 +698,13 @@ bool LSM9DS1::integrity_check() {
     }
     else {
       if (getVerbosity() > 2) {
-        //StringBuilder local_log;
-        //local_log.concatf("Failed integrity check (M_OFFSET_Z). Found 0x%02x. Expected 0x%02x.\n", _get_shadow_value(LSM9DS1RegID::M_OFFSET_Z), io_test_val_1);
-        //Kernel::log(&local_log);
+        c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "Failed integrity check (M_OFFSET_Z). Found 0x%02x. Expected 0x%02x.", _get_shadow_value(LSM9DS1RegID::M_OFFSET_Z), io_test_val_1);
       }
     }
   }
   else {
     if (getVerbosity() > 2) {
-      //StringBuilder local_log;
-      //local_log.concatf("Failed integrity check (G_INT_GEN_THS_Y). Found 0x%02x. Expected 0x%02x.\n", _get_shadow_value(LSM9DS1RegID::G_INT_GEN_THS_Y), io_test_val_0);
-      //Kernel::log(&local_log);
+      c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "Failed integrity check (G_INT_GEN_THS_Y). Found 0x%02x. Expected 0x%02x.", _get_shadow_value(LSM9DS1RegID::G_INT_GEN_THS_Y), io_test_val_0);
     }
   }
 
@@ -731,7 +725,7 @@ bool LSM9DS1::integrity_check() {
 IMUFault LSM9DS1::setDesiredState(IMUState nu) {
   if (devFound() && (nu < IMUState::STAGE_1)) {
     // If we already know the sensor is there, why go back further than this?
-    //Kernel::log("LSM9DS1::setDesiredState(): Trying to move to a state lower than allowed.\n");
+    c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "Trying to move to an FSM state lower than allowed.");
     return IMUFault::INVALID_PARAM;
   }
 
@@ -741,10 +735,7 @@ IMUFault LSM9DS1::setDesiredState(IMUState nu) {
       // The IMU is not at equilibrium. It may be ok to change the desired stage as long as we don't have
       //   bus operations pending.
       if (getVerbosity() > 2) {
-        //local_log.concatf("%s tried to move to state %s while the IMU is off-balance (%s --> %s). Rejecting request.\n", imu_type(), getStateString(nu), getStateString(), getStateString(desired_state));
-        //StringBuilder local_log;
-        //local_log.concatf("Tried to move to state %s while the IMU is off-balance (%s --> %s). We will allow this for now.\n", getStateString(nu), getStateString(), getStateString(desired_state));
-        //Kernel::log(&local_log);
+        c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "Tried to move to state %s while the IMU is off-balance (%s --> %s). We will allow this for now.", getStateString(nu), getStateString(), getStateString(desired_state));
       }
       //return -2;
     }
@@ -769,11 +760,6 @@ int8_t LSM9DS1::poll() {
     if (IMUFault::NO_ERROR != error_condition) {
       // We shouldn't be changing states if there is an error condition.
       // Reset is the only way to exit the condition at present.
-      if (getVerbosity() > 2) {
-        //StringBuilder local_log;
-        //local_log.concatf("Step_state() was called while we are in an error condition: %s\n",  getErrorString());
-        //Kernel::log(&local_log);
-      }
       return 0;
     }
 
@@ -947,7 +933,7 @@ void LSM9DS1::printDebug(StringBuilder* output) {
 IMUFault LSM9DS1::request_rescale_mag(uint8_t nu_scale_idx) {
   if (nu_scale_idx < MAXIMUM_GAIN_INDEX_MAG) {
     if (scale_mag != nu_scale_idx) {
-      //if (getVerbosity() > 2) Kernel::log("request_rescale_mag():\tRescaling magnetometer.\n");
+      if (getVerbosity() >= LOG_LEV_INFO) c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "Rescaling magnetometer.");
       _set_shadow_value(LSM9DS1RegID::M_CTRL_REG2, (nu_scale_idx << 5));
       return _write_registers(LSM9DS1RegID::M_CTRL_REG2, 1);
     }
@@ -968,7 +954,7 @@ IMUFault LSM9DS1::set_sample_rate_mag(uint8_t nu_srate_idx) {
         // Power the sensor down.
       }
       else {
-        //if (getVerbosity() > 2) Kernel::log("set_sample_rate_mag():\tMagnetometer sample rate change.\n");
+        if (getVerbosity() >= LOG_LEV_INFO) c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "Magnetometer sample rate change.");
         temp8 =  (temp8 & ~0x1C) | ((nu_srate_idx-1) << 2);
       }
       update_rate_m = nu_srate_idx;
@@ -1001,22 +987,22 @@ IMUFault LSM9DS1::set_sample_rate_mag(uint8_t nu_srate_idx) {
 *   Failure
 */
 IMUFault LSM9DS1::irq_2() {
-  //if (getVerbosity() > 3) Kernel::log("LSM9DS1::irq_2()\n");
+  if (getVerbosity() >= LOG_LEV_DEBUG) c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "irq_2");
   return IMUFault::NO_ERROR;
 }
 
 IMUFault LSM9DS1::irq_1() {
-  //if (getVerbosity() > 3) Kernel::log("LSM9DS1::irq_1()\n");
+  if (getVerbosity() >= LOG_LEV_DEBUG) c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "irq_1");
   return IMUFault::NO_ERROR;
 }
 
 IMUFault LSM9DS1::irq_drdy() {
-  //if (getVerbosity() > 3) Kernel::log("LSM9DS1::irq_drdy()\n");
+  if (getVerbosity() >= LOG_LEV_DEBUG) c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "irq_drdy");
   return IMUFault::NO_ERROR;
 }
 
 IMUFault LSM9DS1::irq_m() {
-  //if (getVerbosity() > 3) Kernel::log("LSM9DS1::irq_m()\n");
+  if (getVerbosity() >= LOG_LEV_DEBUG) c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "irq_m");
   return IMUFault::NO_ERROR;
 }
 
@@ -1126,7 +1112,7 @@ int8_t LSM9DS1::_configure_sensor() {
 IMUFault LSM9DS1::request_rescale_gyr(uint8_t nu_scale_idx) {
   if (nu_scale_idx < MAXIMUM_GAIN_INDEX_ACC) {
     if (scale_acc != nu_scale_idx) {
-      //if (getVerbosity() > 2) Kernel::log("request_rescale_gyr():\tRescaling Gyro.\n");
+      if (getVerbosity() >= LOG_LEV_INFO) c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "Rescaling Gyro");
       uint8_t temp8 = _get_shadow_value(LSM9DS1RegID::G_CTRL_REG1);
       temp8 =  (temp8 & 0xE7) | (nu_scale_idx << 3);
       _set_shadow_value(LSM9DS1RegID::G_CTRL_REG1, temp8);
@@ -1144,7 +1130,7 @@ IMUFault LSM9DS1::request_rescale_gyr(uint8_t nu_scale_idx) {
 IMUFault LSM9DS1::set_sample_rate_gyr(uint8_t nu_srate_idx) {
   if (nu_srate_idx < MAXIMUM_RATE_INDEX_AG) {
     if (update_rate_i != nu_srate_idx) {
-      //if (getVerbosity() > 2) Kernel::log("set_sample_rate_gyr():\t\n");
+      if (getVerbosity() >= LOG_LEV_INFO) c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "Changing Gyro sample rate");
       uint8_t temp8 = _get_shadow_value(LSM9DS1RegID::G_CTRL_REG1);
       temp8 =  (temp8 & 0x1F) | (nu_srate_idx << 5);
       //update_rate_gyr = nu_srate_idx;
@@ -1207,8 +1193,7 @@ int8_t LSM9DS1::_ll_pin_init() {
 int8_t LSM9DS1::_io_op_callback_mag(const LSM9DS1RegID reg, BusOp* op) {
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
   unsigned int value = _get_shadow_value(reg);
-  StringBuilder local_log;
-  //if (getVerbosity() > 5) local_log.concatf("\t (%c) LSM9DS1RegID::%s: 0x%02x\n", (op->get_opcode() == BusOpcode::TX) ? "W":"R", _reg_name_str(reg), (uint8_t) value);
+  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "\t (%c) LSM9DS1RegID::%s: 0x%02x", (op->get_opcode() == BusOpcode::TX) ? "W":"R", _reg_name_str(reg), (uint8_t) value);
   switch (op->get_opcode()) {
     case BusOpcode::TX:
       switch (reg) {
@@ -1281,7 +1266,6 @@ int8_t LSM9DS1::_io_op_callback_mag(const LSM9DS1RegID reg, BusOp* op) {
     default:
       break;
   }
-  //if (local_log.length() > 0) Kernel::log(&local_log);
   return ret;
 }
 
@@ -1292,8 +1276,7 @@ int8_t LSM9DS1::_io_op_callback_mag(const LSM9DS1RegID reg, BusOp* op) {
 int8_t LSM9DS1::_io_op_callback_imu(const LSM9DS1RegID reg, BusOp* op) {
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
   unsigned int value = _get_shadow_value(reg);
-  StringBuilder local_log;
-  //if (getVerbosity() > 5) local_log.concatf("\t (%c) LSM9DS1RegID::%s: 0x%02x\n", (op->get_opcode() == BusOpcode::TX) ? "W":"R", _reg_name_str(reg), (uint8_t) value);
+  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "\t (%c) LSM9DS1RegID::%s: 0x%02x", (op->get_opcode() == BusOpcode::TX) ? "W":"R", _reg_name_str(reg), (uint8_t) value);
   switch (op->get_opcode()) {
     case BusOpcode::TX:
       switch (reg) {
@@ -1423,7 +1406,6 @@ int8_t LSM9DS1::_io_op_callback_imu(const LSM9DS1RegID reg, BusOp* op) {
     default:
       break;
   }
-  //if (local_log.length() > 0) Kernel::log(&local_log);
   return ret;
 }
 

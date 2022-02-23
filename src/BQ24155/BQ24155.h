@@ -208,14 +208,13 @@ class BQ24155 : public I2CDevice {
 
     BQ24155Fault getFault();
     BQ24155State getChargerState();
-    //void fetchLog(StringBuilder*);
+
 
 
   private:
     const BQ24155Opts _opts;
     FlagContainer16 _flgs;
     uint8_t  shadows[5] = {0, 0, 0, 0, 0};
-    //StringBuilder _local_log;
 
     /**
     * @return ISEL pin state.

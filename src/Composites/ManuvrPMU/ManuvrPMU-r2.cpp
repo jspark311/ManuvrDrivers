@@ -407,37 +407,3 @@ int8_t ManuvrPMU::configureConsole(ParsingConsole* console) {
   console->defineCommand(&cmd00);
   return 0;
 }
-
-
-/**
-* Allow the application to retreive the log.
-*
-* @param l is a reference to the buffer which should receive the log.
-*/
-void ManuvrPMU::fetchLog(StringBuilder* l) {
-  ltc294x.fetchLog(l);
-  //bq24155.fetchLog(l);
-  if (_local_log.length() > 0) {
-    if (nullptr != l) {
-      _local_log.string();
-      l->concatHandoff(&_local_log);
-    }
-  }
-}
-
-
-//     case 'L':
-//     case 'l':
-//       local_log.concatf(
-//         "Setting auxiliary regulator to %.1fv... %s\n",
-//         (*(str) == 'L' ? 2.5f : 3.3f),
-//         (0 != auxRegLowPower(*(str) == 'L')) ? "failure" : "success"
-//       );
-//       break;
-//
-//     case 'u':   // USB host current limit.
-//       if (temp_int) {
-//         bq24155.usb_current_limit((unsigned int) temp_int);
-//       }
-//       local_log.concatf("USB current limit: %dmA\n", bq24155.usb_current_limit());
-//       break;

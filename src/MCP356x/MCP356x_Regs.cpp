@@ -590,7 +590,7 @@ int8_t MCP356x::_write_register(MCP356xRegister r, uint32_t val) {
     ret++;
     if (nullptr != op) {
       _set_shadow_value(r, safe_val);
-      //_local_log.concatf("MCP356x::_write_register(%u) --> 0x%08x\n", (uint8_t) r, safe_val);
+      c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_write_register(%u) --> 0x%08x", (uint8_t) r, safe_val);
       op->setParams((uint8_t) _get_reg_addr(r));
       op->setBuffer((uint8_t*) &_reg_shadows[(uint8_t) r], MCP356x_reg_width[(uint8_t) r]);
       if (0 == queue_io_job(op)) {
@@ -644,7 +644,7 @@ int8_t MCP356x::_proc_irq_register() {
   uint8_t irq_reg_data = (uint8_t) _get_shadow_value(MCP356xRegister::IRQ);
   _mcp356x_set_flag(MCP356X_FLAG_CRC_ERROR, (0 == (0x20 & irq_reg_data)));
   if (0 == (0x40 & irq_reg_data)) {   // Conversion is finished.
-    //_local_log.concat("MCP356x::_proc_irq_register() conversion finsihed\n");
+    //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register() conversion finsihed");
     _read_register(MCP356xRegister::ADCDATA);
     if (_busop_dat_read.isIdle()) {
       if (0 == _BUS->queue_io_job(&_busop_dat_read)) {
@@ -661,7 +661,7 @@ int8_t MCP356x::_proc_irq_register() {
     setPin(_CS_PIN, 1);
     setPin(_CS_PIN, 0);
     setPin(_CS_PIN, 1);
-    _local_log.concat("MCP356x::_proc_irq_register() found a PoR event\n");
+    c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register() found a PoR event");
   }
   if (0 == (0x20 & irq_reg_data)) { // CRC config error.
     // Something is sideways in the configuration.
@@ -674,7 +674,7 @@ int8_t MCP356x::_proc_irq_register() {
   //}
   // Check the state of the IRQ pin, JiC we took too long.
   isr_fired = !readPin(_IRQ_PIN);
-  //_local_log.concatf("MCP356x::_proc_irq_register(%u) returns %d\n", irq_reg_data, ret);
+  //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register(%u) returns %d", irq_reg_data, ret);
   return ret;
 }
 
@@ -688,7 +688,7 @@ int8_t MCP356x::_proc_irq_register() {
 int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
   uint32_t reg_val = _get_shadow_value(r);
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  _local_log.concatf("MCP356x::_proc_reg_write(%s)  %u --> 0x%06x\n", stateStr(_current_state), (uint8_t) r, reg_val);
+  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_proc_reg_write(%s)  %u --> 0x%06x", stateStr(_current_state), (uint8_t) r, reg_val);
 
   switch (r) {
     case MCP356xRegister::CONFIG0:
@@ -760,7 +760,7 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
 */
 int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  //_local_log.concatf("MCP356x::_proc_reg_read(%s)  %u --> 0x%02x\n", stateStr(_current_state), (uint8_t) r, reg_val);
+  //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_proc_reg_read(%s)  %u --> 0x%02x", stateStr(_current_state), (uint8_t) r, reg_val);
 
   switch (r) {
     case MCP356xRegister::CONFIG0:
@@ -791,16 +791,16 @@ int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
                 ret = 0;
                 break;
               default:
-                _local_log.concat("bad RESERVED2 value\n");
+                c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "bad RESERVED2 value");
                 break;
             }
             break;
           default:
-            _local_log.concat("bad RESERVED1 value\n");
+            c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "bad RESERVED1 value");
             break;
         }
       }
-      else _local_log.concat("bad RESERVED0 value\n");
+      else c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "bad RESERVED0 value");
       break;
     case MCP356xRegister::CRCCFG:
       break;
@@ -848,7 +848,6 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
   uint8_t first_param = 0x3F & op->getTransferParam(0);   // There will always be a transfer param.
 
-  //op->printDebug(&_local_log);
   // There is zero chance this object will be a null pointer unless it was done on purpose.
   if (op->hasFault()) {
     return BUSOP_CALLBACK_ERROR;

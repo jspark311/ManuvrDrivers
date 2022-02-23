@@ -19,7 +19,6 @@ limitations under the License.
 
 */
 
-
 #include <inttypes.h>
 #include <stdint.h>
 #include <CppPotpourri.h>
@@ -226,7 +225,6 @@ typedef void (*SX8634LongpressCB)(int, uint32_t);
 
 #define SX8634_FLAG_RESET_MASK   (SX8634_FLAG_BUSOP_INIT | SX8634_FLAG_PINS_CONFIGURED)
 
-
 #define SX8634_DEFAULT_I2C_ADDR      0x2B
 
 
@@ -237,6 +235,33 @@ enum class SX8634OpMode : uint8_t {
   RESERVED    = 3
 };
 
+/**
+* Driver state machine positions
+* ------------------------------------------------------------------------------
+* \dot
+*   digraph statemachine {
+*     node [shape=record, fontname=Helvetica, fontsize=10];
+*     NO_INIT    [ label="Uninitialized"   style="rounded,filled" ];
+*     RESETTING  [ label="Hardware reset"  style="rounded,filled" ];
+*     SPM_READ   [ label="SPM Reading"     fillcolor="yellow" style="rounded,filled" ];
+*     SPM_WRITE  [ label="SPM Writing"     fillcolor="yellow" style="rounded,filled" ];
+*     READY      [ label="Hardware ready"  fillcolor="green"  style="rounded,filled" ];
+*     NVM_BURN   [ label="Buring NVM"      fillcolor="yellow" style="rounded,filled" ];
+*     NVM_VERIFY [ label="Verifying NVM"   fillcolor="yellow" style="rounded,filled" ];
+*
+*     NO_INIT    -> RESETTING   [ label ="Call to init()", arrowhead="open", style="solid" ];
+*     RESETTING  -> SPM_READ    [ label ="Reset complete without CONFIG_ON_FAITH", arrowhead="open", style="dashed" ];
+*     RESETTING  -> READY       [ label ="Reset complete with CONFIG_ON_FAITH", arrowhead="open", style="solid" ];
+*     SPM_READ   -> SPM_WRITE   [ label ="SPM read completed with changes required", arrowhead="open", style="dashed" ];
+*     SPM_READ   -> READY       [ label ="SPM read completed with passive acceptance", arrowhead="open", style="solid" ];
+*     SPM_WRITE  -> READY       [ label ="SPM write completed", arrowhead="open", style="dashed" ];
+*     READY      -> NVM_BURN    [ label ="Call to burn_nvm()", arrowhead="open", style="dashed" ];
+*     READY      -> RESETTING   [ label ="Call to reset()", arrowhead="open", style="dashed" ];
+*     NVM_BURN   -> NVM_VERIFY  [ label ="NVM burn complete", arrowhead="open", style="solid" ];
+*     NVM_VERIFY -> READY       [ label ="NVM verified", arrowhead="open", style="solid" ];
+*   }
+* \enddot
+*/
 enum class SX8634_FSM : uint8_t {
   NO_INIT = 0,
   RESETTING,
@@ -413,9 +438,6 @@ class SX8634 : public I2CDevice {
     uint8_t  _spm_shadow[128];   // SPM shadow
     uint8_t  _registers[19];     // Register shadows
     I2CBusOp  _irq_register_read;
-    #if defined(CONFIG_SX8634_DEBUG)
-      StringBuilder _class_log;
-    #endif   // CONFIG_SX8634_DEBUG
 
     /* Flag manipulation inlines */
     inline uint16_t _sx8634_flags() {                return _flags;            };

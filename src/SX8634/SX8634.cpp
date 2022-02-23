@@ -165,7 +165,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
   //uint16_t buf_len = completed->bufferLen();
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
   #if defined(CONFIG_SX8634_DEBUG)
-    _class_log.concat("SX8634::io_op_callback()\n");
+    c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "Entering io_op_callback");
   #endif
 
   switch (completed->get_opcode()) {
@@ -174,7 +174,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
       _sx8634_set_flag(SX8634_FLAG_DEV_FOUND, (!completed->hasFault()));
       if (!completed->hasFault()) {
         #if defined(CONFIG_SX8634_DEBUG)
-          _class_log.concat("SX8634 found\n");
+          c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "SX8634 found");
         #endif   // CONFIG_SX8634_DEBUG
         #if defined(CONFIG_SX8634_CONFIG_ON_FAITH)
           // Depending on build parameters, we might not read the SPM.
@@ -205,7 +205,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
       }
       else {
         #if defined(CONFIG_SX8634_DEBUG)
-          _class_log.concat("SX8634 not found\n");
+          c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "SX8634 not found");
         #endif   // CONFIG_SX8634_DEBUG
       }
       break;
@@ -256,13 +256,13 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
               switch (*buf) {
                 case 0xA5:
                   #if defined(CONFIG_SX8634_DEBUG)
-                    _class_log.concat("0xA5 --> SPM_BASE_ADDR\n");
+                    c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "0xA5 --> SPM_BASE_ADDR");
                   #endif
                   _write_register(SX8634_REG_SPM_BASE_ADDR, 0x5A);
                   break;
                 case 0x5A:
                   #if defined(CONFIG_SX8634_DEBUG)
-                    _class_log.concat("0x5A --> SPM_BASE_ADDR\n");
+                    c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "0x5A --> SPM_BASE_ADDR");
                   #endif
                   break;
               }
@@ -288,13 +288,13 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
         #if defined(CONFIG_SX8634_PROVISIONING)
           case SX8634_REG_SPM_KEY_MSB:
             #if defined(CONFIG_SX8634_DEBUG)
-              _class_log.concat("0x62 --> SPM_KEY_MSB\n");
+              c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "0x62 --> SPM_KEY_MSB");
             #endif
             _write_register(SX8634_REG_SPM_KEY_LSB, 0x9D);
             break;
           case SX8634_REG_SPM_KEY_LSB:
             #if defined(CONFIG_SX8634_DEBUG)
-              _class_log.concat("0x9D --> SPM_KEY_LSB\n");
+              c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "0x9D --> SPM_KEY_LSB");
             #endif
             _write_register(SX8634_REG_SPM_BASE_ADDR, 0xA5);
             break;
@@ -387,7 +387,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
               _sx8634_set_flag(SX8634_FLAG_COMPENSATING, (_registers[9] & 0x04));
               if (current != _mode) {
                 #if defined(CONFIG_SX8634_DEBUG)
-                  _class_log.concatf("-- SX8634 is now in mode %s\n", getModeStr(current));
+                  c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "SX8634 is now in mode %s", getModeStr(current));
                 #endif   // CONFIG_SX8634_DEBUG
                 _mode = current;
               }
@@ -399,7 +399,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
               uint16_t current = (((uint16_t) (_registers[1] & 0x0F)) << 8) | ((uint16_t) _registers[2]);
               if (current != _buttons) {
                 // #if defined(CONFIG_SX8634_DEBUG)
-                //   output.concatf("-- Buttons: %u\n", current);
+                //   output.concatf("-- Buttons: %u", current);
                 // #endif
                 // Bitshift the button values into discrete messages.
                 uint16_t diff = current ^ _buttons;
@@ -441,7 +441,8 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
               // Burn appears to have completed. Enter the verify phase.
               _set_fsm_position(SX8634_FSM::READY);
               #if defined(CONFIG_SX8634_DEBUG)
-                _class_log.concat("-- SX8634 NVM burn completed.\n");
+                SX8634OpMode current = (SX8634OpMode) (_registers[9] & 0x04);
+                c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "SX8634 NVM burn completed", getModeStr(current));
               #endif   // CONFIG_SX8634_DEBUG
             }
             if (first_irq) {
@@ -535,11 +536,8 @@ void SX8634::printOverview(StringBuilder* output) {
 
   output->concat("--\n-- Registers:\n");
   StringBuilder::printBuffer(output, _registers, sizeof(_registers), "--\t  ");
-
-  #if defined(CONFIG_SX8634_DEBUG)
-    if (_class_log.length() > 0) {   output->concatHandoff(&_class_log);   }
-  #endif   // CONFIG_SX8634_DEBUG
 }
+
 
 /**
 * Debug support method.
@@ -1015,7 +1013,7 @@ int8_t SX8634::_close_spm_access() {
 */
 int8_t SX8634::_read_block8(uint8_t idx) {
   #if defined(CONFIG_SX8634_DEBUG)
-    _class_log.concatf("_read_block8(%u)\n", idx);
+    c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_read_block8(%u)", idx);
   #endif
   I2CBusOp* nu = _bus->new_op(BusOpcode::RX, this);
   if (nu) {
@@ -1034,7 +1032,7 @@ int8_t SX8634::_read_block8(uint8_t idx) {
 */
 int8_t SX8634::_write_block8(uint8_t idx) {
   #if defined(CONFIG_SX8634_DEBUG)
-    _class_log.concatf("_write_block8(%u)\n", idx);
+    c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_write_block8(%u)", idx);
   #endif
   I2CBusOp* nu = _bus->new_op(BusOpcode::TX, this);
   if (nu) {
@@ -1125,7 +1123,7 @@ int8_t SX8634::_wait_for_reset(uint timeout_ms) {
     ret = 0;
   }
   #if defined(CONFIG_SX8634_DEBUG)
-    _class_log.concatf("SX8634::_wait_for_reset() returns %d\n", ret);
+    c3p_log((0 == ret) ? LOG_LEV_DEBUG : LOG_LEV_WARN, __PRETTY_FUNCTION__, "SX8634::_wait_for_reset() returns %d", ret);
   #endif
   return ret;
 }
@@ -1217,7 +1215,7 @@ int8_t SX8634::burn_nvm() {
     _set_fsm_position(SX8634_FSM::NVM_BURN);
     if (SX8634OpMode::DOZE != _mode) {
       #if defined(CONFIG_SX8634_DEBUG)
-        _class_log.concat("SX8634 moving to doze mode for burn.\n");
+        c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "SX8634 moving to doze mode for burn.", ret);
       #endif
       setMode(SX8634OpMode::DOZE);
     }

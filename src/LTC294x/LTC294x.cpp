@@ -235,27 +235,27 @@ int8_t LTC294x::io_op_callback(BusOp* _op) {
           switch ((LTC294xRegID) reg_idx) {
             case LTC294xRegID::CONTROL:
               _flags.set(LTC294X_FLAG_INIT_CTRL);
-              _local_log.concat("LTC294X_FLAG_INIT_CTRL set.\n");
+              c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "LTC294X_FLAG_INIT_CTRL set");
               break;
             case LTC294xRegID::ACC_CHARGE:    // The accumulated charge register.
               _flags.set(LTC294X_FLAG_INIT_AC);
-              _local_log.concat("LTC294X_FLAG_INIT_AC set.\n");
+              c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "LTC294X_FLAG_INIT_AC set");
               break;
             case LTC294xRegID::CHRG_THRESH_H:
               _flags.set(LTC294X_FLAG_INIT_THRESH_CH);
-              _local_log.concat("LTC294X_FLAG_INIT_THRESH_CH set.\n");
+              c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "LTC294X_FLAG_INIT_THRESH_CH set");
               break;
             case LTC294xRegID::CHRG_THRESH_L:
               _flags.set(LTC294X_FLAG_INIT_THRESH_CL);
-              _local_log.concat("LTC294X_FLAG_INIT_THRESH_CL set.\n");
+              c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "LTC294X_FLAG_INIT_THRESH_CL set");
               break;
             case LTC294xRegID::V_THRESH:
               _flags.set(LTC294X_FLAG_INIT_THRESH_V);
-              _local_log.concat("LTC294X_FLAG_INIT_THRESH_V set.\n");
+              c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "LTC294X_FLAG_INIT_THRESH_V set");
               break;
             case LTC294xRegID::TEMP_THRESH:
               _flags.set(LTC294X_FLAG_INIT_THRESH_T);
-              _local_log.concat("LTC294X_FLAG_INIT_THRESH_T set.\n");
+              c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "LTC294X_FLAG_INIT_THRESH_T set");
               break;
             default:  // Illegal. A bad mistake was made somewhere.
               break;
@@ -270,24 +270,24 @@ int8_t LTC294x::io_op_callback(BusOp* _op) {
           switch ((LTC294xRegID) reg_idx) {
             case LTC294xRegID::STATUS:
               if (val & 0x01) {   // Undervoltage lockout.
-                _local_log.concat("LTC294X: undervoltage.\n");
+                c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "LTC294X: undervoltage");
                 _reset_tracking_data();
               }
               if (val & 0x02) {   // One of the battery voltage limits was exceeded.
-                _local_log.concat("LTC294X: battery voltage.\n");
+                c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "LTC294X: battery voltage");
               }
               if (val & 0x04) {   // Charge alert low
-                _local_log.concat("LTC294X: Charge alert low.\n");
+                c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "LTC294X: Charge alert low");
               }
               if (val & 0x08) {   // Charge alert high
-                _local_log.concat("LTC294X: Charge alert high.\n");
+                c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "LTC294X: Charge alert high");
               }
               if (val & 0x10) {   // Temperature alert
-                _local_log.concat("LTC294X: Temperature\n");
+                c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "LTC294X: Temperature");
               }
               if (val & 0x20) {   // AccCharge over/underflow.
                 //_reset_tracking_data();
-                _local_log.concat("LTC294X: AccCharge over/underflow.\n");
+                c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "LTC294X: AccCharge over/underflow");
               }
               break;
             case LTC294xRegID::CHRG_THRESH_H:
@@ -439,20 +439,6 @@ void LTC294x::printRegisters(StringBuilder* output) {
   output->concat("\n");
 }
 
-
-/**
-* Allow the application to retreive the log.
-*
-* @param l is a reference to the buffer which should receive the log.
-*/
-void LTC294x::fetchLog(StringBuilder* l) {
-  if (_local_log.length() > 0) {
-    if (nullptr != l) {
-      _local_log.string();
-      l->concatHandoff(&_local_log);
-    }
-  }
-}
 
 
 /*******************************************************************************

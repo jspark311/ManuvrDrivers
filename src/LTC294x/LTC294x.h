@@ -171,7 +171,6 @@ class LTC294x : public I2CDevice {
 
     inline bool asleep() {    return (1 == ((uint8_t) _get_shadow_value(LTC294xRegID::CONTROL) & 0x01));  };
     int8_t  sleep(bool);
-    void fetchLog(StringBuilder*);
 
 
     static LTC294x* INSTANCE;
@@ -209,7 +208,6 @@ class LTC294x : public I2CDevice {
     float    _volt_max_dt;        // Maximum observed dV/dt (peak drain).
     float    _temp_min;           // Minimum observed temperature.
     float    _temp_max;           // Maximum observed temperature.
-    StringBuilder _local_log;
 
 
     int8_t _set_charge_register(uint16_t x);

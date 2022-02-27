@@ -532,7 +532,7 @@ void SSD13xx::printDebug(StringBuilder* output) {
   temp.concatf("SSD13xx (%u x %u)", x(), y());
   StringBuilder::styleHeader1(output, (const char*) temp.string());
   temp.clear();
-  output->concatf("\tFB BusOp state: %s\n", BusOp::getStateString(_fb_data_op.get_state()));
+  _fb_data_op.printDebug(output);
   if (_fb_data_op.getFault() != XferFault::NONE) {
     output->concatf("\tFB BusOp fault: %s\n", BusOp::getErrorString(_fb_data_op.getFault()));
   }
@@ -544,6 +544,7 @@ void SSD13xx::printDebug(StringBuilder* output) {
   output->concatf("\tPixels:    %u\n", pixels());
   output->concatf("\tBits/pix:  %u\n", _bits_per_pixel());
   output->concatf("\tBytes:     %u\n\n", bytesUsed());
+
   StopWatch::printDebugHeader(output);
   _stopwatch.printDebug("Redraw", output);
 }

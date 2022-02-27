@@ -173,9 +173,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
       _sx8634_clear_flag(SX8634_FLAG_PING_IN_FLIGHT);
       _sx8634_set_flag(SX8634_FLAG_DEV_FOUND, (!completed->hasFault()));
       if (!completed->hasFault()) {
-        #if defined(CONFIG_SX8634_DEBUG)
-          c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "SX8634 found");
-        #endif   // CONFIG_SX8634_DEBUG
+        c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "SX8634 found");
         #if defined(CONFIG_SX8634_CONFIG_ON_FAITH)
           // Depending on build parameters, we might not read the SPM.
           if (nullptr != _opts.conf) {
@@ -204,9 +202,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
         #endif   // CONFIG_SX8634_CONFIG_ON_FAITH
       }
       else {
-        #if defined(CONFIG_SX8634_DEBUG)
-          c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "SX8634 not found");
-        #endif   // CONFIG_SX8634_DEBUG
+        c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "SX8634 not found");
       }
       break;
 
@@ -386,9 +382,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
               SX8634OpMode current = (SX8634OpMode) (_registers[9] & 0x04);
               _sx8634_set_flag(SX8634_FLAG_COMPENSATING, (_registers[9] & 0x04));
               if (current != _mode) {
-                #if defined(CONFIG_SX8634_DEBUG)
-                  c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "SX8634 is now in mode %s", getModeStr(current));
-                #endif   // CONFIG_SX8634_DEBUG
+                c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "SX8634 is now in mode %s", getModeStr(current));
                 _mode = current;
               }
             }
@@ -440,10 +434,8 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
             if (0x40 & _registers[0]) {  // NVM burn interrupt
               // Burn appears to have completed. Enter the verify phase.
               _set_fsm_position(SX8634_FSM::READY);
-              #if defined(CONFIG_SX8634_DEBUG)
-                SX8634OpMode current = (SX8634OpMode) (_registers[9] & 0x04);
-                c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "SX8634 NVM burn completed", getModeStr(current));
-              #endif   // CONFIG_SX8634_DEBUG
+              SX8634OpMode current = (SX8634OpMode) (_registers[9] & 0x04);
+              c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "SX8634 NVM burn completed", getModeStr(current));
             }
             if (first_irq) {
               _sx8634_clear_flag(SX8634_FLAG_INITIAL_IRQ_READ);
@@ -1123,7 +1115,7 @@ int8_t SX8634::_wait_for_reset(uint timeout_ms) {
     ret = 0;
   }
   #if defined(CONFIG_SX8634_DEBUG)
-    c3p_log((0 == ret) ? LOG_LEV_DEBUG : LOG_LEV_WARN, __PRETTY_FUNCTION__, "SX8634::_wait_for_reset() returns %d", ret);
+    c3p_log((0 == ret) ? LOG_LEV_DEBUG : LOG_LEV_WARN, __PRETTY_FUNCTION__, "returns %d", ret);
   #endif
   return ret;
 }
@@ -1214,9 +1206,7 @@ int8_t SX8634::burn_nvm() {
     ret++;
     _set_fsm_position(SX8634_FSM::NVM_BURN);
     if (SX8634OpMode::DOZE != _mode) {
-      #if defined(CONFIG_SX8634_DEBUG)
-        c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "SX8634 moving to doze mode for burn.", ret);
-      #endif
+      c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "SX8634 moving to doze mode for burn.", ret);
       setMode(SX8634OpMode::DOZE);
     }
     ret = _write_register(SX8634_REG_SPM_KEY_MSB, 0x62);

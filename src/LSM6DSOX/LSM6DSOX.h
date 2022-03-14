@@ -25,7 +25,9 @@
 #define LSM6DSOX_FLAG_INITIALIZED      0x04  // Device initialized.
 #define LSM6DSOX_FLAG_CALIBRATED       0x08  // Offsets calibrated.
 #define LSM6DSOX_FLAG_IRQ_USES_ALT_ISR 0x10  // IRQ pins are used by hardware, but not this driver.
-#define LSM6DSOX_FLAG_NEW_DATA         0x80  // Data was refreshed.
+#define LSM6DSOX_FLAG_NEW_DATA_ACC     0x20  // Accelerometer data was refreshed.
+#define LSM6DSOX_FLAG_NEW_DATA_GYRO    0x40  // Gyroscope data was refreshed.
+#define LSM6DSOX_FLAG_NEW_DATA_TEMP    0x80  // Temperature data was refreshed.
 
 // Flags that are preserved through reset.
 #define LSM6DSOX_FLAG_RESET_MASK  (LSM6DSOX_FLAG_PINS_CONFIGURED | LSM6DSOX_FLAG_DEV_FOUND | LSM6DSOX_FLAG_IRQ_USES_ALT_ISR)
@@ -119,35 +121,23 @@ enum class LSM6DSOXRegister : uint8_t {
 };
 
 
+/*
+* Merged ODR enum for external use.
+*/
 enum class LSM6DSOX_ODR : uint8_t {
   ODR_0     = 0x00,  // Sensor disabled.
   ODR_12_5  = 0x01,
   ODR_26    = 0x02,
-  ODR_53    = 0x03,
+  ODR_52    = 0x03,
   ODR_104   = 0x04,
   ODR_208   = 0x05,
-  ODR_417   = 0x06,
+  ODR_416   = 0x06,
   ODR_833   = 0x07,
-  ODR_1667  = 0x08,
-  ODR_3333  = 0x09,
-  ODR_6667  = 0x0A,
-  ODR_1_6   = 0x0B   // Special ultra-low power mode.
-};
-
-
-enum class LSM6DSOXScaleGyr : uint8_t {
-  DPS_250   = 0x00,
-  DPS_500   = 0x01,
-  DPS_1000  = 0x02,
-  DPS_2000  = 0x03,
-  DPS_125   = 0x04  // Special ultra-low power mode.
-};
-
-enum class LSM6DSOXScaleAcc : uint8_t {
-  G_2   = 0x00,
-  G_16  = 0x01,
-  G_4   = 0x02,
-  G_8   = 0x03
+  ODR_1660  = 0x08,
+  ODR_3330  = 0x09,
+  ODR_6660  = 0x0A,
+  ODR_1_6   = 0x0B,  // Special ultra-low power mode.
+  INVALID   = 0xFF
 };
 
 
@@ -163,18 +153,24 @@ class LSM6DSOX : public BusOpCallback {
     int8_t queue_io_job(BusOp*);
 
     int8_t  poll();
-    int8_t  init(SPIAdapter* b);
+    int8_t  init(SPIAdapter* b = nullptr);
     int8_t  reset();
     int8_t  refresh();
-    int8_t  enable(bool);
+    bool    enable(bool enable,
+                   LSM6DSOX_ODR LSM6DSOX_acc_ODR  = DEFAULT_ODR,
+                   LSM6DSOX_ODR LSM6DSOX_gyro_ODR = DEFAULT_ODR);
+    bool enabled();
+    int8_t enableTemp(LSM6DSOX_ODR ODR_Temp = DEFAULT_TEMP);
 
     inline void attachPipe(TripleAxisPipe* tap) {   _pipeline = tap;   };
 
     /* Accessors taken from flags. */
-    inline bool devFound() {     return _class_flag(LSM6DSOX_FLAG_DEV_FOUND);    };
-    inline bool initialized() {  return _class_flag(LSM6DSOX_FLAG_INITIALIZED);  };
-    inline bool calibrated() {   return _class_flag(LSM6DSOX_FLAG_CALIBRATED);   };
-    inline bool dataReady() {    return _class_flag(LSM6DSOX_FLAG_NEW_DATA);     };
+    inline bool devFound() {      return _class_flag(LSM6DSOX_FLAG_DEV_FOUND);     };
+    inline bool initialized() {   return _class_flag(LSM6DSOX_FLAG_INITIALIZED);   };
+    inline bool calibrated() {    return _class_flag(LSM6DSOX_FLAG_CALIBRATED);    };
+    inline bool dataReadyAcc() {  return _class_flag(LSM6DSOX_FLAG_NEW_DATA_ACC);  };
+    inline bool dataReadyGyro() { return _class_flag(LSM6DSOX_FLAG_NEW_DATA_GYRO); };
+    inline bool dataReadyTemp() { return _class_flag(LSM6DSOX_FLAG_NEW_DATA_TEMP); };
 
     /* Functions to deal with interrupt features. */
     inline void forceINTUse(bool x) {   _class_set_flag(LSM6DSOX_FLAG_IRQ_USES_ALT_ISR, x);   };
@@ -182,54 +178,60 @@ class LSM6DSOX : public BusOpCallback {
     inline bool usingINT2() {   return ((_INT2_PIN != 255) | (_class_flag(LSM6DSOX_FLAG_IRQ_USES_ALT_ISR)));  };
 
     /* Accessors taken straight from registers. */
-    inline bool temperatureEnabled() {
-      //return (0xC0 == reg_shadows[(uint8_t) LSM6DSOXRegister::TEMP_CFG]);
-      return false;
-    };
-    inline bool lowPowerMode() {
-      //return (0x08 & reg_shadows[(uint8_t) LSM6DSOXRegister::CTRL_1]);
-      return false;
-    };
-    inline bool enabled() {
-      //return (0xF0 & reg_shadows[(uint8_t) LSM6DSOXRegister::CTRL_1]);
-      return false;
-    };
-    inline int8_t readStatus() {   return _read_register(LSM6DSOXRegister::STATUS_REG);  };
+    bool temperatureEnabled();
+    bool accLowPowerMode();
+    bool accFSMode();
+    bool gyroLowPowerMode();
+    uint8_t readStatus();
 
-    uint16_t getODR();
+    uint16_t accODR();
+    uint16_t gyroODR();
     Vector3<float>* getAcc();
-    void printDebug(StringBuilder*);
+    Vector3<float>* getGyro();
+    double getTemperature();
 
+    void printDebug(StringBuilder*);
+    void printRegisters(StringBuilder*);
+    void printBusOps(StringBuilder*);
+    int console_handler(StringBuilder*, StringBuilder*);
 
 
   private:
+    const static LSM6DSOX_ODR DEFAULT_ODR  = LSM6DSOX_ODR::ODR_104;
+    const static LSM6DSOX_ODR DEFAULT_TEMP = LSM6DSOX_ODR::ODR_12_5;
     const uint8_t  _CS_PIN;
     const uint8_t  _INT1_PIN;
     const uint8_t  _INT2_PIN;
-    uint8_t        _flags = 0;
-    SPIAdapter*    _BUS   = nullptr;
+    uint8_t        _flags        = 0;
+    SPIAdapter*    _BUS          = nullptr;
     TripleAxisPipe* _pipeline    = nullptr; // We are a source for this pipeline.
-    Vector3<float> _acc;         // Given in g's.
-    Vector3<float> _gyr;         // Given in rad/sec.
-    Vector3<float> _offset_acc;  // Given in g's.
-    Vector3<float> _offset_gyr;  // Given in rad/sec.
-    float          _data_scale_acc = 1.0;  // Bits-per-g.
-    float          _data_scale_gyr = 1.0;  // Bits-per-radian/sec.
-    float          _temperature    = 0.0;  // In Celcius.
+    Vector3<float> _acc;          // Given in g's.
+    Vector3<float> _gyro;         // Given in deg/sec.
+    Vector3<float> _offset_acc;   // Given in g's.
+    Vector3<float> _offset_gyro;  // Given in deg/sec.
+    double         _data_scale_acc = 1.0;   // Bits-per-g.
+    double         _data_scale_gyro = 1.0;  // Bits-per-radian/sec.
+    float          _temperature    = 0.0;   // In Celcius.
     uint32_t       _last_read_axes = 0;
+    uint32_t       _last_read_gyro = 0;
+    uint32_t       _last_read_fifo = 0;
     uint32_t       _last_read_temp = 0;
-    uint8_t        reg_shadows[78];
-    uint8_t        _fifo_remaining = 0;    // How much data is left in the FIFO?
+    uint8_t        reg_shadows[95];
+    uint16_t       _fifo_remaining = 0;    // How much data is left in the FIFO?
+    uint8_t        _verbosity      = 7;    // How chatty is the class?
 
     SPIBusOp       _imu_data_refresh;
     SPIBusOp       _fifo_lev_refresh;
 
 
-    uint8_t _bits_per_sample();
-    int8_t  _find_sample_range();
+    uint8_t _temp_bits_per_sample();
+    uint8_t _acc_bits_per_sample();
+    uint8_t _gyro_bits_per_sample();
+    int8_t  _acc_get_sample_range();
+    int16_t _gyro_get_sample_range();
     int8_t  _read_axes();
-    int8_t _read_fifo_level();
-    inline int8_t _read_temperature() {  return _read_registers(LSM6DSOXRegister::OUT_TEMP, 2);    };
+    int8_t  _read_temperature();
+    int8_t  _read_fifo_level();
 
     /* Basal register access and utility fxn's */
     int8_t  _clear_registers();
@@ -238,9 +240,11 @@ class LSM6DSOX : public BusOpCallback {
     unsigned int _get_shadow_value(LSM6DSOXRegister);
 
     int8_t  _write_register(LSM6DSOXRegister, uint8_t val);
-    int8_t  _write_registers(LSM6DSOXRegister, uint8_t* buf, uint8_t len);
+    int8_t  _write_registers(LSM6DSOXRegister, uint8_t len);
     int8_t  _read_register(LSM6DSOXRegister);
     int8_t  _read_registers(LSM6DSOXRegister, uint8_t len);
+    int8_t  _bus_read_callback(uint8_t reg_addr, uint8_t* buf, uint16_t len);
+    int8_t  _bus_write_callback(uint8_t reg_addr, uint8_t* buf, uint16_t len);
     int8_t  _ll_pin_init();
     int8_t  _impart_initial_config();
 

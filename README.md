@@ -1,6 +1,6 @@
 # ManuvrDrivers
 
-A collection of non-blocking flexible hardware drivers written on top of CppPotpourri.
+A collection of non-blocking flexible hardware drivers written on top of [CppPotpourri](https://github.com/jspark311/CppPotpourri).
 
 
 ## This repo's relationship to CppPotpourri

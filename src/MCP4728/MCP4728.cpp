@@ -630,6 +630,31 @@ int8_t MCP4728::io_op_callback(BusOp* _op) {
 * These are built-in handlers for using this instance via a console.
 *******************************************************************************/
 
+/**
+* @page console-handlers
+* @section mcp4728-tools DAC tools (MCP4728)
+*
+* This is the console handler for using the MCP4728 DAC.
+*
+* @subsection arguments Arguments
+* Argument | Purpose | Required
+* -------- | ------- | --------
+* 1        | UartID  | No (lists UARTs if not provided)
+* 2        | Action  | No (prints debugging information for specified UART if not provided)
+* 3        | Action-Specific | No
+*
+* @subsection cmd-actions Actions
+* Action    | Description | Additional arguments
+* --------- | ----------- | --------------------
+* `init`    | Initialize the driver and prints the result. | None
+* `refresh` | Refresh the register shadows from the hardware. | None
+* `store`   | Store the current channel values to the chip's non-volatile memory. | [channel]
+* `val`     | Renders channel details to the console, or set the value. | <channel> [new-value]
+* `enable`  | Enable or disable a DAC channel. | <channel> <0, 1>
+* `gain`    | Set the gain for a channel. | <channel> <new-gain>
+* `ref`     | Set the voltage reference for a channel. | <channel> <new-ref-id>
+*
+*/
 int8_t MCP4728::console_handler(StringBuilder* text_return, StringBuilder* args) {
   int8_t ret = 0;
   char*  cmd = args->position_trimmed(0);

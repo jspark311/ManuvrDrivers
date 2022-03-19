@@ -109,7 +109,7 @@ SX1503::SX1503(const uint8_t irq_pin, const uint8_t reset_pin) :
 * Constructor.
 */
 SX1503::SX1503(const uint8_t* buf, const unsigned int len) : SX1503(*(buf + 1), *(buf + 2)) {
-  unserialize(buf, len);
+  //unserialize(buf, len);
 }
 
 /**
@@ -493,6 +493,36 @@ int8_t SX1503::gpioMode(uint8_t pin, GPIOMode mode) {
   return ret;
 }
 
+/**
+*
+* @return
+*   -2 on unsupported mode
+*   -1 on bad pin
+*   0 on success
+*/
+GPIOMode SX1503::gpioMode(uint8_t pin) {
+  GPIOMode ret = GPIOMode::UNINIT;
+  if (pin < 16) {
+    const uint8_t val0 = _get_shadow_value((pin < 8) ? SX1503RegId::DIR_A : SX1503RegId::DIR_B);
+    const uint8_t val1 = _get_shadow_value((pin < 8) ? SX1503RegId::PULLUP_A : SX1503RegId::PULLUP_B);
+    const uint8_t val2 = _get_shadow_value((pin < 8) ? SX1503RegId::PULLDOWN_A : SX1503RegId::PULLDOWN_B);
+    pin = pin & 0x07; // Restrict to 8-bits.
+    const uint8_t f = 1 << pin;
+    const bool in = (val0 & f);
+    const bool pu = (val1 & f);
+    const bool pd = (val2 & f);
+    if (in) {
+      ret = (pu ? GPIOMode::INPUT_PULLUP : (pd ? GPIOMode::INPUT_PULLDOWN : GPIOMode::INPUT));
+    }
+    else {
+      // TODO: This part is capable of supporting open-drain output, but it
+      //   would take slieght-of-hand that is not yet demanded of this driver.
+      ret = GPIOMode::OUTPUT;
+    }
+  }
+  return ret;
+}
+
 
 
 /*******************************************************************************
@@ -527,7 +557,7 @@ int8_t SX1503::_ll_pin_init() {
   if (!_sx_flag(SX1503_FLAG_PINS_CONFD)) {
     if (255 != _IRQ_PIN) {
       ret = -1;
-      if (0 == pinMode(_IRQ_PIN, GPIOMode::INPUT_PULLUP)) {
+      if (0 <= pinMode(_IRQ_PIN, GPIOMode::INPUT_PULLUP)) {
         sx1503_isr_fired = !readPin(_IRQ_PIN);
         setPinFxn(_IRQ_PIN, IRQCondition::FALLING, sx1503_isr);
         ret = 0;
@@ -535,7 +565,7 @@ int8_t SX1503::_ll_pin_init() {
     }
     if ((0 == ret) & (255 != _RESET_PIN)) {
       ret = -1;
-      if (0 == pinMode(_RESET_PIN, GPIOMode::OUTPUT)) {
+      if (0 <= pinMode(_RESET_PIN, GPIOMode::OUTPUT)) {
         ret = 0;
       }
     }
@@ -710,11 +740,12 @@ int8_t SX1503::io_op_callahead(BusOp* _op) {   return 0;   }
 */
 int8_t SX1503::io_op_callback(BusOp* _op) {
   I2CBusOp* op  = (I2CBusOp*) _op;
-  int8_t    ret = BUSOP_CALLBACK_NOMINAL;
+  int8_t    ret = BUSOP_CALLBACK_ERROR;
 
   if (!op->hasFault()) {
     uint8_t* buf = op->buffer();
     uint     len = op->bufferLen();
+    ret = BUSOP_CALLBACK_NOMINAL;
     if (!_sx_flag(SX1503_FLAG_DEVICE_PRESENT)) {
       // With no ID register to check, we construe no failure on bus operation
       //   as the condition "device found".
@@ -874,6 +905,24 @@ void SX1503::printDebug(StringBuilder* output) {
 /*
 *
 */
+void SX1503::printPins(StringBuilder* output) {
+  if (initialized()) {
+    StringBuilder::styleHeader1(output, "SX1503 Pins");
+    for (uint8_t i = 0; i < 16; i++) {
+      output->concatf("\t%2d  %12s  %c\n", i, getPinModeStr(gpioMode(i)), digitalRead(i) ? '1' : '0');
+    }
+    output->concat("\n");
+  }
+  else {
+    output->concat("SX1503 not initialized.\n");
+  }
+}
+
+
+
+/*
+*
+*/
 void SX1503::printRegs(StringBuilder* output) {
   for (uint8_t i = 0; i < sizeof(registers); i++) {
     output->concatf("\t0x%02x:\t0x%02x\n", SX1503_REG_ADDR[i], registers[i]);
@@ -886,6 +935,24 @@ void SX1503::printRegs(StringBuilder* output) {
 * These are built-in handlers for using this instance via a console.
 *******************************************************************************/
 
+/**
+* @page console-handlers
+* @section sx1503-tools SX1503 tools
+*
+* This is the console handler for using the SX1503 GPIO expander. Called without
+*   arguments, this command will print the driver overview.
+*
+* @subsection cmd-actions Actions
+*
+* Action    | Description | Additional arguments
+* --------- | ----------- | --------------------
+* `init`    | Manually invoke the driver's `init()` function. | None
+* `reset`   | Manually invoke the driver's `reset()` function. | None
+* `refresh` | Refresh the register shadows from the hardware. | None
+* `regs`    | Prints the full list and contents of register shadows. | None
+* `mode`    | Set the pin mode. | <pin> <new-mode>
+* `val`     | Renders pin details to the console, or set the value. | <pin> [new-value]
+*/
 int8_t SX1503::console_handler(StringBuilder* text_return, StringBuilder* args) {
   int ret = 0;
   char* cmd = args->position_trimmed(0);
@@ -953,6 +1020,9 @@ int8_t SX1503::console_handler(StringBuilder* text_return, StringBuilder* args) 
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "regs")) {
     printRegs(text_return);
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "pins")) {
+    printPins(text_return);
   }
   else {
     printDebug(text_return);

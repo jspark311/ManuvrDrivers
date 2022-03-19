@@ -253,9 +253,6 @@ int8_t LSM6DSOX::init(SPIAdapter* b) {
     _imu_data_refresh.cpha(true);
     _imu_data_refresh.setParams(_get_reg_addr(LSM6DSOXRegister::FIFO_DATA_OUT_TAG) | 0x80);
 
-    c3p_log(LOG_LEV_INFO, "IMU", "LSM6DSOX::init(): FIFO shadows: %d", _get_shadow_offset(LSM6DSOXRegister::FIFO_DATA_OUT_TAG));
-    c3p_log(LOG_LEV_INFO, "IMU", "LSM6DSOX::init(): LB shadows:   %p", &reg_shadows[sizeof(reg_shadows)-1]);
-
     _fifo_lev_refresh.setAdapter(_BUS);
     _fifo_lev_refresh.shouldReap(false);
     _fifo_lev_refresh.shouldFreeBuffer(false);
@@ -591,7 +588,6 @@ unsigned int LSM6DSOX::_get_shadow_value(LSM6DSOXRegister idx) {
   return 0;
 }
 
-
 /*
 * Convenience fxn. Returns 0 if register index is out of bounds.
 */
@@ -614,7 +610,6 @@ int8_t LSM6DSOX::_set_shadow_value(LSM6DSOXRegister reg, unsigned int val) {
   return -1;
 }
 
-
 /*
 *
 */
@@ -633,7 +628,6 @@ int8_t LSM6DSOX::_write_register(LSM6DSOXRegister r, uint8_t val) {
   return ret;
 }
 
-
 /*
 *
 */
@@ -651,7 +645,6 @@ int8_t LSM6DSOX::_write_registers(LSM6DSOXRegister r, uint8_t len) {
   return ret;
 }
 
-
 /*
 *
 */
@@ -665,7 +658,6 @@ int8_t LSM6DSOX::_read_register(LSM6DSOXRegister r) {
   }
   return ret;
 }
-
 
 /*
 *
@@ -743,7 +735,13 @@ int8_t LSM6DSOX::_impart_initial_config() {
     _set_shadow_value(LSM6DSOXRegister::CTRL6_C,  0x10);     // No DEN triggering, no ACC high-performance, ACC offset weight is 2^-10 g/LSB, FTYPE = 000
     _set_shadow_value(LSM6DSOXRegister::CTRL7_G,  0x84);     // No GYR high-performance or high-pass filtering, no ACC offset, OIS is disabled and controlled from main bus.
     if (0 == _write_registers(LSM6DSOXRegister::CTRL1_XL, 7)) {
-      ret = 0;
+      // TODO: Null values to fake real calibration.
+      _set_shadow_value(LSM6DSOXRegister::X_OFS_USR, 0);
+      _set_shadow_value(LSM6DSOXRegister::Y_OFS_USR, 0);
+      _set_shadow_value(LSM6DSOXRegister::Z_OFS_USR, 0);
+      if (0 == _write_registers(LSM6DSOXRegister::X_OFS_USR, 3)) {
+        ret = 0;
+      }
     }
   }
 
@@ -869,21 +867,78 @@ int8_t LSM6DSOX::_bus_read_callback(uint8_t reg_addr, uint8_t* buf, uint16_t len
           switch ((*buf >> 3) & 0x1F) {
             case 0x01:  // Gyro data
               {
-                _gyro.set(new_x * _data_scale_gyro, new_y * _data_scale_gyro, new_z * _data_scale_gyro);
-                _gyro = _gyro - _offset_gyro;
+                float f_x = (-1 * new_x) * _data_scale_gyro;
+                float f_y = (-1 * new_y) * _data_scale_gyro;
+                float f_z = (-1 * new_z) * _data_scale_gyro;
+                switch (_NXT_FMT) {
+                  case GnomonType::RH_NEG_X:
+                  case GnomonType::LH_POS_X:
+                    f_z *= -1.0;
+                  case GnomonType::RH_POS_X:
+                  case GnomonType::LH_NEG_X:
+                    _gyro.set(f_z, f_y, f_x);
+                    break;
+
+                  case GnomonType::RH_NEG_Y:
+                  case GnomonType::LH_POS_Y:
+                    f_z *= -1.0;
+                  case GnomonType::RH_POS_Y:
+                  case GnomonType::LH_NEG_Y:
+                    _gyro.set(f_x, f_z, f_y);
+                    break;
+
+                  case GnomonType::RH_POS_Z:
+                  case GnomonType::LH_NEG_Z:
+                    f_z *= -1.0;
+                  case GnomonType::RH_NEG_Z:
+                  case GnomonType::LH_POS_Z:   // Sensor default.
+                  default:  // Undefinition results in no transform.
+                    _gyro.set(f_x, f_y, f_z);
+                    break;
+                }
+                _gyro -= _offset_gyro;
                 _last_read_gyro = millis();
                 if ((nullptr != _pipeline) && calibrated()) {
-                  _pipeline->pushVector(SpatialSense::GYR, &_gyro); // TODO: No error bars on this data.
+                  _pipeline->pushVector(SpatialSense::GYR, &_gyro, &_err_gyro);
                 }
               }
               break;
+
             case 0x02:  // Accelerometer data
               {
-                _acc.set(new_x * _data_scale_acc, new_y * _data_scale_acc, new_z * _data_scale_acc);
-                _acc = _acc - _offset_acc;
+                float f_x = new_x * _data_scale_acc;
+                float f_y = new_y * _data_scale_acc;
+                float f_z = new_z * _data_scale_acc;
+                switch (_NXT_FMT) {
+                  case GnomonType::RH_NEG_X:
+                  case GnomonType::LH_POS_X:
+                    f_z *= -1.0;
+                  case GnomonType::RH_POS_X:
+                  case GnomonType::LH_NEG_X:
+                    _acc.set(f_z, f_y, f_x);
+                    break;
+
+                  case GnomonType::RH_NEG_Y:
+                  case GnomonType::LH_POS_Y:
+                    f_z *= -1.0;
+                  case GnomonType::RH_POS_Y:
+                  case GnomonType::LH_NEG_Y:
+                    _acc.set(f_x, f_z, f_y);
+                    break;
+
+                  case GnomonType::RH_POS_Z:
+                  case GnomonType::LH_NEG_Z:
+                    f_z *= -1.0;
+                  case GnomonType::RH_NEG_Z:
+                  case GnomonType::LH_POS_Z:   // Sensor default.
+                  default:  // Undefinition results in no transform.
+                    _acc.set(f_x, f_y, f_z);
+                    break;
+                }
+                _acc -= _offset_acc;
                 _last_read_axes = millis();
                 if ((nullptr != _pipeline) && calibrated()) {
-                  _pipeline->pushVector(SpatialSense::ACC, &_acc); // TODO: No error bars on this data.
+                  _pipeline->pushVector(SpatialSense::ACC, &_acc, &_err_acc);
                 }
               }
               break;
@@ -901,7 +956,7 @@ int8_t LSM6DSOX::_bus_read_callback(uint8_t reg_addr, uint8_t* buf, uint16_t len
               break;
           }
           len -= 6;
-          reg_addr += 3;
+          reg_addr += 5;
           buf += 6;
         }
         break;
@@ -994,9 +1049,19 @@ int8_t LSM6DSOX::_bus_write_callback(uint8_t reg_addr, uint8_t* buf, uint16_t le
       case LSM6DSOXRegister::UI_CTRL1_OIS:              // R/W is contingent
       case LSM6DSOXRegister::UI_CTRL2_OIS:              // R/W is contingent
       case LSM6DSOXRegister::UI_CTRL3_OIS:              // R/W is contingent
+        break;
+
       case LSM6DSOXRegister::X_OFS_USR:
       case LSM6DSOXRegister::Y_OFS_USR:
       case LSM6DSOXRegister::Z_OFS_USR:
+        if (3 <= len) {
+          _class_set_flag(LSM6DSOX_FLAG_CALIBRATED);
+          len -= 2;
+          reg_addr += 2;
+          buf += 2;
+        }
+        break;
+
       default:   // Anything else is invalid.
         break;
     }
@@ -1089,11 +1154,11 @@ int8_t LSM6DSOX::queue_io_job(BusOp* _op) {
 *
 * Action    | Description | Additional arguments
 * --------- | ----------- | --------------------
-* 'init'    | Manually invoke the driver's `init()` function. | None
+* `init`    | Manually invoke the driver's `init()` function. | None
 * `reset`   | Manually invoke the driver's `reset()` function. | None
 * `poll`    | Manually invoke the driver's `poll()` function. | None
-* 'refresh' | Refresh the register shadows from the hardware. | None
-* 'enable'  | Enable or disable the hardware. | [Enable]
+* `refresh` | Refresh the register shadows from the hardware. | None
+* `enable`  | Enable or disable the hardware. | [ODR-ID]
 */
 int LSM6DSOX::console_handler(StringBuilder* text_return, StringBuilder* args) {
   int8_t ret = 0;
@@ -1122,11 +1187,28 @@ int LSM6DSOX::console_handler(StringBuilder* text_return, StringBuilder* args) {
   else if (0 == StringBuilder::strcasecmp(cmd, "reset")) {
     text_return->concatf("IMU.reset() returns %d.\n", reset());
   }
+  else if (0 == StringBuilder::strcasecmp(cmd, "gnomon")) {
+    if (1 < args->count()) {
+      efferentGnomon((GnomonType) args->position_as_int(1));
+    }
+    text_return->concatf("IMU efferentGnomon(%u).\n", (uint8_t) efferentGnomon());
+  }
   else if (0 == StringBuilder::strcasecmp(cmd, "enable")) {
     if (1 < args->count()) {
-      bool en = (0 != args->position_as_int(1));
+      LSM6DSOX_ODR odr_val = LSM6DSOX_ODR::ODR_0;
+      switch (args->position_as_int(1)) {
+        case 1:   odr_val = LSM6DSOX_ODR::ODR_12_5;  break;
+        case 2:   odr_val = LSM6DSOX_ODR::ODR_26;    break;
+        case 3:   odr_val = LSM6DSOX_ODR::ODR_52;    break;
+        case 4:   odr_val = LSM6DSOX_ODR::ODR_104;   break;
+        case 5:   odr_val = LSM6DSOX_ODR::ODR_208;   break;
+        case 6:   odr_val = LSM6DSOX_ODR::ODR_416;   break;
+        default:  break;
+      }
+      bool en = (odr_val != LSM6DSOX_ODR::ODR_0);
+      int8_t ret_local = enable(en, odr_val);
       enableTemp(en ? LSM6DSOX_ODR::ODR_1_6 : LSM6DSOX_ODR::ODR_0);
-      text_return->concatf("IMU.enable() returns %d.\n", enable(en));
+      text_return->concatf("IMU.enable(%d, 0x%02x) returns %d.\n", (en?1:0), (uint8_t) odr_val, ret_local);
     }
     else text_return->concatf("IMU is %sabled.\n", enabled()?"en":"dis");
   }

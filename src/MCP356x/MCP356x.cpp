@@ -15,7 +15,9 @@ Author: J. Ian Lindsay
 *
 * Static members and initializers should be located here.
 *******************************************************************************/
-// We can have up to four of these in a given system.
+// We can have up to two of these in a given system.
+// TODO: AbstractPlatform needs a way to call specific objects from setPinFxn()
+//   to avoid these sorts of pseudo-singleton patterns. ISR function scope.
 #define MCP356X_MAX_INSTANCES    2
 volatile static MCP356x* INSTANCES[MCP356X_MAX_INSTANCES] = {0, };
 
@@ -728,7 +730,6 @@ int8_t MCP356x::_step_state_machine() {
           break;
 
         case MCP356xState::RESETTING:
-          // Regardless of where we are going, we only have one way out of here.
           // If we were given one, check that the IRQ pin pulsed.
           if (255 != _IRQ_PIN) {
             sleep_ms(10);   // TODO: Wrong
@@ -908,7 +909,7 @@ int8_t MCP356x::_step_state_machine() {
 * @return 0 always
 */
 void MCP356x::_set_state(MCP356xState e) {
-  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_set_state()  %s --> %s", stateStr(_current_state), stateStr(e));
+  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356xState:  %s --> %s", stateStr(_current_state), stateStr(e));
   switch (e) {
     case MCP356xState::PREINIT:
     case MCP356xState::RESETTING:

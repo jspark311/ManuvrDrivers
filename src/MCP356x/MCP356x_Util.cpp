@@ -142,18 +142,16 @@ void MCP356x::printChannel(MCP356xChannel chan, StringBuilder* output) {
 * Prints the values of all enabled channels.
 */
 void MCP356x::printChannelValues(StringBuilder* output) {
-  for (uint8_t i = 0; i < 16; i++) {
-    MCP356xChannel chan = (MCP356xChannel) i;
-    if (_scan_covers_channel(chan)) {
-      switch (chan) {
-        case MCP356xChannel::TEMP:
-          output->concatf("Die temperature     = %.2fC\n", getTemperature());
-          break;
-        default:
-          printChannel(MCP356xChannel::VCM, output);
-          break;
+  if (adcFound()) {
+    for (uint8_t i = 0; i < 16; i++) {
+      MCP356xChannel chan = (MCP356xChannel) i;
+      if (_scan_covers_channel(chan)) {
+        printChannel(chan, output);
       }
     }
+  }
+  else {
+    output->concat("MCP356x not found.\n");
   }
 }
 
@@ -164,24 +162,41 @@ void MCP356x::printChannelValues(StringBuilder* output) {
 * These are built-in handlers for using this instance via a console.
 *******************************************************************************/
 
+/**
+* @page console-handlers
+* @section mcp356x-tools MCP356x tools
+*
+* This is the console handler for using the MCP356x ADC.
+*
+* @subsection cmd-actions Actions
+*
+* Action    | Description | Additional arguments
+* --------- | ----------- | --------------------
+* `init`    | Manually invoke the driver's `init()` function. | None
+* `reset`   | Manually invoke the driver's `reset()` function. | None
+* `irq`     | Force an ISR cycle. | None
+* `refresh` | Refresh the register shadows from the hardware. | None
+*/
 int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args) {
   int ret = 0;
   if (0 < args->count()) {
     char* cmd = args->position_trimmed(0);
 
-    if (0 == StringBuilder::strcasecmp(cmd, "info")) {
-      switch (args->position_as_int(1)) {
-        default:
-        case 4:   printChannelValues(text_return);  break;
-        case 5:   printRegs(text_return);        break;
-        case 6:   printPins(text_return);        break;
-        case 7:   printData(text_return);        break;
-        case 8:   printTimings(text_return);     break;
-        case 9:
-          text_return->concatf("MCP356x temperature: %u.\n", (uint8_t) getTemperature());
-          break;
-        case 10:  printChannelValues(text_return);  break;
-      }
+    if (0 == StringBuilder::strcasecmp(cmd, "data")) {
+      printData(text_return);
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "timings")) {
+      printTimings(text_return);
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "regs")) {
+      printRegs(text_return);
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "temperature")) {
+      text_return->concatf("MCP356x temperature: %u.\n", (uint8_t) getTemperature());
+    }
+
+    else if (0 == StringBuilder::strcasecmp(cmd, "pins")) {
+      printPins(text_return);
     }
     else if (0 == StringBuilder::strcasecmp(cmd, "gain")) {
       if (1 < args->count()) {
@@ -204,7 +219,9 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
     else if (0 == StringBuilder::strcasecmp(cmd, "read")) {
       text_return->concatf("MCP356x read() returns %d\n", read());
     }
-
+    else if (0 == StringBuilder::strcasecmp(cmd, "irq")) {
+      isr_fired = true;
+    }
     else if (0 == StringBuilder::strcasecmp(cmd, "state")) {
       bool print_state_map = (2 > args->count());
       if (!print_state_map) {
@@ -234,12 +251,27 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
 
       if (print_state_map) {
         for (uint8_t i = 0; i < 11; i++) {
-          text_return->concatf("%u:\t%s\n", MCP356x::stateStr((MCP356xState) i));
+          MCP356xState ste = (MCP356xState) i;
+          text_return->concatf("%u:\t%s", i, MCP356x::stateStr(ste));
+          if (ste == _current_state) {
+            text_return->concat("  <--- Current\n");
+          }
+          else if (ste == _prior_state) {
+            text_return->concat("  <--- Prior\n");
+          }
+          else if (ste == _desired_state) {
+            text_return->concat("  <--- Desired\n");
+          }
+          else {
+            text_return->concat("\n");
+          }
         }
       }
     }
   }
-  else ret = -1;
+  else {
+    printChannelValues(text_return);
+  }
 
   return ret;
 }

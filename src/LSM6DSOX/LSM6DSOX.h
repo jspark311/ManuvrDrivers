@@ -1,6 +1,8 @@
 /*
 * This driver operates only in "Mode-1", in the datasheet's parlance.
 *
+* Vector data produced by this driver is given as LH_POS_Z, with Z+ representing
+*   UP, or yaw to the right, depending on ACC/GYR.
 *
 * Interrupt pins are optional, and if provided, they are used this way...
 *   INT1 INT2
@@ -20,14 +22,15 @@
 /*
 * Class flags.
 */
-#define LSM6DSOX_FLAG_PINS_CONFIGURED  0x01  // Low-level pin setup is complete.
-#define LSM6DSOX_FLAG_DEV_FOUND        0x02  // Device positively identified.
-#define LSM6DSOX_FLAG_INITIALIZED      0x04  // Device initialized.
-#define LSM6DSOX_FLAG_CALIBRATED       0x08  // Offsets calibrated.
-#define LSM6DSOX_FLAG_IRQ_USES_ALT_ISR 0x10  // IRQ pins are used by hardware, but not this driver.
-#define LSM6DSOX_FLAG_NEW_DATA_ACC     0x20  // Accelerometer data was refreshed.
-#define LSM6DSOX_FLAG_NEW_DATA_GYRO    0x40  // Gyroscope data was refreshed.
-#define LSM6DSOX_FLAG_NEW_DATA_TEMP    0x80  // Temperature data was refreshed.
+#define LSM6DSOX_FLAG_PINS_CONFIGURED  0x00000001  // Low-level pin setup is complete.
+#define LSM6DSOX_FLAG_DEV_FOUND        0x00000002  // Device positively identified.
+#define LSM6DSOX_FLAG_INITIALIZED      0x00000004  // Device initialized.
+#define LSM6DSOX_FLAG_CALIBRATED       0x00000008  // Offsets calibrated.
+#define LSM6DSOX_FLAG_IRQ_USES_ALT_ISR 0x00000010  // IRQ pins are used by hardware, but not this driver.
+#define LSM6DSOX_FLAG_NEW_DATA_ACC     0x00000020  // Accelerometer data was refreshed.
+#define LSM6DSOX_FLAG_NEW_DATA_GYRO    0x00000040  // Gyroscope data was refreshed.
+#define LSM6DSOX_FLAG_NEW_DATA_TEMP    0x00000080  // Temperature data was refreshed.
+
 
 // Flags that are preserved through reset.
 #define LSM6DSOX_FLAG_RESET_MASK  (LSM6DSOX_FLAG_PINS_CONFIGURED | LSM6DSOX_FLAG_DEV_FOUND | LSM6DSOX_FLAG_IRQ_USES_ALT_ISR)
@@ -163,6 +166,8 @@ class LSM6DSOX : public BusOpCallback {
     int8_t enableTemp(LSM6DSOX_ODR ODR_Temp = DEFAULT_TEMP);
 
     inline void attachPipe(TripleAxisPipe* tap) {   _pipeline = tap;   };
+    inline void efferentGnomon(GnomonType n) {      _NXT_FMT  = n;     };
+    inline GnomonType efferentGnomon() {            return _NXT_FMT;   };
 
     /* Accessors taken from flags. */
     inline bool devFound() {      return _class_flag(LSM6DSOX_FLAG_DEV_FOUND);     };
@@ -202,13 +207,15 @@ class LSM6DSOX : public BusOpCallback {
     const uint8_t  _CS_PIN;
     const uint8_t  _INT1_PIN;
     const uint8_t  _INT2_PIN;
-    uint8_t        _flags        = 0;
+    uint32_t       _flags        = 0;
     SPIAdapter*    _BUS          = nullptr;
     TripleAxisPipe* _pipeline    = nullptr; // We are a source for this pipeline.
     Vector3<float> _acc;          // Given in g's.
     Vector3<float> _gyro;         // Given in deg/sec.
     Vector3<float> _offset_acc;   // Given in g's.
     Vector3<float> _offset_gyro;  // Given in deg/sec.
+    Vector3<float> _err_acc;      // Given in g's.
+    Vector3<float> _err_gyro;     // Given in deg/sec.
     double         _data_scale_acc = 1.0;   // Bits-per-g.
     double         _data_scale_gyro = 1.0;  // Bits-per-radian/sec.
     float          _temperature    = 0.0;   // In Celcius.
@@ -216,9 +223,10 @@ class LSM6DSOX : public BusOpCallback {
     uint32_t       _last_read_gyro = 0;
     uint32_t       _last_read_fifo = 0;
     uint32_t       _last_read_temp = 0;
-    uint8_t        reg_shadows[95];
     uint16_t       _fifo_remaining = 0;    // How much data is left in the FIFO?
+    uint8_t        reg_shadows[95] = {0, };
     uint8_t        _verbosity      = 7;    // How chatty is the class?
+    GnomonType      _NXT_FMT = GnomonType::LH_POS_Z; // Sensor default
 
     SPIBusOp       _imu_data_refresh;
     SPIBusOp       _fifo_lev_refresh;
@@ -252,11 +260,11 @@ class LSM6DSOX : public BusOpCallback {
     inline bool _have_int2_pin() {   return (255 != _INT2_PIN);  };
 
     /* Flag manipulation inlines */
-    inline uint8_t _class_flags() {                return _flags;           };
-    inline bool _class_flag(uint8_t _flag) {       return (_flags & _flag); };
-    inline void _class_clear_flag(uint8_t _flag) { _flags &= ~_flag;        };
-    inline void _class_set_flag(uint8_t _flag) {   _flags |= _flag;         };
-    inline void _class_set_flag(uint8_t _flag, bool nu) {
+    inline uint32_t _class_flags() {                    return _flags;           };
+    inline uint32_t _class_flag(uint32_t _flag) {       return (_flags & _flag); };
+    inline void     _class_clear_flag(uint32_t _flag) { _flags &= ~_flag;        };
+    inline void     _class_set_flag(uint32_t _flag) {   _flags |= _flag;         };
+    inline void     _class_set_flag(uint32_t _flag, bool nu) {
       if (nu) _flags |= _flag;
       else    _flags &= ~_flag;
     };

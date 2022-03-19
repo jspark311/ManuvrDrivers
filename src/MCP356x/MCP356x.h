@@ -343,15 +343,6 @@ class MCP356x : public BusOpCallback {
     static const char* stateStr(const MCP356xState);
 
 
-  protected:
-    void   _clear_registers();
-
-    /* State machine functions */
-    int8_t _step_state_machine();
-    void   _set_state(MCP356xState);
-    void   _set_fault(const char*);
-    inline bool _measuring_clock() {  return (MCP356xState::CLK_MEASURE == _current_state);  };
-
 
   private:
     // Pin assignments
@@ -388,6 +379,12 @@ class MCP356x : public BusOpCallback {
     MCP356xState _desired_state    = MCP356xState::UNINIT;
 
 
+    /* State machine functions */
+    int8_t _step_state_machine();
+    void   _set_state(MCP356xState);
+    void   _set_fault(const char*);
+    inline bool _measuring_clock() {  return (MCP356xState::CLK_MEASURE == _current_state);  };
+
     /* Everything below this line is up for review */
     int8_t  _post_reset_fxn();
     int8_t  _proc_irq_register();
@@ -406,12 +403,13 @@ class MCP356x : public BusOpCallback {
     int8_t _recalculate_clk_tree();
     int8_t _recalculate_settling_time();
 
+    void     _clear_registers();
     int8_t   _set_shadow_value(MCP356xRegister, uint32_t val);
     uint32_t _get_shadow_value(MCP356xRegister);
-    int8_t _write_register(MCP356xRegister, uint32_t val);
-    int8_t _read_register(MCP356xRegister);
-    int8_t _proc_reg_write(MCP356xRegister);
-    int8_t _proc_reg_read(MCP356xRegister);
+    int8_t   _write_register(MCP356xRegister, uint32_t val);
+    int8_t   _read_register(MCP356xRegister);
+    int8_t   _proc_reg_write(MCP356xRegister);
+    int8_t   _proc_reg_read(MCP356xRegister);
 
     uint8_t _output_coding_bytes();
     int8_t  _normalize_data_register();

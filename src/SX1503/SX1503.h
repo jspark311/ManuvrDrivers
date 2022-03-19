@@ -26,8 +26,6 @@ limitations under the License.
 #include <AbstractPlatform.h>
 #include <I2CAdapter.h>
 
-class StringBuilder;
-
 #define SX1503_I2C_ADDR           0x20  // Not configurable for SX1503.
 #define SX1503_SERIALIZE_VERSION  0x01  // Version code for serialized states.
 #define SX1503_SERIALIZE_SIZE       36
@@ -102,9 +100,10 @@ class SX1503 : public I2CDevice {
     int8_t refresh();
 
     // Basic usage as pins...
-    int8_t  gpioMode(uint8_t pin, GPIOMode mode);
-    int8_t  digitalWrite(uint8_t pin, bool value);
-    uint8_t digitalRead(uint8_t pin);
+    int8_t   gpioMode(uint8_t pin, GPIOMode mode);
+    GPIOMode gpioMode(uint8_t pin);
+    int8_t   digitalWrite(uint8_t pin, bool value);
+    uint8_t  digitalRead(uint8_t pin);
     uint16_t getPinValues();
     int8_t   setPinValues(uint16_t);
 
@@ -134,6 +133,7 @@ class SX1503 : public I2CDevice {
     // Debugging fxns. If you don't want them in the build, don't call them, and
     //   let --gc-sections do the rest.
     void printDebug(StringBuilder*);
+    void printPins(StringBuilder*);
     void printRegs(StringBuilder*);
     int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
 

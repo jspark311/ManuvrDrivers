@@ -112,7 +112,6 @@ int8_t SSD1309::io_op_callback(BusOp* _op) {
   }
   else if (initialized()) {
     // This driver never reads back from the display. All BusOps are TX.
-    uint8_t arg_buf[4];
     // NOTE: The check below won't account for commands that have arguments
     //   built into the same byte. Should probably have a mask and heuristic
     //   check in the default case if we are ever interested in acting upon those.
@@ -217,6 +216,10 @@ int8_t SSD1309::init(SPIAdapter* b) {
     _init_state = 0;
     _fb_data_op.setAdapter(_BUS);
     _fb_data_op.shouldReap(false);
+    _fb_data_op.maxFreq(10000000);
+    _fb_data_op.bitsPerFrame(SPIFrameSize::BITS_8);
+    _fb_data_op.cpol(true);
+    _fb_data_op.cpha(true);
     if (0 == _ll_pin_init()) {
       ret--;
       if (!allocated()) {

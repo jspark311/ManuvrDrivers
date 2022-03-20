@@ -54,6 +54,12 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SSD13XX_CMD_SETMULTIPLEX   0xA8
 
 
+/* Class flags */
+#define SSD13XX_FLAG_INITIALIZED   0x01  //
+#define SSD13XX_FLAG_ENABLED       0x02  //
+#define SSD13XX_FLAG_FB_IN_FLIGHT  0x04  //
+
+
 /* Supported SSD chipsets */
 enum class SSDModel : uint8_t {
   SSD1306  = 0,
@@ -101,15 +107,63 @@ class SSD13xxOpts {
 
 
 // Class to manage hardware interface with SSD13xx chipset
-class SSD13xx : public Image, public BusOpCallback {
+class SSD1331 : public Image, public BusOpCallback {
   // TODO: For now, this class only deals with the SSD1331. Due to early
   //   brain-damage in this abstraction, support was replicated. This is no
   //   longer necessary, and we can now gracefully degrade back into a proper
   //   inheritance pattern.
   // NOTE: As of this writing (2022.01.15), this class's copy-pasta is freshest.
   public:
-    SSD13xx(const SSD13xxOpts* opts);
-    ~SSD13xx();
+    SSD1331(const SSD13xxOpts* opts);
+    ~SSD1331();
+
+    inline void setBus(SPIAdapter* b) {  _BUS = b;  };
+    int8_t init(SPIAdapter*);
+    inline int8_t init() {        return init(_BUS);   };
+    inline bool enabled() {       return _enabled;     };
+    inline bool initialized() {   return _initd;       };
+    int8_t reset();
+
+    void setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+    int8_t invertDisplay(bool);
+    int8_t commitFrameBuffer();
+
+    int8_t setBrightness(float);
+    int8_t enableDisplay(bool enable);
+    void printDebug(StringBuilder*);
+
+    /* Overrides from the BusAdapter interface */
+    int8_t io_op_callahead(BusOp*);
+    int8_t io_op_callback(BusOp*);
+    int8_t queue_io_job(BusOp*);
+
+    /* Built-in per-instance console handler. */
+    int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
+
+
+  private:
+    const SSD13xxOpts _opts;
+    bool  _enabled  = false;
+    bool  _initd    = false;
+    SPIAdapter* _BUS = nullptr;
+    StopWatch     _stopwatch;
+    SPIBusOp    _fb_data_op;  // We do this frequently enough.
+
+    int8_t _ll_pin_init();
+
+    int8_t _send_command(uint8_t commandByte, uint8_t* dataBytes, uint8_t numDataBytes);
+    inline int8_t _send_command(uint8_t commandByte) {
+      return _send_command(commandByte, nullptr, 0);
+    };
+};
+
+
+// Class to manage hardware interface with SSD13xx chipset
+class SSD1351 : public Image, public BusOpCallback {
+  // NOTE: As of this writing (2022.01.15), this class's copy-pasta is freshest.
+  public:
+    SSD1351(const SSD13xxOpts* opts);
+    ~SSD1351();
 
     inline void setBus(SPIAdapter* b) {  _BUS = b;  };
     int8_t init(SPIAdapter*);

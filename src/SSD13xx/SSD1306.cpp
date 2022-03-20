@@ -110,7 +110,6 @@ int8_t SSD1306::io_op_callback(BusOp* _op) {
   }
   else if (initialized()) {
     // This driver never reads back from the display. All BusOps are TX.
-    uint8_t arg_buf[4];
     // NOTE: The check below won't account for commands that have arguments
     //   built into the same byte. Should probably have a mask and heuristic
     //   check in the default case if we are ever interested in acting upon those.

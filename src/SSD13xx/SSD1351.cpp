@@ -1,5 +1,5 @@
 /***************************************************
-  This is a library for the 0.96" 16-bit Color OLED with SSD1331 driver chip
+  This is a library for the 0.96" 16-bit Color OLED with SSD1351 driver chip
 
   Pick one up today in the adafruit shop!
   ------> http://www.adafruit.com/products/684
@@ -46,35 +46,35 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "AbstractPlatform.h"
 
 // Timing Delays
-#define SSD1331_DELAYS_HWFILL     (3)
-#define SSD1331_DELAYS_HWLINE     (1)
+#define SSD1351_DELAYS_HWFILL     (3)
+#define SSD1351_DELAYS_HWLINE     (1)
 
-// SSD1331 Commands
-#define SSD1331_CMD_DRAWLINE       0x21
-#define SSD1331_CMD_DRAWRECT       0x22
-#define SSD1331_CMD_FILL           0x26
-#define SSD1331_CMD_SETCOLUMN      0x15
-#define SSD1331_CMD_SETROW         0x75
-#define SSD1331_CMD_CONTRASTA      0x81
-#define SSD1331_CMD_CONTRASTB      0x82
-#define SSD1331_CMD_CONTRASTC      0x83
-#define SSD1331_CMD_MASTERCURRENT  0x87
-#define SSD1331_CMD_STARTLINE      0xA1
-#define SSD1331_CMD_DISPLAYOFFSET  0xA2
-#define SSD1331_CMD_NORMALDISPLAY  0xA4
-#define SSD1331_CMD_DISPLAYALLON   0xA5
-#define SSD1331_CMD_DISPLAYALLOFF  0xA6
-#define SSD1331_CMD_SETMASTER      0xAD
-#define SSD1331_CMD_DISPLAYOFF     0xAE
-#define SSD1331_CMD_DISPLAYON      0xAF
-#define SSD1331_CMD_POWERMODE      0xB0
-#define SSD1331_CMD_PRECHARGE      0xB1
-#define SSD1331_CMD_CLOCKDIV       0xB3
-#define SSD1331_CMD_PRECHARGEA     0x8A
-#define SSD1331_CMD_PRECHARGEB     0x8B
-#define SSD1331_CMD_PRECHARGEC     0x8C
-#define SSD1331_CMD_PRECHARGELEVEL 0xBB
-#define SSD1331_CMD_VCOMH          0xBE
+// SSD1351 Commands
+#define SSD1351_CMD_DRAWLINE       0x21
+#define SSD1351_CMD_DRAWRECT       0x22
+#define SSD1351_CMD_FILL           0x26
+#define SSD1351_CMD_SETCOLUMN      0x15
+#define SSD1351_CMD_SETROW         0x75
+#define SSD1351_CMD_CONTRASTA      0x81
+#define SSD1351_CMD_CONTRASTB      0x82
+#define SSD1351_CMD_CONTRASTC      0x83
+#define SSD1351_CMD_MASTERCURRENT  0x87
+#define SSD1351_CMD_STARTLINE      0xA1
+#define SSD1351_CMD_DISPLAYOFFSET  0xA2
+#define SSD1351_CMD_NORMALDISPLAY  0xA4
+#define SSD1351_CMD_DISPLAYALLON   0xA5
+#define SSD1351_CMD_DISPLAYALLOFF  0xA6
+#define SSD1351_CMD_SETMASTER      0xAD
+#define SSD1351_CMD_DISPLAYOFF     0xAE
+#define SSD1351_CMD_DISPLAYON      0xAF
+#define SSD1351_CMD_POWERMODE      0xB0
+#define SSD1351_CMD_PRECHARGE      0xB1
+#define SSD1351_CMD_CLOCKDIV       0xB3
+#define SSD1351_CMD_PRECHARGEA     0x8A
+#define SSD1351_CMD_PRECHARGEB     0x8B
+#define SSD1351_CMD_PRECHARGEC     0x8C
+#define SSD1351_CMD_PRECHARGELEVEL 0xBB
+#define SSD1351_CMD_VCOMH          0xBE
 
 
 ImgBufferFormat _get_img_fmt_for_ssd(SSDModel m) {
@@ -120,7 +120,7 @@ uint32_t _get_img_y_for_ssd(SSDModel m) {
 /**
 * Constructor.
 */
-SSD1331::SSD1331(const SSD13xxOpts* o)
+SSD1351::SSD1351(const SSD13xxOpts* o)
   : Image(_get_img_x_for_ssd(o->model),
     _get_img_y_for_ssd(o->model),
     _get_img_fmt_for_ssd(o->model)),
@@ -134,7 +134,7 @@ SSD1331::SSD1331(const SSD13xxOpts* o)
 /**
 * Destructor. Should never be called.
 */
-SSD1331::~SSD1331() {}
+SSD1351::~SSD1351() {}
 
 
 /*******************************************************************************
@@ -152,7 +152,7 @@ SSD1331::~SSD1331() {}
 * @param  _op  The bus operation that is about to run.
 * @return 0 to run the op, or non-zero to cancel it.
 */
-int8_t SSD1331::io_op_callahead(BusOp* _op) {
+int8_t SSD1351::io_op_callahead(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   bool data_xfer = (op->transferParamLength() == 0);
   if (data_xfer) {  // Was this a frame refresh?
@@ -172,7 +172,7 @@ int8_t SSD1331::io_op_callahead(BusOp* _op) {
 * @param  _op  The bus operation that was completed.
 * @return BUSOP_CALLBACK_NOMINAL on success, or appropriate error code.
 */
-int8_t SSD1331::io_op_callback(BusOp* _op) {
+int8_t SSD1351::io_op_callback(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   int8_t ret = BUSOP_CALLBACK_ERROR;
 
@@ -189,81 +189,81 @@ int8_t SSD1331::io_op_callback(BusOp* _op) {
     else {
       uint8_t arg_buf[4];
       switch (op->getTransferParam(0)) {
-        case SSD1331_CMD_DISPLAYON:
+        case SSD1351_CMD_DISPLAYON:
           _enabled = true;
           //commitFrameBuffer();
           break;
-        case SSD1331_CMD_DISPLAYOFF:   _enabled = false;      break;
+        case SSD1351_CMD_DISPLAYOFF:   _enabled = false;      break;
         case SSD13XX_CMD_SETREMAP:
           arg_buf[0] = 0x00;
-          _send_command(SSD1331_CMD_STARTLINE, arg_buf, 1);   // 0xA1
+          _send_command(SSD1351_CMD_STARTLINE, arg_buf, 1);   // 0xA1
           break;
-        case SSD1331_CMD_STARTLINE:
+        case SSD1351_CMD_STARTLINE:
           arg_buf[0] = 0x00;
-          _send_command(SSD1331_CMD_DISPLAYOFFSET, arg_buf, 1);   // 0xA2
+          _send_command(SSD1351_CMD_DISPLAYOFFSET, arg_buf, 1);   // 0xA2
           break;
-        case SSD1331_CMD_DISPLAYOFFSET:
-          _send_command(SSD1331_CMD_NORMALDISPLAY);    // 0xA4
+        case SSD1351_CMD_DISPLAYOFFSET:
+          _send_command(SSD1351_CMD_NORMALDISPLAY);    // 0xA4
           break;
-        case SSD1331_CMD_NORMALDISPLAY:
+        case SSD1351_CMD_NORMALDISPLAY:
           arg_buf[0] = 0x3F;  // 0x3F 1/64 duty
           _send_command(SSD13XX_CMD_SETMULTIPLEX, arg_buf, 1);   // 0xA8
           break;
         case SSD13XX_CMD_SETMULTIPLEX:
           arg_buf[0] = 0x8E;
-          _send_command(SSD1331_CMD_SETMASTER, arg_buf, 1);    // 0xAD
+          _send_command(SSD1351_CMD_SETMASTER, arg_buf, 1);    // 0xAD
           break;
-        case SSD1331_CMD_SETMASTER:
+        case SSD1351_CMD_SETMASTER:
           arg_buf[0] = 0x0B;
-          _send_command(SSD1331_CMD_POWERMODE, arg_buf, 1);    // 0xB0
+          _send_command(SSD1351_CMD_POWERMODE, arg_buf, 1);    // 0xB0
           break;
-        case SSD1331_CMD_POWERMODE:
+        case SSD1351_CMD_POWERMODE:
           arg_buf[0] = 0x31;
-          _send_command(SSD1331_CMD_PRECHARGE, arg_buf, 1);    // 0xB1
+          _send_command(SSD1351_CMD_PRECHARGE, arg_buf, 1);    // 0xB1
           break;
-        case SSD1331_CMD_PRECHARGE:
+        case SSD1351_CMD_PRECHARGE:
           arg_buf[0] = 0xF0;  // 7:4 = Oscillator Frequency, 3:0 = CLK Div Ratio (A[3:0]+1 = 1..16)
-          _send_command(SSD1331_CMD_CLOCKDIV, arg_buf, 1);    // 0xB3
+          _send_command(SSD1351_CMD_CLOCKDIV, arg_buf, 1);    // 0xB3
           break;
-        case SSD1331_CMD_CLOCKDIV:
+        case SSD1351_CMD_CLOCKDIV:
           arg_buf[0] = 0x64;
-          _send_command(SSD1331_CMD_PRECHARGEA, arg_buf, 1);    // 0x8A
+          _send_command(SSD1351_CMD_PRECHARGEA, arg_buf, 1);    // 0x8A
           break;
-        case SSD1331_CMD_PRECHARGEA:
+        case SSD1351_CMD_PRECHARGEA:
           arg_buf[0] = 0x78;
-          _send_command(SSD1331_CMD_PRECHARGEB, arg_buf, 1);    // 0x8B
+          _send_command(SSD1351_CMD_PRECHARGEB, arg_buf, 1);    // 0x8B
           break;
-        case SSD1331_CMD_PRECHARGEB:
+        case SSD1351_CMD_PRECHARGEB:
           arg_buf[0] = 0x64;
-          _send_command(SSD1331_CMD_PRECHARGEC, arg_buf, 1);    // 0x8C
+          _send_command(SSD1351_CMD_PRECHARGEC, arg_buf, 1);    // 0x8C
           break;
-        case SSD1331_CMD_PRECHARGEC:
+        case SSD1351_CMD_PRECHARGEC:
           arg_buf[0] = 0x3A;
-          _send_command(SSD1331_CMD_PRECHARGELEVEL, arg_buf, 1);    // 0xBB
+          _send_command(SSD1351_CMD_PRECHARGELEVEL, arg_buf, 1);    // 0xBB
           break;
-        case SSD1331_CMD_PRECHARGELEVEL:
+        case SSD1351_CMD_PRECHARGELEVEL:
           arg_buf[0] = 0x3E;
-          _send_command(SSD1331_CMD_VCOMH, arg_buf, 1);      // 0xBE
+          _send_command(SSD1351_CMD_VCOMH, arg_buf, 1);      // 0xBE
           break;
-        case SSD1331_CMD_VCOMH:
+        case SSD1351_CMD_VCOMH:
           arg_buf[0] = 0x06;
-          _send_command(SSD1331_CMD_MASTERCURRENT, arg_buf, 1);    // 0x87
+          _send_command(SSD1351_CMD_MASTERCURRENT, arg_buf, 1);    // 0x87
           break;
-        case SSD1331_CMD_MASTERCURRENT:
+        case SSD1351_CMD_MASTERCURRENT:
           arg_buf[0] = 0x91;
-          _send_command(SSD1331_CMD_CONTRASTA, arg_buf, 1);    // 0x81
+          _send_command(SSD1351_CMD_CONTRASTA, arg_buf, 1);    // 0x81
           break;
-        case SSD1331_CMD_CONTRASTA:
+        case SSD1351_CMD_CONTRASTA:
           arg_buf[0] = 0x50;
-          _send_command(SSD1331_CMD_CONTRASTB, arg_buf, 1);    // 0x82
+          _send_command(SSD1351_CMD_CONTRASTB, arg_buf, 1);    // 0x82
           break;
-        case SSD1331_CMD_CONTRASTB:
+        case SSD1351_CMD_CONTRASTB:
           arg_buf[0] = 0x7D;
-          _send_command(SSD1331_CMD_CONTRASTC, arg_buf, 1);    // 0x83
+          _send_command(SSD1351_CMD_CONTRASTC, arg_buf, 1);    // 0x83
           break;
-        case SSD1331_CMD_CONTRASTC:
+        case SSD1351_CMD_CONTRASTC:
           _initd = true;  // This is the last register written in the init sequence.
-          _send_command(SSD1331_CMD_DISPLAYON);  //--turn on oled panel
+          _send_command(SSD1351_CMD_DISPLAYON);  //--turn on oled panel
           break;
         default:
           break;
@@ -287,7 +287,7 @@ int8_t SSD1331::io_op_callback(BusOp* _op) {
 * @param  _op  The bus operation to execute.
 * @return Zero on success, or appropriate error code.
 */
-int8_t SSD1331::queue_io_job(BusOp* _op) {
+int8_t SSD1351::queue_io_job(BusOp* _op) {
   // This is the choke-point whereby any parameters to the operation that are
   //   uniform for this driver can be set.
   SPIBusOp* op = (SPIBusOp*) _op;
@@ -308,7 +308,7 @@ int8_t SSD1331::queue_io_job(BusOp* _op) {
   @param  w  Width of window
   @param  h  Height of window
 */
-void SSD1331::setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+void SSD1351::setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
   uint8_t x1 = x;
   uint8_t y1 = y;
   if (x1 > 95) x1 = 95;
@@ -342,7 +342,7 @@ void SSD1331::setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
 *        -2 if write is already in progress
 *        -3 on I/O rejection by adapter
 */
-int8_t SSD1331::commitFrameBuffer() {
+int8_t SSD1351::commitFrameBuffer() {
   int8_t ret = -1;
   if (_initd) {
     ret--;
@@ -363,17 +363,17 @@ int8_t SSD1331::commitFrameBuffer() {
 }
 
 
-int8_t SSD1331::invertDisplay(bool flipped) {
+int8_t SSD1351::invertDisplay(bool flipped) {
   return _send_command(SSD13XX_CMD_INVERTDISPLAY);
 }
 
 
 /*!
-    @brief   Initialize SSD1331 chip.
-    Connects to the SSD1331 over SPI and sends initialization procedure commands
+    @brief   Initialize SSD1351 chip.
+    Connects to the SSD1351 over SPI and sends initialization procedure commands
     @param    freq  Desired SPI clock frequency
 */
-int8_t SSD1331::init(SPIAdapter* b) {
+int8_t SSD1351::init(SPIAdapter* b) {
   int8_t ret = -1;
   _initd = false;
   if ( nullptr != b) {
@@ -397,7 +397,7 @@ int8_t SSD1331::init(SPIAdapter* b) {
         uint8_t arg_buf[4];
         // Initialization Sequence begins here and is carried forward by the
         //   io_callback.
-        _send_command(SSD1331_CMD_DISPLAYOFF);    // 0xAE
+        _send_command(SSD1351_CMD_DISPLAYOFF);    // 0xAE
         arg_buf[0] = 0x72; // RGB Color
         if (0 == _send_command(SSD13XX_CMD_SETREMAP, arg_buf, 1)) {
           ret = 0;
@@ -409,7 +409,7 @@ int8_t SSD1331::init(SPIAdapter* b) {
 }
 
 
-int8_t SSD1331::setBrightness(float percentage) {
+int8_t SSD1351::setBrightness(float percentage) {
   int8_t ret = -1;
   if ((percentage <= 1.0) && (percentage >= 0.0)) {
     uint8_t arg_buf[3] = {
@@ -417,9 +417,9 @@ int8_t SSD1331::setBrightness(float percentage) {
       (uint8_t) (percentage * 255.0),
       (uint8_t) (percentage * 255.0)
     };
-    if (0 == _send_command(SSD1331_CMD_CONTRASTA, &arg_buf[0], 1)) {
-      if (0 == _send_command(SSD1331_CMD_CONTRASTB, &arg_buf[1], 1)) {
-        if (0 == _send_command(SSD1331_CMD_CONTRASTC, &arg_buf[2], 1)) {
+    if (0 == _send_command(SSD1351_CMD_CONTRASTA, &arg_buf[0], 1)) {
+      if (0 == _send_command(SSD1351_CMD_CONTRASTB, &arg_buf[1], 1)) {
+        if (0 == _send_command(SSD1351_CMD_CONTRASTC, &arg_buf[2], 1)) {
           ret = 0;
         }
       }
@@ -433,12 +433,12 @@ int8_t SSD1331::setBrightness(float percentage) {
   @brief  Change whether display is on or off
   @param   enable True if you want the display ON, false OFF
 */
-int8_t SSD1331::enableDisplay(bool enable) {
+int8_t SSD1351::enableDisplay(bool enable) {
   int8_t ret = -1;
   if (_initd) {
     ret--;
     if (enable ^ _enabled) {
-      ret = _send_command(enable ? SSD1331_CMD_DISPLAYON : SSD1331_CMD_DISPLAYOFF);
+      ret = _send_command(enable ? SSD1351_CMD_DISPLAYON : SSD1351_CMD_DISPLAYOFF);
     }
     else {
       ret = 0;
@@ -457,7 +457,7 @@ int8_t SSD1331::enableDisplay(bool enable) {
  @param   dataBytes         A pointer to the Data bytes to send
  @param   numDataBytes      The number of bytes we should send
  */
-int8_t SSD1331::_send_command(uint8_t commandByte, uint8_t* buf, uint8_t buf_len) {
+int8_t SSD1351::_send_command(uint8_t commandByte, uint8_t* buf, uint8_t buf_len) {
   int8_t ret = -2;
   if (nullptr != _BUS) {
     ret--;
@@ -485,7 +485,7 @@ int8_t SSD1331::_send_command(uint8_t commandByte, uint8_t* buf, uint8_t buf_len
 *
 * @return 0 on success. -1 otherwise.
 */
-int8_t SSD1331::reset() {
+int8_t SSD1351::reset() {
   int8_t ret = -1;
   if (255 != _opts.reset) {
     setPin(_opts.reset, false);  // Hold the display in reset.
@@ -503,7 +503,7 @@ int8_t SSD1331::reset() {
 *
 * @return 0 on success. -1 otherwise.
 */
-int8_t SSD1331::_ll_pin_init() {
+int8_t SSD1351::_ll_pin_init() {
   int8_t ret = -1;
   if (255 != _opts.reset) {
     pinMode(_opts.reset, GPIOMode::OUTPUT);
@@ -527,9 +527,9 @@ int8_t SSD1331::_ll_pin_init() {
 *
 * @param   StringBuilder* The buffer into which this fxn should write its output.
 */
-void SSD1331::printDebug(StringBuilder* output) {
+void SSD1351::printDebug(StringBuilder* output) {
   StringBuilder temp;
-  temp.concatf("SSD1331 (%u x %u)", x(), y());
+  temp.concatf("SSD1351 (%u x %u)", x(), y());
   StringBuilder::styleHeader1(output, (const char*) temp.string());
   temp.clear();
   _fb_data_op.printDebug(output);
@@ -555,7 +555,7 @@ void SSD1331::printDebug(StringBuilder* output) {
 * These are built-in handlers for using this instance via a console.
 *******************************************************************************/
 
-int8_t SSD1331::console_handler(StringBuilder* text_return, StringBuilder* args) {
+int8_t SSD1351::console_handler(StringBuilder* text_return, StringBuilder* args) {
   int ret = 0;
   char* cmd = args->position_trimmed(0);
   uint32_t millis_0 = millis();

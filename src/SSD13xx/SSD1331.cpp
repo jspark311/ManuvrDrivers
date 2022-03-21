@@ -77,37 +77,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SSD1331_CMD_VCOMH          0xBE
 
 
-ImgBufferFormat _get_img_fmt_for_ssd(SSDModel m) {
-  switch (m) {
-    case SSDModel::SSD1306:   return ImgBufferFormat::MONOCHROME;
-    case SSDModel::SSD1309:   return ImgBufferFormat::MONOCHROME;
-    case SSDModel::SSD1331:   return ImgBufferFormat::R5_G6_B5;
-    case SSDModel::SSD1351:   return ImgBufferFormat::R5_G6_B5;
-  }
-  return ImgBufferFormat::MONOCHROME;
-}
-
-uint32_t _get_img_x_for_ssd(SSDModel m) {
-  switch (m) {
-    case SSDModel::SSD1306:   return 128;
-    case SSDModel::SSD1309:   return 128;
-    case SSDModel::SSD1331:   return 96;
-    case SSDModel::SSD1351:   return 128;
-  }
-  return 0;
-}
-
-uint32_t _get_img_y_for_ssd(SSDModel m) {
-  switch (m) {
-    case SSDModel::SSD1306:   return 64;
-    case SSDModel::SSD1309:   return 64;
-    case SSDModel::SSD1331:   return 64;
-    case SSDModel::SSD1351:   return 128;
-  }
-  return 0;
-}
-
-
 /*******************************************************************************
 *   ___ _              ___      _ _              _      _
 *  / __| |__ _ ______ | _ ) ___(_) |___ _ _ _ __| |__ _| |_ ___
@@ -120,16 +89,9 @@ uint32_t _get_img_y_for_ssd(SSDModel m) {
 /**
 * Constructor.
 */
-SSD1331::SSD1331(const SSD13xxOpts* o)
-  : Image(_get_img_x_for_ssd(o->model),
-    _get_img_y_for_ssd(o->model),
-    _get_img_fmt_for_ssd(o->model)),
-    _opts(o),
-    _fb_data_op(BusOpcode::TX, this, o->cs, false)
-{
-  _is_framebuffer(true);
-}
-
+SSD1331::SSD1331(const SSD13xxOpts* OPTS)
+  : SSD13xx(OPTS, SSDModel::SSD1331),
+    _fb_data_op(BusOpcode::TX, this, OPTS->cs, false) {}
 
 /**
 * Destructor. Should never be called.
@@ -182,7 +144,7 @@ int8_t SSD1331::io_op_callback(BusOp* _op) {
     if (op->transferParamLength() == 0) {  // Was this a frame refresh?
       _lock(false);
       _stopwatch.markStop();
-      if (_enabled && _initd) {
+      if (enabled() && initialized()) {
         //ret = BUSOP_CALLBACK_RECYCLE;
       }
     }
@@ -190,10 +152,12 @@ int8_t SSD1331::io_op_callback(BusOp* _op) {
       uint8_t arg_buf[4];
       switch (op->getTransferParam(0)) {
         case SSD1331_CMD_DISPLAYON:
-          _enabled = true;
+          _class_set_flag(SSD13XX_FLAG_ENABLED);
           //commitFrameBuffer();
           break;
-        case SSD1331_CMD_DISPLAYOFF:   _enabled = false;      break;
+        case SSD1331_CMD_DISPLAYOFF:
+          _class_clear_flag(SSD13XX_FLAG_ENABLED);
+          break;
         case SSD13XX_CMD_SETREMAP:
           arg_buf[0] = 0x00;
           _send_command(SSD1331_CMD_STARTLINE, arg_buf, 1);   // 0xA1
@@ -262,7 +226,8 @@ int8_t SSD1331::io_op_callback(BusOp* _op) {
           _send_command(SSD1331_CMD_CONTRASTC, arg_buf, 1);    // 0x83
           break;
         case SSD1331_CMD_CONTRASTC:
-          _initd = true;  // This is the last register written in the init sequence.
+          // This is the last register written in the init sequence.
+          _class_set_flag(SSD13XX_FLAG_ENABLED);
           _send_command(SSD1331_CMD_DISPLAYON);  //--turn on oled panel
           break;
         default:
@@ -344,7 +309,7 @@ void SSD1331::setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
 */
 int8_t SSD1331::commitFrameBuffer() {
   int8_t ret = -1;
-  if (_initd) {
+  if (initialized()) {
     ret--;
     if (_fb_data_op.hasFault()) {
       // If there was a bus fault, the BusOp might be left in a COMPLTE state.
@@ -375,7 +340,7 @@ int8_t SSD1331::invertDisplay(bool flipped) {
 */
 int8_t SSD1331::init(SPIAdapter* b) {
   int8_t ret = -1;
-  _initd = false;
+  _class_clear_flag(SSD13XX_FLAG_ENABLED | SSD13XX_FLAG_INITIALIZED);
   if ( nullptr != b) {
     _BUS = b;
   }
@@ -435,9 +400,9 @@ int8_t SSD1331::setBrightness(float percentage) {
 */
 int8_t SSD1331::enableDisplay(bool enable) {
   int8_t ret = -1;
-  if (_initd) {
+  if (initialized()) {
     ret--;
-    if (enable ^ _enabled) {
+    if (enable ^ enabled()) {
       ret = _send_command(enable ? SSD1331_CMD_DISPLAYON : SSD1331_CMD_DISPLAYOFF);
     }
     else {
@@ -537,8 +502,8 @@ void SSD1331::printDebug(StringBuilder* output) {
     output->concatf("\tFB BusOp fault: %s\n", BusOp::getErrorString(_fb_data_op.getFault()));
   }
   output->concatf("\tLocked:    %c\n", (locked() ? 'y': 'n'));
-  output->concatf("\tInitd:     %c\n", (_initd ? 'y': 'n'));
-  output->concatf("\tEnabled:   %c\n", (_enabled ? 'y': 'n'));
+  output->concatf("\tInitd:     %c\n", (initialized() ? 'y': 'n'));
+  output->concatf("\tEnabled:   %c\n", (enabled() ? 'y': 'n'));
   output->concatf("\tDirty:     %c\n", (_is_dirty() ? 'y': 'n'));
   output->concatf("\tAllocated: %c\n", (allocated() ? 'y': 'n'));
   output->concatf("\tPixels:    %u\n", pixels());

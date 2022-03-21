@@ -25,10 +25,6 @@
 #define SSD1309_CMD_SETVCOM_DESELECT 0xDB  // Takes an additional byte argument.
 #define SSD1309_CMD_SET_CMD_LOCK     0xFD  // Takes an additional byte argument.
 
-extern ImgBufferFormat _get_img_fmt_for_ssd(SSDModel);
-extern uint32_t _get_img_x_for_ssd(SSDModel);
-extern uint32_t _get_img_y_for_ssd(SSDModel);
-
 
 /*******************************************************************************
 *   ___ _              ___      _ _              _      _
@@ -42,15 +38,9 @@ extern uint32_t _get_img_y_for_ssd(SSDModel);
 /**
 * Constructor.
 */
-SSD1309::SSD1309(const SSD13xxOpts* o)
-  : Image(_get_img_x_for_ssd(o->model),
-    _get_img_y_for_ssd(o->model),
-    _get_img_fmt_for_ssd(o->model)),
-    _opts(o),
-    _fb_data_op(BusOpcode::TX, this, o->cs, false)
-{
-  _is_framebuffer(true);
-}
+SSD1309::SSD1309(const SSD13xxOpts* OPTS)
+  : SSD13xx(OPTS, SSDModel::SSD1309),
+    _fb_data_op(BusOpcode::TX, this, OPTS->cs, false) {}
 
 
 /**
@@ -106,7 +96,7 @@ int8_t SSD1309::io_op_callback(BusOp* _op) {
   if (op == &_fb_data_op) {  // Was this a frame refresh?
     _lock(false);
     _stopwatch.markStop();
-    if (_enabled && initialized()) {
+    if (enabled() && initialized()) {
       //ret = BUSOP_CALLBACK_RECYCLE;
     }
   }
@@ -117,10 +107,10 @@ int8_t SSD1309::io_op_callback(BusOp* _op) {
     //   check in the default case if we are ever interested in acting upon those.
     switch (op->getTransferParam(0)) {
       case SSD1309_CMD_DISPLAYOFF:
-        _enabled = false;
+        _class_clear_flag(SSD13XX_FLAG_ENABLED);
         break;
       case SSD1309_CMD_DISPLAYON:
-        _enabled = true;
+        _class_set_flag(SSD13XX_FLAG_ENABLED);
         commitFrameBuffer();
         break;
       default:
@@ -281,14 +271,14 @@ int8_t SSD1309::_internal_init_fsm() {
       break;
 
     case 5:
-      arg_buf[0] = _vert_scan ? 1 : 0;  // Horizontal memory increment.
+      arg_buf[0] = verticalScan() ? 1 : 0;  // Horizontal memory increment.
       if (0 == _send_command(SSD1309_CMD_MEMMODE, arg_buf, 1)) {        _init_state++;  }
       break;
     case 6:
-      if (0 == _send_command(SSD13XX_CMD_SETREMAP | (_remap_enable ? 1 : 0), nullptr, 0)) {   _init_state++;  }
+      if (0 == _send_command(SSD13XX_CMD_SETREMAP | (enableRemap() ? 1 : 0), nullptr, 0)) {   _init_state++;  }
       break;
     case 7:
-      if (0 == _send_command(_com_scan_dec ? SSD1309_CMD_COMSCANDEC : SSD1309_CMD_COMSCANINC, nullptr, 0)) {     _init_state++;  }
+      if (0 == _send_command(comScanDecrements() ? SSD1309_CMD_COMSCANDEC : SSD1309_CMD_COMSCANINC, nullptr, 0)) {     _init_state++;  }
       break;
 
     case 8:
@@ -297,7 +287,7 @@ int8_t SSD1309::_internal_init_fsm() {
       break;
     case 9:
       // TODO: Are we contrast limited on external vcc? Why this differential?
-      arg_buf[0] = _external_vcc ? 0x9F : 0xCF;
+      arg_buf[0] = externalVCC() ? 0x9F : 0xCF;
       if (0 == _send_command(SSD1309_CMD_CONTRAST, arg_buf, 1)) {       _init_state++;  }
       break;
 
@@ -335,13 +325,14 @@ int8_t SSD1309::_internal_init_fsm() {
 
     case 17:
       if (0 == _send_command(SSD1309_CMD_DISPLAYON, nullptr, 0)) {      _init_state++;  }
-      _enabled = true;
+      _class_set_flag(SSD13XX_FLAG_ENABLED);
       break;
 
     case 18:
       // Initialized and enabled.
       commitFrameBuffer();
       _init_state++;
+      _class_set_flag(SSD13XX_FLAG_INITIALIZED);
       break;
     default:
       break;
@@ -368,7 +359,7 @@ int8_t SSD1309::enableDisplay(bool enable) {
   int8_t ret = -1;
   if (initialized()) {
     ret--;
-    if (enable ^ _enabled) {
+    if (enable ^ enabled()) {
       ret = _send_command(enable ? SSD1309_CMD_DISPLAYON : SSD1309_CMD_DISPLAYOFF);
     }
     else {
@@ -466,16 +457,16 @@ void SSD1309::printDebug(StringBuilder* output) {
   temp.clear();
   output->concatf("\tLocked:    %c\n", (locked() ? 'y': 'n'));
   output->concatf("\tInitd:     %c (state %u)\n", (initialized() ? 'y': 'n'), _init_state);
-  output->concatf("\tEnabled:   %c\n", (_enabled ? 'y': 'n'));
+  output->concatf("\tEnabled:   %c\n", (enabled() ? 'y': 'n'));
   output->concatf("\tDirty:     %c\n", (_is_dirty() ? 'y': 'n'));
   output->concatf("\tAllocated: %c\n", (allocated() ? 'y': 'n'));
   output->concatf("\tPixels:    %u\n", pixels());
   output->concatf("\tBits/pix:  %u\n", _bits_per_pixel());
   output->concatf("\tBytes:     %u\n", bytesUsed());
-  output->concatf("\tExtVCC:    %c\n", (_external_vcc ? 'y': 'n'));
-  output->concatf("\tComScan:   %s\n", (_com_scan_dec ? "Dec" : "Inc"));
-  output->concatf("\tRemap:     %c\n", (_remap_enable ? 'y': 'n'));
-  output->concatf("\tScan:      %s\n", (_vert_scan ? "Vert" : "Horz"));
+  output->concatf("\tExtVCC:    %c\n", (externalVCC() ? 'y': 'n'));
+  output->concatf("\tComScan:   %s\n", (comScanDecrements() ? "Dec" : "Inc"));
+  output->concatf("\tRemap:     %c\n", (enableRemap() ? 'y': 'n'));
+  output->concatf("\tScan:      %s\n", (verticalScan() ? "Vert" : "Horz"));
   output->concatf("\tCOM conf:  0x%02x\n", _com_pin_conf);
   output->concatf("\tOffset:    %u\n", _disp_offset);
   output->concatf("\tStartLine: %u\n\n", _start_line);

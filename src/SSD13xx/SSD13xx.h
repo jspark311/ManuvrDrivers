@@ -58,6 +58,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SSD13XX_FLAG_INITIALIZED   0x01  //
 #define SSD13XX_FLAG_ENABLED       0x02  //
 #define SSD13XX_FLAG_FB_IN_FLIGHT  0x04  //
+#define SSD13XX_FLAG_EXTERNAL_VCC  0x10  //
+#define SSD13XX_FLAG_COM_SCAN_DEC  0x20  //
+#define SSD13XX_FLAG_REMAP_ENABLE  0x40  //
+#define SSD13XX_FLAG_VERT_SCAN     0x80  //
 
 
 /* Supported SSD chipsets */
@@ -79,49 +83,77 @@ class SSD13xxOpts {
       orientation(p->orientation),
       reset(p->reset),
       dc(p->dc),
-      cs(p->cs),
-      model(p->model)
+      cs(p->cs)
     {};
 
     SSD13xxOpts(
       ImgOrientation _or,
       uint8_t _reset,
       uint8_t _dc,
-      uint8_t _cs,
-      SSDModel _m
+      uint8_t _cs
     ) :
       orientation(_or),
       reset(_reset),
       dc(_dc),
-      cs(_cs),
-      model(_m)
+      cs(_cs)
     {};
 
     const ImgOrientation orientation;  //
     const uint8_t        reset;        //
     const uint8_t        dc;           //
     const uint8_t        cs;           //
-    const SSDModel       model;        //
 };
 
 
+/*
+* This is a virtual class to handle the boilerplate of this display family.
+* TODO: Continue gracefully degrading back into a proper inheritance pattern.
+*/
+class SSD13xx : public Image {
+  public:
+    inline bool initialized() {              return _class_flag(SSD13XX_FLAG_INITIALIZED);   };
+    inline bool enabled() {                  return _class_flag(SSD13XX_FLAG_ENABLED);       };
+    inline bool externalVCC() {              return _class_flag(SSD13XX_FLAG_EXTERNAL_VCC);  };
+    inline bool comScanDecrements() {        return _class_flag(SSD13XX_FLAG_COM_SCAN_DEC);  };
+    inline bool enableRemap() {              return _class_flag(SSD13XX_FLAG_REMAP_ENABLE);  };
+    inline bool verticalScan() {             return _class_flag(SSD13XX_FLAG_VERT_SCAN);     };
+
+    inline void externalVCC(bool x) {        _class_set_flag(SSD13XX_FLAG_EXTERNAL_VCC, x);  };
+    inline void comScanDecrements(bool x) {  _class_set_flag(SSD13XX_FLAG_COM_SCAN_DEC, x);  };
+    inline void enableRemap(bool x) {        _class_set_flag(SSD13XX_FLAG_REMAP_ENABLE, x);  };
+    inline void verticalScan(uint8_t x) {    _class_set_flag(SSD13XX_FLAG_VERT_SCAN, x);     };
+
+
+  protected:
+    const SSD13xxOpts _opts;
+    const SSDModel    _model;
+    uint8_t           _flags;
+    StopWatch         _stopwatch;
+
+    SSD13xx(const SSD13xxOpts*, const SSDModel);
+    ~SSD13xx() {};
+
+    /* Flag manipulation inlines */
+    inline uint8_t _class_flags() {                   return _flags;           };
+    inline uint8_t _class_flag(uint8_t _flag) {       return (_flags & _flag); };
+    inline void    _class_clear_flag(uint8_t _flag) { _flags &= ~_flag;        };
+    inline void    _class_set_flag(uint8_t _flag) {   _flags |= _flag;         };
+    inline void    _class_set_flag(uint8_t _flag, bool nu) {
+      if (nu) _flags |= _flag;
+      else    _flags &= ~_flag;
+    };
+};
+
 
 // Class to manage hardware interface with SSD13xx chipset
-class SSD1331 : public Image, public BusOpCallback {
-  // TODO: For now, this class only deals with the SSD1331. Due to early
-  //   brain-damage in this abstraction, support was replicated. This is no
-  //   longer necessary, and we can now gracefully degrade back into a proper
-  //   inheritance pattern.
-  // NOTE: As of this writing (2022.01.15), this class's copy-pasta is freshest.
+class SSD1331 : public SSD13xx, public BusOpCallback {
   public:
-    SSD1331(const SSD13xxOpts* opts);
+    SSD1331(const SSD13xxOpts*);
     ~SSD1331();
 
     inline void setBus(SPIAdapter* b) {  _BUS = b;  };
     int8_t init(SPIAdapter*);
     inline int8_t init() {        return init(_BUS);   };
-    inline bool enabled() {       return _enabled;     };
-    inline bool initialized() {   return _initd;       };
     int8_t reset();
 
     void setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
@@ -142,12 +174,8 @@ class SSD1331 : public Image, public BusOpCallback {
 
 
   private:
-    const SSD13xxOpts _opts;
-    bool  _enabled  = false;
-    bool  _initd    = false;
     SPIAdapter* _BUS = nullptr;
-    StopWatch     _stopwatch;
-    SPIBusOp    _fb_data_op;  // We do this frequently enough.
+    SPIBusOp    _fb_data_op;
 
     int8_t _ll_pin_init();
 
@@ -159,17 +187,14 @@ class SSD1331 : public Image, public BusOpCallback {
 
 
 // Class to manage hardware interface with SSD13xx chipset
-class SSD1351 : public Image, public BusOpCallback {
-  // NOTE: As of this writing (2022.01.15), this class's copy-pasta is freshest.
+class SSD1351 : public SSD13xx, public BusOpCallback {
   public:
-    SSD1351(const SSD13xxOpts* opts);
+    SSD1351(const SSD13xxOpts*);
     ~SSD1351();
 
     inline void setBus(SPIAdapter* b) {  _BUS = b;  };
     int8_t init(SPIAdapter*);
     inline int8_t init() {        return init(_BUS);   };
-    inline bool enabled() {       return _enabled;     };
-    inline bool initialized() {   return _initd;       };
     int8_t reset();
 
     void setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
@@ -190,11 +215,7 @@ class SSD1351 : public Image, public BusOpCallback {
 
 
   private:
-    const SSD13xxOpts _opts;
-    bool  _enabled  = false;
-    bool  _initd    = false;
     SPIAdapter* _BUS = nullptr;
-    StopWatch     _stopwatch;
     SPIBusOp    _fb_data_op;  // We do this frequently enough.
 
     int8_t _ll_pin_init();
@@ -208,16 +229,14 @@ class SSD1351 : public Image, public BusOpCallback {
 
 
 // Class to manage hardware interface with SSD1306 chipset
-class SSD1306 : public Image, public BusOpCallback {
+class SSD1306 : public SSD13xx, public BusOpCallback {
   public:
-    SSD1306(const SSD13xxOpts* opts);
+    SSD1306(const SSD13xxOpts*);
     ~SSD1306();
 
     inline void setBus(SPIAdapter* b) {  _BUS = b;  };
     int8_t init(SPIAdapter*);
     inline int8_t init() {        return init(_BUS);           };
-    inline bool enabled() {       return _enabled;             };
-    inline bool initialized() {   return (20 == _init_state);  };
     int8_t reset();
 
     void setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
@@ -225,11 +244,7 @@ class SSD1306 : public Image, public BusOpCallback {
     int8_t testDisplay(bool);
     int8_t commitFrameBuffer();
 
-    inline void externalVCC(bool x) {         _external_vcc = x;   };
-    inline void comScanDecrements(bool x) {   _com_scan_dec = x;   };
-    inline void enableRemap(bool x) {         _remap_enable = x;   };
     inline void comPinConf(uint8_t x) {       _com_pin_conf = x;   };
-    inline void verticalScan(uint8_t x) {     _vert_scan    = x;   };
     inline void startLine(uint8_t x) {        _start_line   = x;   };
     inline void displayOffset(uint8_t x) {    _disp_offset  = x;   };
 
@@ -244,20 +259,11 @@ class SSD1306 : public Image, public BusOpCallback {
 
 
   private:
-    const SSD13xxOpts _opts;
-    bool     _enabled      = false;
-    bool     _external_vcc = false;
-    bool     _com_scan_dec = false;
-    bool     _remap_enable = false;
-    bool     _vert_scan    = false;
-    uint8_t  _com_pin_conf = 0x02;
-    uint8_t  _disp_offset  = 0x00;
-
-    uint8_t  _init_state   = 0;
-    uint8_t  _start_line   = 0;
-
-    SPIAdapter* _BUS = nullptr;
-    StopWatch   _stopwatch;
+    uint8_t     _com_pin_conf = 0x02;
+    uint8_t     _disp_offset  = 0x00;
+    uint8_t     _init_state   = 0;
+    uint8_t     _start_line   = 0;
+    SPIAdapter* _BUS          = nullptr;
     SPIBusOp    _fb_data_op;  // We do this frequently enough.
 
     int8_t _ll_pin_init();
@@ -271,16 +277,14 @@ class SSD1306 : public Image, public BusOpCallback {
 
 
 // Class to manage hardware interface with SSD1309 chipset
-class SSD1309 : public Image, public BusOpCallback {
+class SSD1309 : public SSD13xx, public BusOpCallback {
   public:
-    SSD1309(const SSD13xxOpts* opts);
+    SSD1309(const SSD13xxOpts*);
     ~SSD1309();
 
     inline void setBus(SPIAdapter* b) {  _BUS = b;  };
     int8_t init(SPIAdapter*);
     inline int8_t init() {        return init(_BUS);           };
-    inline bool enabled() {       return _enabled;             };
-    inline bool initialized() {   return (19 == _init_state);  };
     int8_t reset();
 
     void setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
@@ -288,19 +292,11 @@ class SSD1309 : public Image, public BusOpCallback {
     int8_t testDisplay(bool);
     int8_t commitFrameBuffer();
 
-    inline void externalVCC(bool x) {         _external_vcc = x;   };
-    inline void comScanDecrements(bool x) {   _com_scan_dec = x;   };
-    inline void enableRemap(bool x) {         _remap_enable = x;   };
     inline void comPinConf(uint8_t x) {       _com_pin_conf = x;   };
-    inline void verticalScan(uint8_t x) {     _vert_scan    = x;   };
     inline void startLine(uint8_t x) {        _start_line   = x;   };
     inline void displayOffset(uint8_t x) {    _disp_offset  = x;   };
 
-    inline bool    externalVCC() {          return _external_vcc;  };
-    inline bool    comScanDecrements() {    return _com_scan_dec;  };
-    inline bool    enableRemap() {          return _remap_enable;  };
     inline uint8_t comPinConf() {           return _com_pin_conf;  };
-    inline uint8_t verticalScan() {         return _vert_scan;     };
     inline uint8_t startLine() {            return _start_line;    };
     inline uint8_t displayOffset() {        return _disp_offset;   };
 
@@ -315,20 +311,11 @@ class SSD1309 : public Image, public BusOpCallback {
 
 
   private:
-    const SSD13xxOpts _opts;
-    bool     _enabled      = false;
-    bool     _external_vcc = false;
-    bool     _com_scan_dec = false;
-    bool     _remap_enable = false;
-    bool     _vert_scan    = false;
-    uint8_t  _com_pin_conf = 0x02;
-    uint8_t  _disp_offset  = 0x00;
-
-    uint8_t  _init_state   = 0;
-    uint8_t  _start_line   = 0;
-
-    SPIAdapter* _BUS = nullptr;
-    StopWatch   _stopwatch;
+    uint8_t     _com_pin_conf = 0x02;
+    uint8_t     _disp_offset  = 0x00;
+    uint8_t     _init_state   = 0;
+    uint8_t     _start_line   = 0;
+    SPIAdapter* _BUS          = nullptr;
     SPIBusOp    _fb_data_op;  // We do this frequently enough.
 
     int8_t _ll_pin_init();

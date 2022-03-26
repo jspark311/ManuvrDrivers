@@ -227,7 +227,7 @@ int8_t SSD1331::io_op_callback(BusOp* _op) {
           break;
         case SSD1331_CMD_CONTRASTC:
           // This is the last register written in the init sequence.
-          _class_set_flag(SSD13XX_FLAG_ENABLED);
+          _class_set_flag(SSD13XX_FLAG_INITIALIZED);
           _send_command(SSD1331_CMD_DISPLAYON);  //--turn on oled panel
           break;
         default:
@@ -312,13 +312,12 @@ int8_t SSD1331::commitFrameBuffer() {
   if (initialized()) {
     ret--;
     if (_fb_data_op.hasFault()) {
-      // If there was a bus fault, the BusOp might be left in a COMPLTE state.
+      // If there was a bus fault, the BusOp might be left in an unqueuable state.
       // Try to reset the BusOp to satisfy the caller.
       _fb_data_op.markForRequeue();
     }
     if (_fb_data_op.isIdle()) {
       ret--;
-      //_fb_data_op.setBuffer(_buffer, bytesUsed());  // Buffer is in Image superclass.
       if (0 == _BUS->queue_io_job(&_fb_data_op)) {
         ret = 0;
       }

@@ -174,11 +174,31 @@ void SSD1306::setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
 }
 
 
+/**
+* Dispatch the framebuffer write operation. The display must be initialized and
+*   there must not already be such an I/O operation already in progress.
+*
+* @param  _op  The bus operation to execute.
+* @return 0 on success
+*        -1 on display not initd
+*        -2 if write is already in progress
+*        -3 on I/O rejection by adapter
+*/
 int8_t SSD1306::commitFrameBuffer() {
-  int8_t ret = -3;
-  if (_fb_data_op.isIdle()) {
-    //_fb_data_op.setBuffer(_buffer, bytesUsed());  // Buffer is in Image superclass.
-    ret = _BUS->queue_io_job(&_fb_data_op);
+  int8_t ret = -1;
+  if (initialized()) {
+    ret--;
+    if (_fb_data_op.hasFault()) {
+      // If there was a bus fault, the BusOp might be left in an unqueuable state.
+      // Try to reset the BusOp to satisfy the caller.
+      _fb_data_op.markForRequeue();
+    }
+    if (_fb_data_op.isIdle()) {
+      ret--;
+      if (0 == _BUS->queue_io_job(&_fb_data_op)) {
+        ret = 0;
+      }
+    }
   }
   return ret;
 }
@@ -329,8 +349,8 @@ int8_t SSD1306::_internal_init_fsm() {
 
     case 19:
       // Initialized and enabled.
-      commitFrameBuffer();
       _class_set_flag(SSD13XX_FLAG_INITIALIZED);
+      commitFrameBuffer();
       _init_state++;
       break;
     default:

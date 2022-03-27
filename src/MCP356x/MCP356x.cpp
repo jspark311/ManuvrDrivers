@@ -94,6 +94,7 @@ MCP356x::~MCP356x() {
 */
 int8_t MCP356x::reset() {
   _clear_registers();
+  isr_fired = false;
   int8_t ret = _send_fast_command(0x38);
   if (0 == ret) {
     _set_state(MCP356xState::RESETTING);
@@ -257,9 +258,14 @@ int8_t MCP356x::_post_reset_fxn() {
 */
 int8_t MCP356x::read() {
   int8_t ret = 0;
-  if (isr_fired) {
+  if (isr_fired & _servicing_irqs()) {
+    if (_busop_irq_read.hasFault()) {
+      // If there was a bus fault, the BusOp might be left in an unqueuable state.
+      // Try to reset the BusOp to satisfy the caller.
+      _busop_irq_read.markForRequeue();
+    }
     if (_busop_irq_read.isIdle()) {
-      ret = _BUS->queue_io_job(&_busop_irq_read);
+      ret = _BUS->queue_io_job(&_busop_irq_read, _bus_priority);
       isr_fired = false;
     }
   }

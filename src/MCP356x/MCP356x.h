@@ -203,6 +203,7 @@ enum class MCP356xState : uint8_t {
 #define MCP356X_FLAG_REFRESH_CYCLE    0x00002000  // We are undergoing a full register refresh.
 #define MCP356X_FLAG_HAS_INTRNL_VREF  0x00004000  // This part was found to support an internal Vref.
 #define MCP356X_FLAG_USE_INTRNL_VREF  0x00008000  // Internal Vref should be enabled.
+#define MCP356X_FLAG_SERVICING_IRQS   0x00010000  // The class will respond to IRQ signals.
 
 // Bits to preserve through reset.
 #define MCP356X_FLAG_RESET_MASK  (MCP356X_FLAG_DEVICE_PRESENT | MCP356X_FLAG_PINS_CONFIGURED | \
@@ -306,7 +307,9 @@ class MCP356x : public BusOpCallback {
     bool usingInternalVref();
     int8_t useInternalVref(bool);
 
-    bool isrFired() {    return isr_fired;   };
+    inline bool   isrFired() {             return isr_fired;      };
+    inline int8_t busPriority() {          return _bus_priority;  };
+    inline void   busPriority(int8_t p) {  _bus_priority = p;     };
 
     void   discardUnsettledSamples();
     float  getTemperature();
@@ -373,6 +376,7 @@ class MCP356x : public BusOpCallback {
     uint32_t micros_last_read      = 0;
     uint32_t micros_last_window    = 0;
     uint16_t reads_per_second      = 0;
+    int8_t   _bus_priority         = 0;  // Defaults to neutral.
     uint8_t  _slot_number          = 0;
     MCP356xState _prior_state      = MCP356xState::UNINIT;
     MCP356xState _current_state    = MCP356xState::UNINIT;
@@ -415,6 +419,8 @@ class MCP356x : public BusOpCallback {
     int8_t  _normalize_data_register();
     float   _gain_value();
 
+    inline bool _servicing_irqs() {        return _mcp356x_flag(MCP356X_FLAG_SERVICING_IRQS);   };
+    inline void _servicing_irqs(bool x) {  _mcp356x_set_flag(MCP356X_FLAG_SERVICING_IRQS, x);   };
 
     inline bool _vref_declared() {  return _mcp356x_flag(MCP356X_FLAG_VREF_DECLARED);  };
     inline bool _scan_covers_channel(MCP356xChannel c) {

@@ -279,6 +279,7 @@ uint8_t MCP356x::_output_coding_bytes() {
 */
 int8_t MCP356x::_normalize_data_register() {
   uint32_t rval = _get_shadow_value(MCP356xRegister::ADCDATA);
+  //c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "0x%08x", rval);
   MCP356xChannel chan = (MCP356xChannel) ((rval >> 28) & 0x0F);
 
   // Sign extend, if needed.
@@ -645,11 +646,16 @@ int8_t MCP356x::_proc_irq_register() {
   _mcp356x_set_flag(MCP356X_FLAG_CRC_ERROR, (0 == (0x20 & irq_reg_data)));
   if (0 == (0x40 & irq_reg_data)) {   // Conversion is finished.
     //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register() conversion finsihed");
-    _read_register(MCP356xRegister::ADCDATA);
+    //_read_register(MCP356xRegister::ADCDATA);
+    if (_busop_dat_read.hasFault()) {
+      // If there was a bus fault, the BusOp might be left in an unqueuable state.
+      // Try to reset the BusOp to satisfy the caller.
+      _busop_dat_read.markForRequeue();
+    }
     if (_busop_dat_read.isIdle()) {
-      if (0 == _BUS->queue_io_job(&_busop_dat_read)) {
+      if (0 == _BUS->queue_io_job(&_busop_dat_read, _bus_priority)) {
         ret = 1;
-        if (_measuring_clock()) {
+        if (!_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING)) {
           _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);  // This must be reality.
         }
       }
@@ -688,34 +694,30 @@ int8_t MCP356x::_proc_irq_register() {
 int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
   uint32_t reg_val = _get_shadow_value(r);
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
+  bool usr_conf_check = false;
   c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_proc_reg_write(%s)  %u --> 0x%06x", stateStr(_current_state), (uint8_t) r, reg_val);
 
   switch (r) {
     case MCP356xRegister::CONFIG0:
+      usr_conf_check = (MCP356xState::USR_CONF == _current_state);
       if (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK)) {
         _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);
       }
-      //break;   // Break omitted because CONFIG0 contains user configurables.
+      break;
     case MCP356xRegister::CONFIG1:
     case MCP356xRegister::CONFIG2:
+      usr_conf_check = (MCP356xState::USR_CONF == _current_state);
+      break;
     case MCP356xRegister::CONFIG3:
-    case MCP356xRegister::SCAN:
-      switch (_current_state) {
-        case MCP356xState::REGINIT:
-          if (MCP356xRegister::CONFIG3 == r) {
-            // We construe the first write to CONFIG3 as being the end of REGINIT.
-            _step_state_machine();
-          }
-          break;
-        case MCP356xState::USR_CONF:
-          if (0 == _apply_usr_config()) {
-            // If the user's config is fully written, punch the FSM.
-            _step_state_machine();
-          }
-          break;
-        default:
-          break;
+      usr_conf_check = (MCP356xState::USR_CONF == _current_state);
+      if (MCP356xState::REGINIT == _current_state) {
+        // We construe the first write to CONFIG3 as being the end of REGINIT.
+        _step_state_machine();
       }
+      break;
+    case MCP356xRegister::SCAN:
+      usr_conf_check = (MCP356xState::USR_CONF == _current_state);
+      _channel_flags = 0;  // Zero the channel flags.
       break;
 
     case MCP356xRegister::MUX:
@@ -727,6 +729,9 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
       break;
 
     case MCP356xRegister::IRQ:
+      // A write to this register implies we are ready to service IRQs.
+      _servicing_irqs(true);
+      break;
     case MCP356xRegister::TIMER:
       break;
     case MCP356xRegister::OFFSETCAL:
@@ -745,6 +750,13 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
       break;
     default:   // Anything else is an illegal target for write.
       break;
+  }
+
+  if (usr_conf_check) {
+    if (0 == _apply_usr_config()) {
+      // If the user's config is fully written, punch the FSM.
+      _step_state_machine();
+    }
   }
   return ret;
 }
@@ -952,5 +964,5 @@ int8_t MCP356x::queue_io_job(BusOp* _op) {
   op->maxFreq(19000000);
   op->cpol(false);
   op->cpha(false);
-  return _BUS->queue_io_job(op);
+  return _BUS->queue_io_job(op, _bus_priority);
 }

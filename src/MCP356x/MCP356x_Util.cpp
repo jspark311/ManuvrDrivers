@@ -34,22 +34,22 @@ const char* MCP356x::stateStr(const MCP356xState e) {
 
 
 void MCP356x::printRegs(StringBuilder* output) {
-  output->concatf("reg_shadows[0] (ADCDATA)     = 0x%08x\n", _get_shadow_value(MCP356xRegister::ADCDATA));
-  output->concatf("reg_shadows[1] (CONFIG0)     = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG0));
-  output->concatf("reg_shadows[2] (CONFIG1)     = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG1));
-  output->concatf("reg_shadows[3] (CONFIG2)     = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG2));
-  output->concatf("reg_shadows[4] (CONFIG3)     = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG3));
-  output->concatf("reg_shadows[5] (IRQ)         = 0x%02x\n", _get_shadow_value(MCP356xRegister::IRQ));
-  output->concatf("reg_shadows[6] (MUX)         = 0x%02x\n", _get_shadow_value(MCP356xRegister::MUX));
-  output->concatf("reg_shadows[7] (SCAN)        = 0x%06x\n", _get_shadow_value(MCP356xRegister::SCAN));
-  output->concatf("reg_shadows[8] (TIMER)       = 0x%06x\n", _get_shadow_value(MCP356xRegister::TIMER));
-  output->concatf("reg_shadows[9] (OFFSETCAL)   = 0x%06x\n", _get_shadow_value(MCP356xRegister::OFFSETCAL));
-  output->concatf("reg_shadows[10] (GAINCAL)    = 0x%06x\n", _get_shadow_value(MCP356xRegister::GAINCAL));
-  output->concatf("reg_shadows[11] (RESERVED0)  = 0x%06x\n", _get_shadow_value(MCP356xRegister::RESERVED0));
-  output->concatf("reg_shadows[12] (RESERVED1)  = 0x%02x\n", _get_shadow_value(MCP356xRegister::RESERVED1));
-  output->concatf("reg_shadows[13] (LOCK)       = 0x%02x\n", _get_shadow_value(MCP356xRegister::LOCK));
-  output->concatf("reg_shadows[14] (RESERVED2)  = 0x%04x\n", _get_shadow_value(MCP356xRegister::RESERVED2));
-  output->concatf("reg_shadows[15] (CRCCFG)     = 0x%04x\n", _get_shadow_value(MCP356xRegister::CRCCFG));
+  output->concatf("[0]  ADCDATA    = 0x%08x\n", _get_shadow_value(MCP356xRegister::ADCDATA));
+  output->concatf("[1]  CONFIG0    = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG0));
+  output->concatf("[2]  CONFIG1    = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG1));
+  output->concatf("[3]  CONFIG2    = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG2));
+  output->concatf("[4]  CONFIG3    = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG3));
+  output->concatf("[5]  IRQ        = 0x%02x\n", _get_shadow_value(MCP356xRegister::IRQ));
+  output->concatf("[6]  MUX        = 0x%02x\n", _get_shadow_value(MCP356xRegister::MUX));
+  output->concatf("[7]  SCAN       = 0x%06x\n", _get_shadow_value(MCP356xRegister::SCAN));
+  output->concatf("[8]  TIMER      = 0x%06x\n", _get_shadow_value(MCP356xRegister::TIMER));
+  output->concatf("[9]  OFFSETCAL  = 0x%06x\n", _get_shadow_value(MCP356xRegister::OFFSETCAL));
+  output->concatf("[10] GAINCAL    = 0x%06x\n", _get_shadow_value(MCP356xRegister::GAINCAL));
+  output->concatf("[11] RESERVED0  = 0x%06x\n", _get_shadow_value(MCP356xRegister::RESERVED0));
+  output->concatf("[12] RESERVED1  = 0x%02x\n", _get_shadow_value(MCP356xRegister::RESERVED1));
+  output->concatf("[13] LOCK       = 0x%02x\n", _get_shadow_value(MCP356xRegister::LOCK));
+  output->concatf("[14] RESERVED2  = 0x%04x\n", _get_shadow_value(MCP356xRegister::RESERVED2));
+  output->concatf("[15] CRCCFG     = 0x%04x\n", _get_shadow_value(MCP356xRegister::CRCCFG));
 }
 
 
@@ -143,6 +143,7 @@ void MCP356x::printChannel(MCP356xChannel chan, StringBuilder* output) {
 */
 void MCP356x::printChannelValues(StringBuilder* output) {
   if (adcFound()) {
+    output->concatf("_channel_flags = 0x%08x\n", _channel_flags);
     for (uint8_t i = 0; i < 16; i++) {
       MCP356xChannel chan = (MCP356xChannel) i;
       if (_scan_covers_channel(chan)) {
@@ -190,6 +191,11 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
     }
     else if (0 == StringBuilder::strcasecmp(cmd, "regs")) {
       printRegs(text_return);
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "busops")) {
+      text_return->concatf("DATA shadow: %p (0x%08x)\n", (uint8_t*) &_reg_shadows[(uint8_t) MCP356xRegister::ADCDATA], _reg_shadows[(uint8_t) MCP356xRegister::ADCDATA]);
+      _busop_irq_read.printDebug(text_return);
+      _busop_dat_read.printDebug(text_return);
     }
     else if (0 == StringBuilder::strcasecmp(cmd, "temperature")) {
       text_return->concatf("MCP356x temperature: %u.\n", (uint8_t) getTemperature());

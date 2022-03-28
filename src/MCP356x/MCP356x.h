@@ -323,7 +323,7 @@ class MCP356x : public BusOpCallback {
     void printPins(StringBuilder*);
     void printRegs(StringBuilder*);
     void printTimings(StringBuilder*);
-    void printData(StringBuilder*);
+    void printDebug(StringBuilder*);
     void printChannelValues(StringBuilder*);
     void printChannel(MCP356xChannel, StringBuilder*);
 

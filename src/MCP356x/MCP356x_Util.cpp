@@ -72,7 +72,7 @@ void MCP356x::printTimings(StringBuilder* output) {
 }
 
 
-void MCP356x::printData(StringBuilder* output) {
+void MCP356x::printDebug(StringBuilder* output) {
   StringBuilder prod_str("MCP356");
   if (adcFound()) {
     prod_str.concatf("%d", _channel_count() >> 1);
@@ -167,7 +167,8 @@ void MCP356x::printChannelValues(StringBuilder* output) {
 * @page console-handlers
 * @section mcp356x-tools MCP356x tools
 *
-* This is the console handler for using the MCP356x ADC.
+* This is the console handler for using the MCP356x ADC. If invoked without
+*   arguments, it will print channel values, as are being observed by hardware.
 *
 * @subsection cmd-actions Actions
 *
@@ -183,8 +184,8 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
   if (0 < args->count()) {
     char* cmd = args->position_trimmed(0);
 
-    if (0 == StringBuilder::strcasecmp(cmd, "data")) {
-      printData(text_return);
+    if (0 == StringBuilder::strcasecmp(cmd, "info")) {
+      printDebug(text_return);
     }
     else if (0 == StringBuilder::strcasecmp(cmd, "timings")) {
       printTimings(text_return);

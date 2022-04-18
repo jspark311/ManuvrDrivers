@@ -124,9 +124,8 @@ MCP356xGain MCP356x::getGain() {
 *    0 if config was set successfully.
 */
 int8_t MCP356x::setBiasCurrent(MCP356xBiasCurrent e) {
-  uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0) & 0x00F3FFFF;
-  c0_val += ((((uint8_t) e) & 0x03) << 18);
-  return _write_register(MCP356xRegister::CONFIG0, c0_val);
+  uint8_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0) & 0xF3;
+  return _write_register(MCP356xRegister::CONFIG0, (c0_val | ((uint8_t) e << 2)));
 }
 
 
@@ -137,7 +136,7 @@ int8_t MCP356x::setBiasCurrent(MCP356xBiasCurrent e) {
 * @return the enum for the present current source setting.
 */
 MCP356xBiasCurrent MCP356x::getBiasCurrent() {
-  return (MCP356xBiasCurrent) ((_get_shadow_value(MCP356xRegister::CONFIG0) & 0x000C0000) >> 18);
+  return (MCP356xBiasCurrent) ((_get_shadow_value(MCP356xRegister::CONFIG0) & 0x0000000C) >> 2);
 }
 
 
@@ -279,7 +278,6 @@ uint8_t MCP356x::_output_coding_bytes() {
 */
 int8_t MCP356x::_normalize_data_register() {
   uint32_t rval = _get_shadow_value(MCP356xRegister::ADCDATA);
-  //c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "0x%08x", rval);
   MCP356xChannel chan = (MCP356xChannel) ((rval >> 28) & 0x0F);
 
   // Sign extend, if needed.
@@ -646,7 +644,6 @@ int8_t MCP356x::_proc_irq_register() {
   _mcp356x_set_flag(MCP356X_FLAG_CRC_ERROR, (0 == (0x20 & irq_reg_data)));
   if (0 == (0x40 & irq_reg_data)) {   // Conversion is finished.
     //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register() conversion finsihed");
-    //_read_register(MCP356xRegister::ADCDATA);
     if (_busop_dat_read.hasFault()) {
       // If there was a bus fault, the BusOp might be left in an unqueuable state.
       // Try to reset the BusOp to satisfy the caller.
@@ -702,6 +699,15 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
       usr_conf_check = (MCP356xState::USR_CONF == _current_state);
       if (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK)) {
         _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);
+      }
+      if (MCP356xState::REGINIT == _current_state) {
+        if (MCP356xState::READING == _desired_state) {
+          uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0);
+          if (0 == (0x03 & c0_val)) {
+            _set_shadow_value(MCP356xRegister::CONFIG0, (0x03 | c0_val));
+            ret = BUSOP_CALLBACK_RECYCLE;
+          }
+        }
       }
       break;
     case MCP356xRegister::CONFIG1:

@@ -143,7 +143,6 @@ void MCP356x::printChannel(MCP356xChannel chan, StringBuilder* output) {
 */
 void MCP356x::printChannelValues(StringBuilder* output) {
   if (adcFound()) {
-    output->concatf("_channel_flags = 0x%08x\n", _channel_flags);
     for (uint8_t i = 0; i < 16; i++) {
       MCP356xChannel chan = (MCP356xChannel) i;
       if (_scan_covers_channel(chan)) {
@@ -194,7 +193,6 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
       printRegs(text_return);
     }
     else if (0 == StringBuilder::strcasecmp(cmd, "busops")) {
-      text_return->concatf("DATA shadow: %p (0x%08x)\n", (uint8_t*) &_reg_shadows[(uint8_t) MCP356xRegister::ADCDATA], _reg_shadows[(uint8_t) MCP356xRegister::ADCDATA]);
       _busop_irq_read.printDebug(text_return);
       _busop_dat_read.printDebug(text_return);
     }

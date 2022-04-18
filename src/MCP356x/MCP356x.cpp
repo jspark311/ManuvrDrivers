@@ -205,7 +205,7 @@ int8_t MCP356x::setOption(uint32_t flgs) {
 */
 int8_t MCP356x::_post_reset_fxn() {
   int8_t ret = -1;
-  uint32_t c0_val = 0x00000083;
+  uint32_t c0_val = 0x00000080;
 
   // Enable register write.
   ret = _write_register(MCP356xRegister::LOCK, 0x000000A5);

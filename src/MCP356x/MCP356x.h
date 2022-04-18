@@ -128,42 +128,42 @@ enum class MCP356xAMCLKPrescaler : uint8_t {
 * Driver state machine positions
 * ------------------------------------------------------------------------------
 * \dot
-*   digraph statemachine {
-*     node [shape=record, fontname=Helvetica, fontsize=10];
-*     UNINIT      [ label="Uninitialized"                  style="rounded,filled" ];
-*     PREINIT     [ label="Class setup"                    style="rounded,filled" ];
-*     RESETTING   [ label="Resetting"                    fillcolor="yellow" style="rounded,filled" ];
-*     DISCOVERY   [ label="Hardware discovery"           fillcolor="yellow" style="rounded,filled" ];
-*     REGINIT     [ label="Initialize register shadows"  fillcolor="yellow" style="rounded,filled" ];
-*     CLK_MEASURE [ label="Measuring MCLK"               fillcolor="yellow" style="rounded,filled" ];
-*     CALIBRATION [ label="Internal calibration"         fillcolor="green"  style="rounded,filled" ];
-*     USR_CONF    [ label="Imparting user configuration" fillcolor="green"  style="rounded,filled" ];
-*     IDLE        [ label="Idle"                         fillcolor="green"  style="rounded,filled" ];
-*     READING     [ label="Reading data"                 fillcolor="green"  style="rounded,filled" ];
-*     FAULT       [ label="Fault"                        fillcolor="red"    style="rounded,filled" ];
+* digraph statemachine {
+*      node [shape=record, fontname=Helvetica, fontsize=10];
+*      UNINIT      [ label="Uninitialized"                  style="rounded,filled" ];
+*      PREINIT     [ label="Class setup"                    style="rounded,filled" ];
+*      RESETTING   [ label="Resetting"                    fillcolor="yellow" style="rounded,filled" ];
+*      DISCOVERY   [ label="Hardware discovery"           fillcolor="yellow" style="rounded,filled" ];
+*      REGINIT     [ label="Initialize register shadows"  fillcolor="yellow" style="rounded,filled" ];
+*      CLK_MEASURE [ label="Measuring MCLK"               fillcolor="yellow" style="rounded,filled" ];
+*      CALIBRATION [ label="Internal calibration"         fillcolor="green"  style="rounded,filled" ];
+*      USR_CONF    [ label="Imparting user configuration" fillcolor="green"  style="rounded,filled" ];
+*      IDLE        [ label="Idle"                         fillcolor="green"  style="rounded,filled" ];
+*      READING     [ label="Reading data"                 fillcolor="green"  style="rounded,filled" ];
+*      FAULT       [ label="Fault"                        fillcolor="red"    style="rounded,filled" ];
 *
-*     UNINIT      ->   PREINIT       [ label ="Call to init()", arrowhead="open", style="solid" ];
-*     PREINIT     ->   RESETTING     [ label ="Class members initialized", arrowhead="open", style="solid" ];
-*     RESETTING   ->   DISCOVERY     [ label ="Reset complete", arrowhead="open", style="solid" ];
-*     DISCOVERY   ->   REGINIT       [ label ="Hardware found", arrowhead="open", style="solid" ];
-*     DISCOVERY   ->   FAULT         [ label ="Hardware not found", arrowhead="open", style="dashed" ];
-*     REGINIT     ->   CLK_MEASURE   [ label ="MCLK frequency is unspecified", arrowhead="open", style="solid" ];
-*     REGINIT     ->   CALIBRATION   [ label ="MCLK frequency is given", arrowhead="open", style="solid" ];
-*     CLK_MEASURE ->   CALIBRATION   [ label ="MCLK frequency was measured", arrowhead="open", style="solid" ];
-*     CLK_MEASURE ->   FAULT         [ label ="Failure to measure MCLK", arrowhead="open", style="dashed" ];
-*     CALIBRATION ->   FAULT         [ label ="Failure to calibrate", arrowhead="open", style="dashed" ];
-*     CALIBRATION ->   USR_CONF      [ label ="In-class calibration complete", arrowhead="open", style="solid" ];
-*     USR_CONF    ->   IDLE          [ label ="User configuration imparted", arrowhead="open", style="solid" ];
-*     IDLE        ->   READING       [ label ="Data register content is demanded", arrowhead="open", style="solid" ];
-*     IDLE        ->   CALIBRATION   [ label ="Call to calibrate()", arrowhead="open", style="solid" ];
-*     IDLE        ->   USR_CONF      [ label ="Configuration change", arrowhead="open", style="solid" ];
-*     READING     ->   USR_CONF      [ label ="Configuration change", arrowhead="open", style="solid" ];
-*     READING     ->   IDLE          [ label ="No data demand", arrowhead="open", style="solid" ];
-*     READING     ->   CALIBRATION   [ label ="Call to calibrate()", arrowhead="open", style="solid" ];
-*     READING     ->   FAULT         [ label ="Class fault while reading", arrowhead="open", style="dashed" ];
-*     FAULT       ->   PREINIT       [ label ="Call to reset()", arrowhead="open", style="solid" ];
-*   }
-* \enddot
+*      UNINIT      ->   PREINIT       [ label ="Call to init()", arrowhead="open", style="solid" ];
+*      PREINIT     ->   RESETTING     [ label ="Class members initialized", arrowhead="open", style="solid" ];
+*      RESETTING   ->   DISCOVERY     [ label ="Reset complete", arrowhead="open", style="solid" ];
+*      DISCOVERY   ->   REGINIT       [ label ="Hardware found", arrowhead="open", style="solid" ];
+*      DISCOVERY   ->   FAULT         [ label ="Hardware not found", arrowhead="open", style="dashed" ];
+*      REGINIT     ->   CLK_MEASURE   [ label ="MCLK frequency is unspecified", arrowhead="open", style="solid" ];
+*      REGINIT     ->   CALIBRATION   [ label ="MCLK frequency is given", arrowhead="open", style="solid" ];
+*      CLK_MEASURE ->   CALIBRATION   [ label ="MCLK frequency was measured", arrowhead="open", style="solid" ];
+*      CLK_MEASURE ->   FAULT         [ label ="Failure to measure MCLK", arrowhead="open", style="dashed" ];
+*      CALIBRATION ->   FAULT         [ label ="Failure to calibrate", arrowhead="open", style="dashed" ];
+*      CALIBRATION ->   USR_CONF      [ label ="In-class calibration complete", arrowhead="open", style="solid" ];
+*      USR_CONF    ->   IDLE          [ label ="User configuration imparted", arrowhead="open", style="solid" ];
+*      IDLE        ->   READING       [ label ="Data register content is demanded", arrowhead="open", style="solid" ];
+*      IDLE        ->   CALIBRATION   [ label ="Call to calibrate()", arrowhead="open", style="solid" ];
+*      IDLE        ->   USR_CONF      [ label ="Configuration change", arrowhead="open", style="solid" ];
+*      READING     ->   USR_CONF      [ label ="Configuration change", arrowhead="open", style="solid" ];
+*      READING     ->   IDLE          [ label ="No data demand", arrowhead="open", style="solid" ];
+*      READING     ->   CALIBRATION   [ label ="Call to calibrate()", arrowhead="open", style="solid" ];
+*      READING     ->   FAULT         [ label ="Class fault while reading", arrowhead="open", style="dashed" ];
+*      FAULT       ->   PREINIT       [ label ="Call to reset()", arrowhead="open", style="solid" ];
+*  }
+*  \enddot
 */
 enum class MCP356xState : uint8_t {
   UNINIT      = 0,   // init() has never been called.

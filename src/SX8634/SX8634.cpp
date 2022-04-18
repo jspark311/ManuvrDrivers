@@ -241,6 +241,7 @@ int8_t SX8634::io_op_callback(BusOp* _op) {
           else {  // We just closed SPM access.
             _sx8634_clear_flag(SX8634_FLAG_IRQ_INHIBIT);
             _set_fsm_position(SX8634_FSM::READY);
+            sleep_ms(3);
             setMode(SX8634OpMode::ACTIVE);
           }
           break;

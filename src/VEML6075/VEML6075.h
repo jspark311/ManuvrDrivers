@@ -121,6 +121,7 @@ class VEML6075  : public I2CDevice {
 
     int8_t init();
     int8_t poll();
+    int8_t refresh();
 
     inline bool devFound() {        return _veml_flag(VEML6075_FLAG_DEVICE_PRESENT);  };
     inline bool initialized() {     return _veml_flag(VEML6075_FLAG_INITIALIZED);     };

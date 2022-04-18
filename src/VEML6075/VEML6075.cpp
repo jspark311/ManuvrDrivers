@@ -148,9 +148,9 @@ VEML6075::VEML6075() : I2CDevice(VEML6075_ADDRESS) {}
 
 int8_t VEML6075::init() {
   int8_t ret = -1;
+  _veml_clear_flag(VEML6075_FLAG_INITIALIZED);
   if (nullptr != _bus) {
     ret--;
-    _veml_clear_flag(VEML6075_FLAG_INITIALIZED);
     if (0 == _read_registers(VEML6075RegId::ID, 2)) {
       ret = 0;
     }
@@ -179,6 +179,19 @@ int8_t VEML6075::poll() {
     if (_veml_flag(VEML6075_FLAG_DATA_FRESH)) {
       _veml_clear_flag(VEML6075_FLAG_DATA_FRESH);
       ret = 1;
+    }
+  }
+  return ret;
+}
+
+
+/*
+*/
+int8_t VEML6075::refresh() {
+  int8_t ret = -1;
+  if (0 == _read_registers(VEML6075RegId::UV_CONF, 2)) {
+    if (0 == _read_registers(VEML6075RegId::ID, 2)) {
+      ret = 0;
     }
   }
   return ret;
@@ -456,7 +469,6 @@ int8_t VEML6075::io_op_callback(BusOp* _op) {
 
   if (!op->hasFault()) {
     uint8_t* buf    = op->buffer();
-    uint     len    = op->bufferLen();
     VEML6075RegId r = _reg_id_from_addr(op->sub_addr);
     uint8_t value   = *buf;
 
@@ -495,13 +507,9 @@ int8_t VEML6075::io_op_callback(BusOp* _op) {
             }
             break;
           case VEML6075RegId::ID:
-            {
-              //StringBuilder output;
-              //op->printDebug(&output);
-              //Serial.println((char*) output.string());
-            }
+            c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "Found ID: 0x%04x", *(uint16_t*)buf);
             _veml_set_flag(VEML6075_FLAG_DEVICE_PRESENT, (VEML6075_DEVICE_ID == value));
-            if (!initialized()) {
+            if (devFound() && !initialized()) {
               _post_discovery_init();
             }
             break;

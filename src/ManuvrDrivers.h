@@ -18,3 +18,4 @@
 #include "VL53L0X/VL53L0X.h"
 #include "BQ24155/BQ24155.h"
 #include "LTC294x/LTC294x.h"
+#include "AudemeMOVI/AudemeMOVI.h"

@@ -315,36 +315,10 @@ int8_t MOVI::poll() {
     _response.drop_position(0);
   }
 
-  // TODO: If the FSM state allows it...
-  // TODO: If the UART is flushed...
-  // If there is an unsent command at the head of the queue, dispatch it.
-  MOVICmdRespPair* waiting_cmd = _waiting_cmds.get(0);
-  if ((nullptr != waiting_cmd) && !waiting_cmd->was_sent) {
-    bool send = false;
-    StringBuilder str_bldr(movi_get_command_string(waiting_cmd->CMD));
-    //if (!_flags.value(MOVI_FLAG_SENTENCES_ADDED) || _flags.value(MOVI_FLAG_IN_TRAINING)) {
-    //  send = true;
-    //}
-    //else if (isReady()) {
-      send = true;
-    //}
-    if (send) {
-      if (!waiting_cmd->outbound.isEmpty()) {
-        str_bldr.concatf(" %s", (char*) waiting_cmd->outbound.string());
-      }
-      str_bldr.concat('\n');
-      waiting_cmd->was_sent = (0 <= _uart->provideBuffer(&str_bldr));
-
-      if (waiting_cmd->was_sent & (MOVIEvent::UNSUPPORTED == waiting_cmd->EXPECT)) {
-        _waiting_cmds.remove(waiting_cmd);
-        delete waiting_cmd;
-      }
-    }
-  }
-
   // After the I/O has been processed, poll the driver state machine
   //   and return the result.
-  ret = _poll_fsm();
+  //ret = _poll_fsm();
+  _poll_fsm();
   return ret;
 }
 
@@ -695,25 +669,26 @@ MOVIEvent MOVI::_handle_event_line(char* line) {
 * This function contains the state machine logic that is advanced as a
 *   consequence of polling. Some state transitions must be called elsewhere.
 */
-int8_t MOVI::_poll_fsm() {
-  int8_t ret = 0;
+MOVIState MOVI::_poll_fsm() {
+  MOVIState ret = MOVIState::UNKNOWN;
+
   switch (_fsm_pos) {
     // Exit conditions: Unconditional.
     case MOVIState::UNKNOWN:
-      ret = _set_fsm_position(MOVIState::INIT);
+      _fsm_pos_pending = MOVIState::INIT;
       break;
 
     // Exit conditions: The UART is ready to use.
     case MOVIState::INIT:
       if (_uart->initialized() && _uart->txCapable() && _uart->rxCapable()) {
-        ret = _set_fsm_position(MOVIState::PENDING_BOOT);
+        _fsm_pos_pending = MOVIState::PENDING_BOOT;
       }
       break;
 
     // Exit conditions: The hardware replied to an INIT and a PING.
     case MOVIState::PENDING_BOOT:
       if (_flags.value(MOVI_FLAG_SHIELD_FOUND)) {
-        ret = _set_fsm_position(MOVIState::CONF_SYNC);
+        _fsm_pos_pending = MOVIState::CONF_SYNC;
       }
       break;
 
@@ -722,7 +697,7 @@ int8_t MOVI::_poll_fsm() {
     //   be confident that the entire sentence vocabulary has been received.
     case MOVIState::CONF_SYNC:
       if (_uart->flushed() && (0 == _waiting_cmds.size())) {
-        ret = _set_fsm_position(MOVIState::IDLE);
+        _fsm_pos_pending = MOVIState::IDLE;
       }
       break;
 
@@ -744,7 +719,7 @@ int8_t MOVI::_poll_fsm() {
     //   entered from.
     case MOVIState::SPEAKING:
       if (!_flags.value(MOVI_FLAG_HW_SPEAKING)) {
-        ret = _set_fsm_position(_fsm_pos_prior);
+        _fsm_pos_pending = _fsm_pos_prior;
       }
       break;
 
@@ -753,7 +728,7 @@ int8_t MOVI::_poll_fsm() {
     //   entered from.
     case MOVIState::LISTENING:
       if (!_flags.value(MOVI_FLAG_HW_LISTENING)) {
-        ret = _set_fsm_position(_fsm_pos_prior);
+        _fsm_pos_pending = _fsm_pos_prior;
       }
       break;
 
@@ -761,7 +736,7 @@ int8_t MOVI::_poll_fsm() {
     //   from the hardware.
     case MOVIState::TRAINING:
       if (!_flags.value(MOVI_FLAG_IN_TRAINING)) {
-        ret = _set_fsm_position(MOVIState::IDLE);
+        _fsm_pos_pending = MOVIState::IDLE;
       }
       break;
 
@@ -773,11 +748,51 @@ int8_t MOVI::_poll_fsm() {
 
     case MOVIState::FAULT:         // If the driver is in FAULT, do nothing.
       break;
-    default:   // Can't exit from an unknown state.
-      ret = -1;
+    default:   // Can't automatically exit from an unknown state.
       break;
   }
-  return ret;
+
+
+  if (MOVIState::UNKNOWN == _fsm_pos_pending) {
+    // If no state transition happened, and the state allows it, we
+    //   can process outbound queue.
+
+    // TODO: If the FSM state allows it...
+    // TODO: If the UART is flushed...
+    // If there is an unsent command at the head of the queue, dispatch it.
+    MOVICmdRespPair* waiting_cmd = _waiting_cmds.get(0);
+    if ((nullptr != waiting_cmd) && !waiting_cmd->was_sent) {
+      bool send = false;
+      StringBuilder str_bldr(movi_get_command_string(waiting_cmd->CMD));
+      //if (!_flags.value(MOVI_FLAG_SENTENCES_ADDED) || _flags.value(MOVI_FLAG_IN_TRAINING)) {
+        //  send = true;
+      //}
+      //else if (isReady()) {
+        send = true;
+      //}
+      if (send) {
+        if (!waiting_cmd->outbound.isEmpty()) {
+          str_bldr.concatf(" %s", (char*) waiting_cmd->outbound.string());
+        }
+        str_bldr.concat('\n');
+        waiting_cmd->was_sent = (0 <= _uart->provideBuffer(&str_bldr));
+
+        if (waiting_cmd->was_sent & (MOVIEvent::UNSUPPORTED == waiting_cmd->EXPECT)) {
+          _waiting_cmds.remove(waiting_cmd);
+          delete waiting_cmd;
+        }
+      }
+    }
+  }
+
+  if (MOVIState::UNKNOWN != _fsm_pos_pending) {
+    // If there is a state-change pending, set it.
+    if (0 == _set_fsm_position(_fsm_pos_pending)) {
+      // State set succeeded.
+      ret = _fsm_pos_pending;
+    }
+  }
+  return _fsm_pos;    // Return the current state.
 }
 
 
@@ -983,6 +998,17 @@ int MOVI::console_handler(StringBuilder* text_return, StringBuilder* args) {
     }
     else {
       text_return->concat("Usage: say <what?>\n");
+    }
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "train")) {
+    args->drop_position(0);
+    if (0 < args->count()) {
+      args->implode(" ");
+      text_return->concatf("say(\"%s\")\n", args->string());
+      say((char*)args->string());
+    }
+    else {
+      text_return->concat("Usage: train <sentence>\n");
     }
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "callsign")) {

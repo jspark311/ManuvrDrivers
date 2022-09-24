@@ -334,6 +334,7 @@ class MOVI : public BufferAccepter {
     uint32_t        _fsm_lockout_ms; // Used to enforce a delay between state transitions.
     MOVIState       _fsm_pos;
     MOVIState       _fsm_pos_prior;
+    MOVIState       _fsm_pos_pending;
     MOVIState       _fsm_pos_target;
     uint8_t         _volume;
     uint8_t         _threshold;
@@ -349,6 +350,7 @@ class MOVI : public BufferAccepter {
     bool      _queue_command(const MOVICommandCode, const char* parameter = nullptr);
     int       _purge_waiting_io();
     void      _print_work_queue(StringBuilder*);
+    bool      _process_work_queue();
 
     /* Event handling */
     MOVIEvent _handle_event_line(char* line);
@@ -358,7 +360,7 @@ class MOVI : public BufferAccepter {
     void      _print_vocabulary(StringBuilder*);
 
     /* State machine functions */
-    int8_t _poll_fsm();
+    MOVIState _poll_fsm();
     int8_t _set_fsm_position(MOVIState);
     bool   _fsm_is_waiting();
     void   _print_fsm(StringBuilder*);

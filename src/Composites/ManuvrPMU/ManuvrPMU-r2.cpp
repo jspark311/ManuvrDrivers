@@ -180,7 +180,7 @@ int callback_pmu_tools(StringBuilder* text_return, StringBuilder* args) {
   return ret;
 }
 
-const ConsoleCommand cmd00 = ConsoleCommand("pmu", 'p', ParsingConsole::tcodes_str_4, "PMU tools", "[info|punch|charging|aux|reset|init|refresh|verbosity]", 1, callback_pmu_tools);
+const ConsoleCommand cmd00 = ConsoleCommand("pmu", 'p', "PMU tools", "[info|punch|charging|aux|reset|init|refresh|verbosity]", 1, callback_pmu_tools);
 
 
 /*******************************************************************************

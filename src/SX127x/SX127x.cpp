@@ -1,4 +1,4 @@
-#include "SX1276.h"
+#include "SX127x.h"
 
 
 /*******************************************************************************
@@ -29,7 +29,7 @@ static const uint8_t SX127X_REG_ADDR[27] = {
 * @param r The register we wish to transact with.
 * @return the first byte of an SPI register transaction.
 */
-uint8_t SX1276::_get_reg_addr(const SX127xRegister r) {
+uint8_t SX127x::_get_reg_addr(const SX127xRegister r) {
   uint8_t reg_idx = (uint8_t) r;
   if (27 > reg_idx) {
     return SX127X_REG_ADDR[reg_idx];
@@ -57,7 +57,7 @@ void sx127x_d2_isr() {
 }
 
 
-SX127xRegister SX1276::_reg_id_from_addr(const uint8_t addr) {
+SX127xRegister SX127x::_reg_id_from_addr(const uint8_t addr) {
   switch (0x7F & addr) {
     case 0x00:   return SX127xRegister::FIFO;
     case 0x01:   return SX127xRegister::OP_MODE;
@@ -101,16 +101,16 @@ SX127xRegister SX1276::_reg_id_from_addr(const uint8_t addr) {
 *******************************************************************************/
 
 /* Constructor */
-SX1276::SX1276(const SX1276Opts* o) : _opts{o} {
+SX127x::SX127x(const SX127xOpts* o) : _opts{o} {
 }
 
 
 /* Destructor */
-SX1276::~SX1276() {
+SX127x::~SX127x() {
 }
 
 
-int8_t SX1276::init(SPIAdapter* b) {
+int8_t SX127x::init(SPIAdapter* b) {
   int8_t pin_setup_ret = _ll_pin_init();  // Configure the pins if they are not already.
   int8_t ret = -4;
   if (pin_setup_ret >= 0) {
@@ -138,7 +138,7 @@ int8_t SX1276::init(SPIAdapter* b) {
 *
 * @param   StringBuilder* The buffer into which this fxn should write its output.
 */
-void SX1276::printDebug(StringBuilder* output) {
+void SX127x::printDebug(StringBuilder* output) {
   output->concat("\n");
   output->concatf("\tReset: %u\tCS:    %u\n", _opts.reset_pin, _opts.cs_pin);
   output->concatf("\tD0:    %u\tD1:    %u\n", _opts.d0_pin, _opts.d1_pin);
@@ -150,7 +150,7 @@ void SX1276::printDebug(StringBuilder* output) {
 *
 * @param   StringBuilder* The buffer into which this fxn should write its output.
 */
-void SX1276::printRegs(StringBuilder* output) {
+void SX127x::printRegs(StringBuilder* output) {
   for (uint8_t i = 0; i < sizeof(_shadows); i++) {
     output->concatf("\t0x%02x:\t0x%02x", SX127X_REG_ADDR[i], _shadows[i]);
   }
@@ -164,7 +164,7 @@ void SX1276::printRegs(StringBuilder* output) {
 *   -1 if the pin setup is wrong. Class must halt.
 *   0  if the pin setup is complete.
 */
-int8_t SX1276::_ll_pin_init() {
+int8_t SX127x::_ll_pin_init() {
   int8_t ret = -1;
   if (_sx_flag(SX127X_FLAG_PINS_CONFIGURED)) {
     ret = 0;
@@ -207,7 +207,7 @@ int8_t SX1276::_ll_pin_init() {
 * @param  _op  The bus operation that was completed.
 * @return 0 to run the op, or non-zero to cancel it.
 */
-int8_t SX1276::queue_io_job(BusOp* _op) {
+int8_t SX127x::queue_io_job(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   op->callback = this;
   op->setCSPin(_opts.cs_pin);
@@ -219,12 +219,12 @@ int8_t SX1276::queue_io_job(BusOp* _op) {
 }
 
 
-int8_t SX1276::io_op_callahead(BusOp* _op) {
+int8_t SX127x::io_op_callahead(BusOp* _op) {
   return 0;
 }
 
 
-int8_t SX1276::io_op_callback(BusOp* _op) {
+int8_t SX127x::io_op_callback(BusOp* _op) {
   SPIBusOp* op = (SPIBusOp*) _op;
   int8_t    ret = BUSOP_CALLBACK_NOMINAL;
 

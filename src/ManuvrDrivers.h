@@ -9,7 +9,7 @@
 //#include "MAX7219/MAX7219.h"
 #include "MCP356x/MCP356x.h"
 #include "MCP4728/MCP4728.h"
-#include "SX1276/SX1276.h"
+#include "SX127x/SX127x.h"
 #include "SX1503/SX1503.h"
 #include "SX8634/SX8634.h"
 #include "DS1881/DS1881.h"

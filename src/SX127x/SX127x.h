@@ -2,8 +2,8 @@
 #include <EnumeratedTypeCodes.h>
 #include <SPIAdapter.h>
 
-#ifndef __SX1276_DRIVER_H
-#define __SX1276_DRIVER_H
+#ifndef __SX127X_DRIVER_H
+#define __SX127X_DRIVER_H
 
 
 enum class LORABand : uint8_t {
@@ -46,7 +46,7 @@ enum class SX127xRegister : uint8_t {
   INVALID              = 0x1B
 };
 
-enum class SX1276Mode : uint8_t {
+enum class SX127xMode : uint8_t {
   LONG_RANGE_MODE = 0x80,
   SLEEP           = 0x00,
   STDBY           = 0x01,
@@ -82,7 +82,7 @@ enum class SX1276Mode : uint8_t {
 /**
 * Set pin def to 255 to mark it as unused.
 */
-class SX1276Opts {
+class SX127xOpts {
   public:
     const uint8_t reset_pin;
     const uint8_t cs_pin;
@@ -91,7 +91,7 @@ class SX1276Opts {
     const uint8_t d2_pin;
 
     /** Copy constructor. */
-    SX1276Opts(const SX1276Opts* o) :
+    SX127xOpts(const SX127xOpts* o) :
       reset_pin(o->reset_pin),
       cs_pin(o->cs_pin),
       d0_pin(o->d0_pin),
@@ -105,7 +105,7 @@ class SX1276Opts {
     * @param pin
     * @param Initial flags
     */
-    SX1276Opts(
+    SX127xOpts(
       uint8_t reset,
       uint8_t cs,
       uint8_t d0,
@@ -133,10 +133,10 @@ class SX1276Opts {
 *
 *******************************************************************************/
 
-class SX1276 : public BusOpCallback {
+class SX127x : public BusOpCallback {
   public:
-    SX1276(const SX1276Opts*);
-    ~SX1276();
+    SX127x(const SX127xOpts*);
+    ~SX127x();
 
     inline bool    devFound() {      return _sx_flag(SX127X_FLAG_DEVICE_PRESENT);  };
     inline bool    initialized() {   return _sx_flag(SX127X_FLAG_INITIALIZED);     };
@@ -153,7 +153,7 @@ class SX1276 : public BusOpCallback {
 
 
   private:
-    const SX1276Opts _opts;
+    const SX127xOpts _opts;
     SPIAdapter* _BUS = nullptr;
     uint32_t _flags  = 0;
     uint8_t _tx_buffer[512] = {0, };
@@ -179,4 +179,4 @@ class SX1276 : public BusOpCallback {
     static SX127xRegister _reg_id_from_addr(const uint8_t addr);
 };
 
-#endif  // __SX1276_DRIVER_H
+#endif  // __SX127X_DRIVER_H

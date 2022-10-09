@@ -11,7 +11,7 @@ message(STATUS "==============================================")
 idf_component_register(
   SRC_DIRS "src/AMG88xx" "src/BME280" "src/VEML6075" "src/TSL2561"
     "src/LTC294x" "src/BQ24155" "src/LSM9DS1" "src/SX1503" "src/SX8634"
-    "src/SSD13xx" "src/SX1276" "src/MCP4728" "src/ADG2128" "src/DS1881"
+    "src/SSD13xx" "src/SX127x" "src/MCP4728" "src/ADG2128" "src/DS1881"
     "src/TMP102" "src/LSM6DSOX" "src/Composites/ManuvrPMU" "src/AudemeMOVI"
   INCLUDE_DIRS "src"
   REQUIRES CppPotpourri

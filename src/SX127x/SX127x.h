@@ -1,9 +1,16 @@
+/*******************************************************************************
+*
+*******************************************************************************/
+
 #include <AbstractPlatform.h>
 #include <EnumeratedTypeCodes.h>
 #include <SPIAdapter.h>
+#include <FlagContainer.h>
 
 #ifndef __SX127X_DRIVER_H
 #define __SX127X_DRIVER_H
+
+#define SX127X_FSM_WAYPOINT_DEPTH  16
 
 
 enum class LORABand : uint8_t {
@@ -55,6 +62,21 @@ enum class SX127xMode : uint8_t {
   RX_SINGLE       = 0x06
 };
 
+
+enum class SX127xState : uint8_t {
+  UNINIT     = 0,  // init() has never been called.
+  PREINIT    = 1,  // Pin control is being established.
+  RESETTING  = 2,  // Driver is resetting the hardware.
+  DISCOVERY  = 3,  // Driver is probing for the hardware.
+  REGINIT    = 4,  // The initial hardware configuration is being written.
+  USR_CONF   = 5,  // User config is being written.
+  READY      = 6,  // Hardware and driver agree on state, and are ready to use.
+  LOW_PWR    = 7,  // The hardware is in a low-power mode.
+  FAULT      = 8   // State machine encountered something it couldn't cope with.
+};
+
+
+
 // PA config
 #define PA_BOOST                 0x80
 
@@ -71,7 +93,8 @@ enum class SX127xMode : uint8_t {
 #define SX127X_FLAG_PINS_CONFIGURED  0x00000002  // Low-level pin setup is complete.
 #define SX127X_FLAG_INITIALIZED      0x00000004  // Registers are initialized.
 
-#define SX127X_FLAG_RESET_MASK       0x00000002  // Bits to preserve through reset.
+// Flags to preserve through reset.
+#define SX127X_FLAG_RESET_MASK (SX127X_FLAG_PINS_CONFIGURED)
 
 
 
@@ -92,11 +115,8 @@ class SX127xOpts {
 
     /** Copy constructor. */
     SX127xOpts(const SX127xOpts* o) :
-      reset_pin(o->reset_pin),
-      cs_pin(o->cs_pin),
-      d0_pin(o->d0_pin),
-      d1_pin(o->d1_pin),
-      d2_pin(o->d2_pin),
+      reset_pin(o->reset_pin), cs_pin(o->cs_pin),
+      d0_pin(o->d0_pin), d1_pin(o->d1_pin), d2_pin(o->d2_pin),
       _flags(o->_flags) {};
 
     /**
@@ -113,19 +133,15 @@ class SX127xOpts {
       uint8_t d2,
       LORABand band
     ) :
-      reset_pin(reset),
-      cs_pin(cs),
-      d0_pin(d0),
-      d1_pin(d1),
-      d2_pin(d2),
+      reset_pin(reset), cs_pin(cs), d0_pin(d0), d1_pin(d1), d2_pin(d2),
       _flags((uint8_t) band) {};
 
 
-    inline LORABand getBand() {     return ((LORABand) (_flags & 0x03));    };
+    inline LORABand band() {     return ((LORABand) (_flags & 0x03));    };
 
 
   private:
-    const uint8_t _flags;
+    const uint8_t _flags;   // Holds DIO states/directions/behaviors.
 };
 
 
@@ -138,45 +154,65 @@ class SX127x : public BusOpCallback {
     SX127x(const SX127xOpts*);
     ~SX127x();
 
-    inline bool    devFound() {      return _sx_flag(SX127X_FLAG_DEVICE_PRESENT);  };
-    inline bool    initialized() {   return _sx_flag(SX127X_FLAG_INITIALIZED);     };
+    int8_t reset();
+    int8_t init(SPIAdapter* b = nullptr);
+    int8_t  refresh();
+    inline  void setAdapter(SPIAdapter* b) {  _BUS = b;     };
+
+    /* Flag wrappers */
+    inline bool devFound() {      return _flags.value(SX127X_FLAG_DEVICE_PRESENT);  };
+    inline bool initialized() {   return _flags.value(SX127X_FLAG_INITIALIZED);     };
 
     /* Overrides from the BusAdapter interface */
     int8_t io_op_callahead(BusOp*);
     int8_t io_op_callback(BusOp*);
     int8_t queue_io_job(BusOp*);
 
-    int8_t init(SPIAdapter*);
+    /* Settings for band and relay legality. */
+    void markBandIllegal(LORABand);   // Such bands will be treated as listen-only.
 
+    void printPins(StringBuilder*);
     void printDebug(StringBuilder*);
     void printRegs(StringBuilder*);
+
+    /* Built-in per-instance console handler. */
+    int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
 
 
   private:
     const SX127xOpts _opts;
-    SPIAdapter* _BUS = nullptr;
-    uint32_t _flags  = 0;
-    uint8_t _tx_buffer[512] = {0, };
-    uint8_t _rx_buffer[512] = {0, };
-    uint8_t _shadows[27]    = {0, };
-    SPIBusOp _tx_busop;
-    SPIBusOp _rx_busop;
+    FlagContainer32  _flags;       // Class state tracking.
+    SPIAdapter*      _BUS = nullptr;
+    uint8_t          _tx_buffer[512] = {0, };
+    uint8_t          _rx_buffer[512] = {0, };
+    uint8_t          _shadows[27]    = {0, };
+    uint8_t          _verbosity      = LOG_LEV_NOTICE;
+    SPIBusOp         _tx_busop;
+    SPIBusOp         _rx_busop;
+    uint32_t         _pkts_rx_good = 0;
+    uint32_t         _pkts_rx_drop = 0;
+    uint32_t         _pkts_tx_good = 0;
+    uint32_t         _pkts_tx_drop = 0;
+
+    /* FSM markers */
+    uint32_t    _fsm_lockout_ms; // Used to enforce a delay between state transitions.
+    SX127xState _fsm_waypoints[SX127X_FSM_WAYPOINT_DEPTH] = {SX127xState::UNINIT, };
+    SX127xState _fsm_pos;
+    SX127xState _fsm_pos_prior;
 
     int8_t _ll_pin_init();
 
-    /* Flag manipulation inlines */
-    inline uint32_t _sx_flags() {                return _flags;           };
-    inline bool _sx_flag(uint32_t _flag) {       return (_flags & _flag); };
-    inline void _sx_flip_flag(uint32_t _flag) {  _flags ^= _flag;         };
-    inline void _sx_clear_flag(uint32_t _flag) { _flags &= ~_flag;        };
-    inline void _sx_set_flag(uint32_t _flag) {   _flags |= _flag;         };
-    inline void _sx_set_flag(uint32_t _flag, bool nu) {
-      if (nu) _flags |= _flag;
-      else    _flags &= ~_flag;
-    };
-
-    static uint8_t _get_reg_addr(const SX127xRegister);
-    static SX127xRegister _reg_id_from_addr(const uint8_t addr);
+    /* State machine functions */
+    int8_t   _poll_fsm();
+    int8_t   _set_fsm_position(SX127xState);
+    int8_t   _set_fsm_route(int count, ...);
+    int8_t   _append_fsm_route(int count, ...);
+    int8_t   _prepend_fsm_state(SX127xState);
+    int8_t   _advance_state_machine();
+    bool     _fsm_is_waiting();
+    void     _print_fsm(StringBuilder*);
+    inline SX127xState _fsm_pos_next() {   return _fsm_waypoints[0];   };
+    inline bool        _fsm_is_stable() {  return (SX127xState::UNINIT == _fsm_waypoints[0]);   };
 };
 
 #endif  // __SX127X_DRIVER_H

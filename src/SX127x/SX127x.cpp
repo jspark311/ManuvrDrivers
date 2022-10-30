@@ -1,3 +1,7 @@
+/*******************************************************************************
+*
+*******************************************************************************/
+
 #include "SX127x.h"
 
 
@@ -29,7 +33,7 @@ static const uint8_t SX127X_REG_ADDR[27] = {
 * @param r The register we wish to transact with.
 * @return the first byte of an SPI register transaction.
 */
-uint8_t SX127x::_get_reg_addr(const SX127xRegister r) {
+uint8_t _get_reg_addr(const SX127xRegister r) {
   uint8_t reg_idx = (uint8_t) r;
   if (27 > reg_idx) {
     return SX127X_REG_ADDR[reg_idx];
@@ -38,26 +42,7 @@ uint8_t SX127x::_get_reg_addr(const SX127xRegister r) {
 }
 
 
-/*
-* This is an ISR.
-*/
-void sx127x_d0_isr() {
-}
-
-/*
-* This is an ISR.
-*/
-void sx127x_d1_isr() {
-}
-
-/*
-* This is an ISR.
-*/
-void sx127x_d2_isr() {
-}
-
-
-SX127xRegister SX127x::_reg_id_from_addr(const uint8_t addr) {
+SX127xRegister _reg_id_from_addr(const uint8_t addr) {
   switch (0x7F & addr) {
     case 0x00:   return SX127xRegister::FIFO;
     case 0x01:   return SX127xRegister::OP_MODE;
@@ -89,6 +74,68 @@ SX127xRegister SX127x::_reg_id_from_addr(const uint8_t addr) {
   }
   return SX127xRegister::INVALID;
 }
+
+
+/**
+* Static function to convert enum to string.
+*/
+const char* _fsm_state_str(const SX127xState e) {
+  switch (e) {
+    case SX127xState::UNINIT:        return "UNINIT";
+    case SX127xState::PREINIT:       return "PREINIT";
+    case SX127xState::RESETTING:     return "RESETTING";
+    case SX127xState::DISCOVERY:     return "DISCOVERY";
+    case SX127xState::REGINIT:       return "REGINIT";
+    case SX127xState::USR_CONF:      return "USR_CONF";
+    case SX127xState::READY:         return "READY";
+    case SX127xState::LOW_PWR:       return "LOW_PWR";
+    case SX127xState::FAULT:         return "FAULT";
+    default:   break;
+  }
+  return "INVALID";
+}
+
+
+/**
+* Static function to convert enum to string.
+*/
+static const bool _fsm_code_valid(const SX127xState e) {
+  switch (e) {
+    case SX127xState::UNINIT:
+    case SX127xState::PREINIT:
+    case SX127xState::RESETTING:
+    case SX127xState::DISCOVERY:
+    case SX127xState::REGINIT:
+    case SX127xState::USR_CONF:
+    case SX127xState::READY:
+    case SX127xState::LOW_PWR:
+    case SX127xState::FAULT:
+      return true;
+    default:
+      break;
+  }
+  return false;
+}
+
+
+/*
+* This is an ISR.
+*/
+void sx127x_d0_isr() {
+}
+
+/*
+* This is an ISR.
+*/
+void sx127x_d1_isr() {
+}
+
+/*
+* This is an ISR.
+*/
+void sx127x_d2_isr() {
+}
+
 
 
 /*******************************************************************************
@@ -141,9 +188,9 @@ int8_t SX127x::init(SPIAdapter* b) {
 void SX127x::printDebug(StringBuilder* output) {
   output->concat("\n");
   output->concatf("\tReset: %u\tCS:    %u\n", _opts.reset_pin, _opts.cs_pin);
-  output->concatf("\tD0:    %u\tD1:    %u\n", _opts.d0_pin, _opts.d1_pin);
-  output->concatf("\tD2:    %u\n", _opts.d2_pin);
+  output->concatf("\tD0:    %u\tD1:    %u\tD2:    %u\n", _opts.d0_pin, _opts.d1_pin, _opts.d2_pin);
 }
+
 
 /**
 * Debug support method. Dump the register shadows.
@@ -157,6 +204,29 @@ void SX127x::printRegs(StringBuilder* output) {
 }
 
 
+void SX127x::_print_fsm(StringBuilder* output) {
+  bool keep_looping = true;
+  int i = 0;
+  StringBuilder::styleHeader1(output, "SX127x FSM");
+  output->concatf("\tPrior state:   %s\n", _fsm_state_str(_fsm_pos_prior));
+  output->concatf("\tCurrent state: %s%s\n\tNext states:   ", _fsm_state_str(_fsm_pos), _fsm_is_waiting() ? " (LOCKED)":" ");
+  while (keep_looping & (i < SX127X_FSM_WAYPOINT_DEPTH)) {
+    if (SX127xState::UNINIT == _fsm_waypoints[i]) {
+      output->concat("<STABLE>");
+      keep_looping = false;
+    }
+    else {
+      output->concatf("%s, ", _fsm_state_str(_fsm_waypoints[i]));
+    }
+    i++;
+  }
+  if (_fsm_is_waiting()) {
+    output->concatf("\tFSM locked for another %ums\n", _fsm_lockout_ms - millis());
+  }
+  output->concat('\n');
+}
+
+
 /**
 * Setup the low-level pin details. Execution is idempotent.
 *
@@ -166,16 +236,17 @@ void SX127x::printRegs(StringBuilder* output) {
 */
 int8_t SX127x::_ll_pin_init() {
   int8_t ret = -1;
-  if (_sx_flag(SX127X_FLAG_PINS_CONFIGURED)) {
+  if (_flags.value(SX127X_FLAG_PINS_CONFIGURED)) {
     ret = 0;
   }
   else if (255 != _opts.cs_pin) {   // This pin is required.
     ret = pinMode(_opts.cs_pin, GPIOMode::OUTPUT);
     if (0 == ret) {
-      setPin(_opts.cs_pin, true);
+      setPin(_opts.cs_pin, true);   // Unselect SPI.
       if (255 != _opts.reset_pin) {
         ret = pinMode(_opts.reset_pin, GPIOMode::OUTPUT);
         if (0 == ret) {
+          // Start the part in a reset state.
           setPin(_opts.reset_pin, false);
         }
       }
@@ -309,6 +380,232 @@ int8_t SX127x::io_op_callback(BusOp* _op) {
         break;
       default:  // Illegal operation.
         break;
+    }
+  }
+  return ret;
+}
+
+
+/*******************************************************************************
+* FSM functions
+*******************************************************************************/
+
+/**
+* Considers the current FSM state, and decides whether or not to advance the
+*   state machine.
+* NOTE: This function does not plan state machine routes, and should thus not
+*   call _set_fsm_position() directly. Only _advance_state_machine().
+*
+* @return  1 on state shift
+*          0 on no action
+*         -1 on error
+*/
+int8_t SX127x::_poll_fsm() {
+  int8_t ret = 0;
+  bool fsm_advance = false;
+  switch (_fsm_pos) {
+    case SX127xState::UNINIT:
+    case SX127xState::PREINIT:
+    case SX127xState::RESETTING:
+    case SX127xState::DISCOVERY:
+    case SX127xState::REGINIT:
+    case SX127xState::USR_CONF:
+    case SX127xState::READY:
+    case SX127xState::LOW_PWR:
+    case SX127xState::FAULT:
+      break;
+    default:   // Can't exit from an unknown state.
+      ret = -1;
+      break;
+  }
+
+  // If the current state's exit criteria is met, we advance the FSM.
+  if (fsm_advance & (-1 != ret)) {
+    ret = (0 == _advance_state_machine()) ? 1 : 0;
+  }
+  return ret;
+}
+
+
+/**
+* Takes actions appropriate for entry into the given state, and sets the current
+*   FSM position if successful. Records the existing state as having been the
+*   prior state.
+* NOTE: Except in edge-cases (reset, init, etc), this function should ONLY be
+*   called by _advance_state_machine().
+*
+* @param The FSM code to test.
+* @return 0 on success, -1 otherwise.
+*/
+int8_t SX127x::_set_fsm_position(SX127xState new_state) {
+  int8_t fxn_ret = -1;
+  int8_t ret = -1;
+  bool state_entry_success = false;   // Fail by default.
+  if (!_fsm_is_waiting()) {
+    switch (new_state) {
+      case SX127xState::UNINIT:
+      case SX127xState::PREINIT:
+      case SX127xState::RESETTING:
+      case SX127xState::DISCOVERY:
+      case SX127xState::REGINIT:
+      case SX127xState::USR_CONF:
+      case SX127xState::READY:
+      case SX127xState::LOW_PWR:
+      case SX127xState::FAULT:
+        break;
+      default:
+        break;
+    }
+
+    if (state_entry_success) {
+      if (LOG_LEV_NOTICE <= _verbosity) c3p_log(LOG_LEV_NOTICE, __PRETTY_FUNCTION__, "SX127x FSM moved %s ---> %s", _fsm_state_str(_fsm_pos), _fsm_state_str(new_state));
+      _fsm_pos_prior = _fsm_pos;
+      _fsm_pos       = new_state;
+      fxn_ret = 0;
+    }
+  }
+  return fxn_ret;
+}
+
+
+
+/**
+* Internal function responsible for advancing the state machine.
+* NOTE: This function does no checks for IF the FSM should move forward. It only
+*   performs the actions required to do it.
+* NOTE: This function should only be called by _poll_fsm().
+*
+* @return 0 on state change, -1 otherwise.
+*/
+int8_t SX127x::_advance_state_machine() {
+  int8_t ret = -1;
+  if (SX127xState::UNINIT != _fsm_waypoints[0]) {
+    if (0 == _set_fsm_position(_fsm_waypoints[0])) {
+      ret = 0;
+      for (int i = 0; i < (SX127X_FSM_WAYPOINT_DEPTH-1); i++) {
+        _fsm_waypoints[i] = _fsm_waypoints[i+1];
+      }
+      _fsm_waypoints[SX127X_FSM_WAYPOINT_DEPTH-1] = SX127xState::UNINIT;
+    }
+  }
+  return ret;
+}
+
+
+/**
+* This function checks each state code for validity, but does not error-check
+*   the validity of the FSM traversal route specified in the arguments. It just
+*   adds them to the list if they all correspond to valid state codes.
+* This function will accept a maximum of sizeof(_fsm_waypoints) arguments, and
+*   will clobber the contents of that member if the call succeeds. Arguments
+*   provided in excess of the limit will be truncated with no error.
+*
+* @return 0 on success, -1 on no params, -2 on invalid FSM code.
+*/
+int8_t SX127x::_set_fsm_route(int arg_count, ...) {
+  int8_t ret = -1;
+  const int PARAM_COUNT = strict_min((int8_t) arg_count, (int8_t) SX127X_FSM_WAYPOINT_DEPTH);
+  if (PARAM_COUNT > 0) {
+    va_list args;
+    va_start(args, arg_count);
+    SX127xState test_values[PARAM_COUNT] = {SX127xState::UNINIT, };
+    ret = 0;
+    for (int i = 0; i < PARAM_COUNT; i++) {
+      test_values[i] = (SX127xState) va_arg(args, int);
+    }
+    va_end(args);   // Close out the va_args, and error-check each value.
+    for (int i = 0; i < PARAM_COUNT; i++) {
+      if (!_fsm_code_valid(test_values[i])) {
+        ret = -2;
+      }
+    }
+    if (0 == ret) {
+      // If everything looks good, add items to the state traversal list, and
+      //   zero the remainder.
+      for (int i = 0; i < SX127X_FSM_WAYPOINT_DEPTH; i++) {
+        _fsm_waypoints[i] = (i < PARAM_COUNT) ? test_values[i] : SX127xState::UNINIT;
+      }
+    }
+  }
+  return ret;
+}
+
+
+/**
+* This function checks each state code for validity, but does not error-check
+*   the validity of the FSM traversal route specified in the arguments. It just
+*   adds them to the list if they all correspond to valid state codes.
+* This function will accept a maximum of sizeof(_fsm_waypoints) arguments, and
+*   will append to the contents of that member if the call succeeds. Arguments
+*   provided in excess of the limit will be truncated with no error.
+*
+* @return 0 on success, -1 on no params, -2 on invalid FSM code.
+*/
+int8_t SX127x::_append_fsm_route(int arg_count, ...) {
+  int8_t ret = -1;
+  const int PARAM_COUNT = strict_min((int8_t) arg_count, (int8_t) SX127X_FSM_WAYPOINT_DEPTH);
+  if (PARAM_COUNT > 0) {
+    va_list args;
+    va_start(args, arg_count);
+    SX127xState test_values[PARAM_COUNT] = {SX127xState::UNINIT, };
+    ret = 0;
+    for (int i = 0; i < PARAM_COUNT; i++) {
+      test_values[i] = (SX127xState) va_arg(args, int);
+    }
+    va_end(args);   // Close out the va_args, and error-check each value.
+    for (int i = 0; i < PARAM_COUNT; i++) {
+      if (!_fsm_code_valid(test_values[i])) {
+        ret = -2;
+      }
+    }
+    if (0 == ret) {
+      // If everything looks good, seek to the end of the state traversal list,
+      //   and append.
+      uint8_t fidx = 0;
+      while ((fidx < SX127X_FSM_WAYPOINT_DEPTH) && (SX127xState::UNINIT != _fsm_waypoints[fidx])) {
+        fidx++;
+      }
+      const uint8_t PARAMS_TO_COPY = strict_min((uint8_t)(SX127X_FSM_WAYPOINT_DEPTH - fidx), (uint8_t) PARAM_COUNT);
+      for (int i = 0; i < PARAMS_TO_COPY; i++) {
+        _fsm_waypoints[i + fidx] = test_values[i];
+      }
+    }
+  }
+  return ret;
+}
+
+
+int8_t SX127x::_prepend_fsm_state(SX127xState nxt) {
+  int8_t ret = -1;
+  if (_fsm_code_valid(nxt)) {
+    ret--;
+    // If everything looks good, seek to the end of the state traversal list,
+    //   and append.
+    uint8_t fidx = 0;
+    while ((fidx < SX127X_FSM_WAYPOINT_DEPTH) && (SX127xState::UNINIT != _fsm_waypoints[fidx])) {
+      SX127xState last = _fsm_waypoints[fidx];
+      _fsm_waypoints[fidx] = nxt;
+      nxt = last;
+      fidx++;
+    }
+    if (fidx < SX127X_FSM_WAYPOINT_DEPTH) {
+      _fsm_waypoints[fidx] = nxt;
+      ret = 0;
+    }
+  }
+  return ret;
+}
+
+
+
+bool SX127x::_fsm_is_waiting() {
+  bool ret = false;
+  if (0 != _fsm_lockout_ms) {
+    if (millis() >= _fsm_lockout_ms) {
+      _fsm_lockout_ms = 0;
+    }
+    else {
+      ret = true;
     }
   }
   return ret;

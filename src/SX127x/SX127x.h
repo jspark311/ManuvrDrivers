@@ -154,10 +154,10 @@ class SX127x : public BusOpCallback {
     SX127x(const SX127xOpts*);
     ~SX127x();
 
-    int8_t reset();
     int8_t init(SPIAdapter* b = nullptr);
-    int8_t  refresh();
-    inline  void setAdapter(SPIAdapter* b) {  _BUS = b;     };
+    int8_t reset();
+    int8_t refresh();
+    inline void setAdapter(SPIAdapter* b = nullptr) {  _BUS = b;  };
 
     /* Flag wrappers */
     inline bool devFound() {      return _flags.value(SX127X_FLAG_DEVICE_PRESENT);  };
@@ -171,7 +171,6 @@ class SX127x : public BusOpCallback {
     /* Settings for band and relay legality. */
     void markBandIllegal(LORABand);   // Such bands will be treated as listen-only.
 
-    void printPins(StringBuilder*);
     void printDebug(StringBuilder*);
     void printRegs(StringBuilder*);
 

@@ -159,23 +159,35 @@ SX127x::~SX127x() {
 
 int8_t SX127x::init(SPIAdapter* b) {
   int8_t pin_setup_ret = _ll_pin_init();  // Configure the pins if they are not already.
-  int8_t ret = -4;
+  int8_t ret = -1;
   if (pin_setup_ret >= 0) {
-    ret = -3;
+    ret--;
     if (nullptr != b) {
-      ret = -2;
+      ret = 0;
       _BUS = b;
       _tx_busop.setAdapter(_BUS);
       _tx_busop.shouldReap(false);
-      //_tx_busop.setParams((uint8_t) _get_reg_addr(MCP356xRegister::IRQ) | 0x01);
-      //_tx_busop.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) MCP356xRegister::IRQ], 1);
+      //_tx_busop.setParams((uint8_t) _get_reg_addr(SX127xRegister::OP_MODE) | 0x01);
+      //_tx_busop.setBuffer((uint8_t*) &_shadows[(uint8_t) SX127xRegister::IRQ], 1);
 
       _rx_busop.setAdapter(_BUS);
       _rx_busop.shouldReap(false);
-      //_rx_busop.setParams((uint8_t) _get_reg_addr(MCP356xRegister::IRQ) | 0x01);
-      //_rx_busop.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) MCP356xRegister::IRQ], 1);
+      _rx_busop.setParams((uint8_t) _get_reg_addr(SX127xRegister::OP_MODE) | 0x01);
+      _rx_busop.setBuffer((uint8_t*) &_shadows[(uint8_t) SX127xRegister::OP_MODE], (sizeof(_shadows)-1));
     }
   }
+  return ret;
+}
+
+
+int8_t SX127x::reset() {
+  int8_t ret = -1;
+  return ret;
+}
+
+
+int8_t SX127x::refresh() {
+  int8_t ret = -1;
   return ret;
 }
 
@@ -189,6 +201,7 @@ void SX127x::printDebug(StringBuilder* output) {
   output->concat("\n");
   output->concatf("\tReset: %u\tCS:    %u\n", _opts.reset_pin, _opts.cs_pin);
   output->concatf("\tD0:    %u\tD1:    %u\tD2:    %u\n", _opts.d0_pin, _opts.d1_pin, _opts.d2_pin);
+  _print_fsm(output);
 }
 
 
@@ -607,6 +620,55 @@ bool SX127x::_fsm_is_waiting() {
     else {
       ret = true;
     }
+  }
+  return ret;
+}
+
+
+
+/*******************************************************************************
+* Console callback
+* These are built-in handlers for using this instance via a console.
+*******************************************************************************/
+
+/**
+* @page console-handlers
+* @section sx127x-tools SX127x tools
+*
+* This is the console handler for using the MCP356x ADC. If invoked without
+*   arguments, it will print channel values, as are being observed by hardware.
+*
+* @subsection cmd-actions Actions
+*
+* Action    | Description | Additional arguments
+* --------- | ----------- | --------------------
+* `init`    | Manually invoke the driver's `init()` function. | None
+* `reset`   | Manually invoke the driver's `reset()` function. | None
+* `refresh` | Refresh the register shadows from the hardware. | None
+*/
+int8_t SX127x::console_handler(StringBuilder* text_return, StringBuilder* args) {
+  int8_t ret = 0;
+  bool print_uarts = true;
+  if (0 < args->count()) {
+    char* cmd = args->position_trimmed(1);
+    if (0 == StringBuilder::strcasecmp(cmd, "init")) {
+      text_return->concatf("lora.init() returns %d.\n", init());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "regs")) {
+      printRegs(text_return);
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "reset")) {
+      text_return->concatf("lora.reset() returns %d.\n", reset());
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
+      text_return->concatf("lora.refresh() returns %d.\n", refresh());
+    }
+    else {
+      ret = -1;
+    }
+  }
+  else {
+    printDebug(text_return);
   }
   return ret;
 }

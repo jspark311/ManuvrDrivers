@@ -54,6 +54,7 @@ void MCP4728::printDebug(StringBuilder* output) {
 
   for (uint8_t i = 0; i < 4; i++) {
     output->concatf("--\tCHAN %u:  0x%03x  (%.4fv)  %s\n", i, chanValue(i), _DAC_VOLTS[i], pwrStateStr(chanPowerState(i)));
+    output->concatf("\t  Vref:     %10s\tGain: %ux\n", vrefStr(chanVref(i)), chanGain(i));
     output->concatf("\t  Volatile: 0x%02x  0x%02x  0x%02x\n", _DAC_VALUES[(6 * i) + 0], _DAC_VALUES[(6 * i) + 1], _DAC_VALUES[(6 * i) + 2]);
     output->concatf("\t  EEPROM:   0x%02x  0x%02x  0x%02x\n", _DAC_VALUES[(6 * i) + 3], _DAC_VALUES[(6 * i) + 4], _DAC_VALUES[(6 * i) + 5]);
   }
@@ -377,9 +378,19 @@ MCP4728PwrState MCP4728::chanPowerState(uint8_t chan) {
 }
 
 
+/*
+* Returns the true gain being applied to the the current channel, regardless of
+*   channel gain setting. Will consider Vref first.
+*/
 uint8_t MCP4728::chanGain(uint8_t chan) {
-  const uint8_t SHAD_IDX = 6 * chan;
-  return (_DAC_VALUES[SHAD_IDX+1] & 0x10) ? 2 : 1;
+  const uint8_t  SHAD_IDX = 6 * chan;
+  const uint8_t  CONF_BYTE  = _DAC_VALUES[SHAD_IDX + 1];
+  if (0 == (CONF_BYTE & 0x80)) {
+    return 1;  // Using an external Vref forces gain of 1X.
+  }
+  else {
+    return (CONF_BYTE & 0x10) ? 2 : 1;
+  }
 }
 
 
@@ -437,6 +448,45 @@ int8_t MCP4728::storeToNVM() {
 }
 
 
+/**
+* Set the DAC count for the given channel.
+* NOTE: This setting is volatile.
+*
+* @param chan is the channel to set.
+* @param value is the DAC count.
+* @return 0 on success or no action. Nonzero on failure.
+*/
+int8_t MCP4728::chanVoltage(uint8_t chan, float new_voltage) {
+  int8_t ret = -1;
+  if (4 > chan) {
+    const uint8_t  IDX_BASE   = chan * 6;
+    const uint8_t  CONF_BYTE  = _DAC_VALUES[IDX_BASE + 1];
+    const uint16_t CHAN_COUNT = _DAC_VALUES[IDX_BASE + 2] | (((uint16_t) (CONF_BYTE & 0x0F)) << 8);
+    uint16_t new_value = 0;
+    ret--;
+
+    if (0 == (CONF_BYTE & 0x80)) {
+      new_value = (uint16_t) ((new_voltage / _EXT_VREF) * 4096.0);
+    }
+    else {
+      new_value = (uint16_t) ((new_voltage / ((CONF_BYTE & 0x10) ? 4.096 : 2.048)) * 4096.0);
+    }
+
+    if (new_value != CHAN_COUNT) {
+      ret = chanValue(chan, new_value);
+    }
+    else {
+      ret = 0;
+    }
+  }
+  return ret;
+}
+
+
+
+/*
+* NOTE: This function takes account of gain settings.
+*/
 int8_t MCP4728::_recalculate_chan_voltage(uint8_t chan) {
   const uint8_t  IDX_BASE   = chan * 6;
   const uint8_t  CONF_BYTE  = _DAC_VALUES[IDX_BASE + 1];
@@ -682,6 +732,9 @@ int8_t MCP4728::console_handler(StringBuilder* text_return, StringBuilder* args)
       else if (0 == StringBuilder::strcasecmp(cmd, "val")) {
         text_return->concatf("DAC channel %u value: %u  (%.4f volts)\n", chan, chanValue(chan), chanVoltage(chan));
         text_return->concatf("\tOutput mode: %s\n", MCP4728::pwrStateStr(chanPowerState(chan)));
+      }
+      else if (0 == StringBuilder::strcasecmp(cmd, "gain")) {
+        text_return->concatf("DAC channel %u gain: %u \n", chan, chanGain(chan));
       }
       else if (0 == StringBuilder::strcasecmp(cmd, "store")) {
         text_return->concatf("MCP4728 storeToNVM() returns %d.\n", chanStore(chan));

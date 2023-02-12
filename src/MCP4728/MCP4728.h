@@ -64,6 +64,7 @@ class MCP4728 : public I2CDevice {
     uint16_t        chanValue(uint8_t chan);
     int8_t          chanVref(uint8_t chan, MCP4728Vref);
     MCP4728Vref     chanVref(uint8_t chan);
+    int8_t          chanVoltage(uint8_t chan, float voltage);
     inline float chanVoltage(uint8_t chan) {
       return (4 > chan) ? _DAC_VOLTS[chan] : 0.0;
     };

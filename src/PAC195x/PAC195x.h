@@ -1,0 +1,402 @@
+/*
+File:   PAC195x.h
+Author: J. Ian Lindsay
+Date:   2023.06.24
+*/
+
+#ifndef __PAC195x_H__
+#define __PAC195x_H__
+
+#include <inttypes.h>
+#include <stdint.h>
+#include <stdarg.h>
+#include <CppPotpourri.h>
+#include <I2CAdapter.h>
+#include <StopWatch.h>
+#include <StringBuilder.h>
+
+class PAC195x;
+
+/* These enum values indicate order only. Not addresses. */
+enum class PAC195xRegID : uint8_t {
+  /*                    Idx    Addr   Sz   Notes
+  ----------------------------------------------------- */
+  REFRESH             = 0,   // 0x00  0    (empty)
+  CTRL                = 1,   // 0x01  2    RW
+  ACC_COUNT           = 2,   // 0x02  4    RW
+  V_ACC_1             = 3,   // 0x03  7    RW
+  V_ACC_2             = 4,   // 0x04  7    RW
+  V_ACC_3             = 5,   // 0x05  7    RW
+  V_ACC_4             = 6,   // 0x06  7    RW
+  V_BUS_1             = 7,   // 0x07  2    RW
+  V_BUS_2             = 8,   // 0x08  2    RW
+  V_BUS_3             = 9,   // 0x09  2    RW
+  V_BUS_4             = 10,  // 0x0A  2    RW
+  V_SENSE_0           = 11,  // 0x0B  2    RW
+  V_SENSE_1           = 12,  // 0x0C  2    RW
+  V_SENSE_2           = 13,  // 0x0D  2    RW
+  V_SENSE_3           = 14,  // 0x0E  2    RW
+  V_BUS_AVG_0         = 15,  // 0x0F  2    RW
+  V_BUS_AVG_1         = 16,  // 0x10  2    RW
+  V_BUS_AVG_2         = 17,  // 0x11  2    RW
+  V_BUS_AVG_3         = 18,  // 0x12  2    RW
+  V_SENSE_AVG_0       = 19,  // 0x13  2    RW
+  V_SENSE_AVG_1       = 20,  // 0x14  2    RW
+  V_SENSE_AVG_2       = 21,  // 0x15  2    RW
+  V_SENSE_AVG_3       = 22,  // 0x16  2    RW
+  V_POWER_0           = 23,  // 0x17  4    RW
+  V_POWER_1           = 24,  // 0x18  4    RW
+  V_POWER_2           = 25,  // 0x19  4    RW
+  V_POWER_3           = 26,  // 0x1A  4    RW
+  SMBUS_SETTINGS      = 27,  // 0x1C  1    RW  (Discontinuity)
+  NEG_PWR_FSR         = 28,  // 0x1D  2    RW
+  REFRESH_G           = 29,  // 0x1E  0    (empty)
+  REFRESH_V           = 30,  // 0x1F  0    (empty)
+  SLOW                = 31,  // 0x20  1    RW
+  CTRL_ACTIVE         = 32,  // 0x21  2    RW
+  NEG_PWR_FSR_ACTIVE  = 33,  // 0x22  2    RW
+  CTRL_LATCH          = 34,  // 0x23  2    RW
+  NEG_PWR_FSR_LATCH   = 35,  // 0x24  2    RW
+  ACCUM_CONFIG        = 36,  // 0x25  1    RW
+  ALERT_STATUS        = 37,  // 0x26  3    RW
+  SLOW_ALERT1         = 38,  // 0x27  3    RW
+  GPIO_ALERT2         = 39,  // 0x28  3    RW
+  ACC_FULLNESS_LIMITS = 40,  // 0x29  2    RW
+  OC_LIMIT_0          = 41,  // 0x30  2    RW  (Discontinuity)
+  OC_LIMIT_1          = 42,  // 0x31  2    RW
+  OC_LIMIT_2          = 43,  // 0x32  2    RW
+  OC_LIMIT_3          = 44,  // 0x33  2    RW
+  UC_LIMIT_0          = 45,  // 0x34  2    RW
+  UC_LIMIT_1          = 46,  // 0x35  2    RW
+  UC_LIMIT_2          = 47,  // 0x36  2    RW
+  UC_LIMIT_3          = 48,  // 0x37  2    RW
+  OP_LIMIT_0          = 49,  // 0x38  3    RW
+  OP_LIMIT_1          = 50,  // 0x39  3    RW
+  OP_LIMIT_2          = 51,  // 0x3A  3    RW
+  OP_LIMIT_3          = 52,  // 0x3B  3    RW
+  OV_LIMIT_0          = 53,  // 0x3C  2    RW
+  OV_LIMIT_1          = 54,  // 0x3D  2    RW
+  OV_LIMIT_2          = 55,  // 0x3E  2    RW
+  OV_LIMIT_3          = 56,  // 0x3F  2    RW
+  UV_LIMIT_0          = 57,  // 0x40  2    RW
+  UV_LIMIT_1          = 58,  // 0x41  2    RW
+  UV_LIMIT_2          = 59,  // 0x42  2    RW
+  UV_LIMIT_3          = 60,  // 0x43  2    RW
+  OC_LIMIT_SAMPLES    = 61,  // 0x44  1    RW
+  UC_LIMIT_SAMPLES    = 62,  // 0x45  1    RW
+  OP_LIMIT_SAMPLES    = 63,  // 0x46  1    RW
+  OV_LIMIT_SAMPLES    = 64,  // 0x47  1    RW
+  UV_LIMIT_SAMPLES    = 65,  // 0x48  1    RW
+  ALERT_ENABLE        = 66,  // 0x49  3    RW
+  ACCUM_CONFIG_ACTIVE = 67,  // 0x4A  1    R
+  ACCUM_CONFIG_LATCH  = 68,  // 0x4B  1    R
+  PROD_ID             = 69,  // 0xFD  1    R  (Discontinuity)
+  MANU_ID             = 70,  // 0xFE  1    R
+  REVISION_ID         = 71   // 0xFF  1    R
+};
+#define PAC195X_REG_COUNT   72  // There are 72 registers.
+
+
+/*
+* Conversion modes
+* These enum values translate directly to register values.
+*/
+enum class PAC195xMode : uint8_t {
+  SPS_ADAPTIVE_1024 = 0x00,
+  SPS_ADAPTIVE_256  = 0x01,
+  SPS_ADAPTIVE_64   = 0x02,
+  SPS_ADAPTIVE_8    = 0x03,
+  SPS_1024          = 0x04,
+  SPS_256           = 0x05,
+  SPS_64            = 0x06,
+  SPS_8             = 0x07,
+  SINGLE            = 0x08,
+  SINGLE_8X         = 0x09,
+  FAST              = 0x0A,
+  BURST             = 0x0B,
+  SLEEP             = 0x0F
+};
+
+/*
+* This family has two configurable GPIO pins, which defaults to input.
+*/
+enum class PAC195xGPIOMode : uint8_t {
+  GPIO_INPUT     = 0,  // Default on reset for ALERT2.
+  GPIO_OUTPUT_OD = 1,
+  ALERT_OUTPUT   = 2,
+  SLOW_INPUT     = 3   // Default on reset for ALERT1.
+};
+
+/*
+* Channel topology.
+*/
+enum class PAC195xChanTopology : uint8_t {
+  UNIPOLAR   = 0,
+  FSR_OVER_2 = 1,
+  BIPOLAR    = 2
+};
+
+/*
+* Channel accumulation targets.
+*/
+enum class PAC195xAccumTarget : uint8_t {
+  V_POWER  = 0,   // Watt meter
+  V_SENSE  = 1,   // Coulomb meter
+  V_BUS    = 2    // Voltage averaging
+};
+
+
+
+enum class PAC195xState : uint8_t {
+  UNINIT = 0,  // init() has never been called.
+  PREINIT,     // Pin control is being established.
+  RESETTING,   // Driver is resetting the ADC.
+  DISCOVERY,   // Driver is probing for the ADC.
+  REGINIT,     // The initial ADC configuration is being written.
+  USR_CONF,    // User config is being written.
+  IDLE,        // Powered up and calibrated, but not reading.
+  READING,     // Everything running, data collection proceeding.
+  FAULT        // State machine encountered something it couldn't cope with.
+};
+
+
+/*
+* Class flags.
+* NOTE: PAC195X_FLAG_USE_INTERNAL_CLK takes priority over
+*   PAC195X_FLAG_GENERATE_MCLK to avoid potential pin contention. If both flags
+*   are set, the MCLK pin (if given) will be configured as an input, and the
+*   flag directing the class to generate a clock on that pin will be ignored.
+*/
+#define PAC195X_FLAG_DEVICE_PRESENT   0x00000001  // Part is likely an PAC195x.
+#define PAC195X_FLAG_PINS_CONFIGURED  0x00000002  // Low-level pin setup is complete.
+#define PAC195X_FLAG_USER_CONFIG      0x00000004  // Registers are initialized with the user's values.
+#define PAC195X_FLAG_REFRESH_CYCLE    0x00002000  // We are undergoing a full register refresh.
+#define PAC195X_FLAG_SERVICING_IRQS   0x00010000  // The class will respond to IRQ signals.
+
+// Bits to preserve through reset.
+#define PAC195X_FLAG_RESET_MASK  (PAC195X_FLAG_DEVICE_PRESENT | PAC195X_FLAG_PINS_CONFIGURED)
+
+
+/*
+* A class to hold enum'd config for the sensor.
+*/
+class PAC195xConfig {
+  public:
+    uint32_t                   scan;
+    uint32_t                   flags;
+    PAC195xMode                mode;
+    PAC195xGPIOMode            gpio1_mode;
+    PAC195xGPIOMode            gpio2_mode;
+
+    PAC195xConfig() : scan(0), flags(0),
+        mode(PAC195xMode::ONESHOT_STANDBY),
+        gpio1_mode(PAC195xGPIOMode::SLOW_INPUT),
+        gpio2_mode(PAC195xGPIOMode::GPIO_INPUT) {};
+
+    PAC195xConfig(
+      const uint32_t SCAN,
+      const uint32_t FLAGS,
+      const PAC195xMode MODE,
+      const PAC195xGain GAIN,
+      const PAC195xBiasCurrent BIAS,
+      const PAC195xOversamplingRatio OVER,
+      const PAC195xAMCLKPrescaler PRESCALER
+    ) : scan(SCAN), flags(FLAGS),
+        mode(MODE), gain(GAIN), bias(BIAS),
+        over(OVER), prescaler(PRESCALER) {};
+
+    PAC195xConfig(const PAC195xConfig* CFG) : scan(CFG->scan), flags(CFG->flags),
+        mode(CFG->mode), gain(CFG->gain), bias(CFG->bias),
+        over(CFG->over), prescaler(CFG->prescaler) {};
+
+
+    ~PAC195xConfig() {};
+
+
+  private:
+};
+
+
+/*
+* A representation of a sensor channel. Four of these are composed into the
+*   the top-level sensor driver.
+*/
+class PAC195xChannel {
+  public:
+    PAC195xChannel() : _voltage(0.0f), _power(0.0f), _energy(0.0f), _fresh(false) {};
+    ~PAC195xChannel() {};
+
+    // Data accessors.
+    inline bool voltage() {   return _voltage;  };
+    inline bool power() {     return _power;    };
+    inline bool energy() {    return _energy;   };
+    inline bool fresh() {     return _fresh;    };
+
+    // Wrapped channel operations. Calling these allows simpler application
+    //   logic, and generates I/O from the driver.
+    int8_t resetAccumulator();
+    int8_t enabled(bool);
+    bool   enabled();
+
+    void printChannel(StringBuilder*);
+
+
+  private:
+    friend PAC195x;
+    float  _voltage;  // Primary data. Voltage at SENSE+ pin
+    float  _power;    // Primary data. Instantaneous power through the channel.
+    double _energy;   // Primary data. The accumulated energy through the channel.
+    bool   _fresh;    // Has the channel been updated since the last time it was checked?
+
+    float _sense_ohms;  // Channel config. Value (in Ohm's) of the sense resistor.
+    PAC195xChanTopology _topo;
+    PAC195xAccumTarget  _acc_target;
+    uint32_t _acc_time;  // The system time when we began accumulating.
+};
+
+
+
+/* The driver. */
+class PAC195x : public I2CDevice {
+  public:
+    bool alert1_irq = false;
+    bool alert2_irq = false;
+
+    // Most interaction with this driver from the application layer is likely
+    //   to be mediated via these channel objects. Depending on what hardware
+    //   is found by the driver, some of these objects will be disabled.
+    PAC195xChannel chan_1;
+    PAC195xChannel chan_2;
+    PAC195xChannel chan_3;
+    PAC195xChannel chan_4;
+
+    PAC195x(
+      const PAC195xConfig*,
+      const uint8_t addr,
+      const uint8_t pin_alert_1,
+      const uint8_t pin_alert_2,
+      const uint8_t pin_pwr_dwn
+    );
+    ~PAC195x();
+
+    int8_t  init();          // Setup the driver.
+    int8_t  trigger();       // For applications that use one-shot sample logic.
+    int8_t  refresh();       // Refresh the state of the register shadows.
+    bool    scanComplete();  // Were all configured channels sampled and updated?
+
+    inline uint32_t  lastRead() {        return micros_last_read;  };
+    inline uint32_t  readCount() {       return read_count;        };
+    inline void      resetReadCount() {  read_count = 0;           };
+
+    inline bool ownsIRQPin(uint8_t x) {  return ((_ALERT1_PIN == x) | (_ALERT2_PIN == x));  };
+    inline bool devFound() {             return _pac195x_flag(PAC195X_FLAG_DEVICE_PRESENT); };
+    inline bool configured() {           return _pac195x_flag(PAC195X_FLAG_USER_CONFIG);    };
+    inline bool isrFired() {             return isr_fired;      };
+
+    /* Functions for output and debug. */
+    void printPins(StringBuilder*);
+    void printRegs(StringBuilder*);
+    void printDebug(StringBuilder*);
+    void printChannelValues(StringBuilder*);
+
+    /* Built-in per-instance console handler. */
+    int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
+
+    // TODO: Below should eventually be protected.
+    inline PAC195xState getPriorState() {       return _prior_state;     };
+    inline PAC195xState getCurrentState() {     return _current_state;   };
+    inline PAC195xState getDesiredState() {     return _desired_state;   };
+    inline void setDesiredState(PAC195xState x) {    _desired_state = x; };
+    inline bool stateStable() {   return (_desired_state == _current_state);  };
+    // TODO: Above should eventually be protected.
+
+    /* Overrides from the BusAdapter interface */
+    int8_t io_op_callahead(BusOp*);
+    int8_t io_op_callback(BusOp*);
+    int8_t queue_io_job(BusOp*);
+
+    static const char* stateStr(const PAC195xState);
+
+
+
+  private:
+    friend PAC195xChannel;   // Allows register API to remain buried.
+    // Pin assignments
+    const uint8_t  _ALERT1_PIN;
+    const uint8_t  _ALERT2_PIN;
+    const uint8_t  _PWR_DWN_PIN;
+    PAC195xConfig* _desired_conf;
+
+    I2CBusOp  _busop_irq_read;
+    I2CBusOp  _busop_dat_read;
+
+    uint32_t _reg_shadows[163]     = {0, };  // Register shadows.
+    uint32_t _flags                = 0;
+    uint32_t read_count            = 0;
+    uint32_t micros_last_read      = 0;
+    PAC195xState _prior_state      = PAC195xState::UNINIT;
+    PAC195xState _current_state    = PAC195xState::UNINIT;
+    PAC195xState _desired_state    = PAC195xState::UNINIT;
+
+
+    /* State machine functions */
+    int8_t _step_state_machine();
+    void   _set_state(PAC195xState);
+    void   _set_fault(const char*);
+
+    /* Everything below this line is up for review */
+    int8_t  _post_reset_fxn();
+    int8_t  _proc_irq_register();
+    int8_t  _ll_pin_init();
+    uint8_t _get_reg_addr(PAC195xRegID);
+    int8_t _send_fast_command(uint8_t cmd);
+
+    uint8_t _channel_count();
+    int8_t  _set_scan_channels(uint32_t);
+    int8_t  _apply_usr_config();
+
+    void     _clear_registers();
+    int8_t   _set_shadow_value(PAC195xRegID, uint32_t val);
+    uint32_t _get_shadow_value(PAC195xRegID);
+    uint64_t _get_shadow_value64(PAC195xRegID);
+    int8_t   _write_register(PAC195xRegID, uint32_t val);
+    int8_t   _read_register(PAC195xRegID);
+    int8_t   _proc_reg_write(PAC195xRegID);
+    int8_t   _proc_reg_read(PAC195xRegID);
+
+    inline bool _servicing_irqs() {        return _pac195x_flag(PAC195X_FLAG_SERVICING_IRQS);   };
+    inline void _servicing_irqs(bool x) {  _pac195x_set_flag(PAC195X_FLAG_SERVICING_IRQS, x);   };
+
+    inline bool _scan_covers_channel(PAC195xChannel c) {
+      return (0x01 & (_reg_shadows[(uint8_t) PAC195xRegID::SCAN] >> ((uint8_t) c)));
+    };
+
+    /* Flag manipulation inlines */
+    inline uint32_t _pac195x_flags() {                return _flags;           };
+    inline bool _pac195x_flag(uint32_t _flag) {       return (_flags & _flag); };
+    inline void _pac195x_flip_flag(uint32_t _flag) {  _flags ^= _flag;         };
+    inline void _pac195x_clear_flag(uint32_t _flag) { _flags &= ~_flag;        };
+    inline void _pac195x_set_flag(uint32_t _flag) {   _flags |= _flag;         };
+    inline void _pac195x_set_flag(uint32_t _flag, bool nu) {
+      if (nu) _flags |= _flag;
+      else    _flags &= ~_flag;
+    };
+
+    /* Flag manipulation inlines for individual channels */
+    inline void _channel_clear_new_flag(PAC195xChannel c) { _channel_flags &= ~(1 << (uint8_t) c);                 };
+    inline void _channel_set_new_flag(PAC195xChannel c) {   _channel_flags |= (1 << (uint8_t) c);                  };
+    inline bool _channel_has_new_value(PAC195xChannel c) {  return (_channel_flags & (1 << (uint8_t) c));          };
+    inline void _channel_clear_ovr_flag(PAC195xChannel c) { _channel_flags &= ~(0x00010000 << (uint8_t) c);        };
+    inline void _channel_set_ovr_flag(PAC195xChannel c) {   _channel_flags |= (0x00010000 << (uint8_t) c);         };
+    inline void _channel_set_ovr_flag(PAC195xChannel c, bool nu) {
+      _channel_flags = (nu) ? (_channel_flags | (0x00010000 << (uint8_t) c)) : (_channel_flags & ~(0x00010000 << (uint8_t) c));
+    };
+    inline bool _channel_over_range(PAC195xChannel c) {     return (_channel_flags & (0x00010000 << (uint8_t) c)); };
+
+    static const uint8_t _reg_addr(const PAC195xRegID);
+    static const uint8_t _reg_shadow_offset(const PAC195xRegID);
+    static const uint8_t _reg_width(const PAC195xRegID);
+    static const char* const _reg_name_str(const PAC195xRegID);
+};
+
+#endif  // __PAC195x_H__

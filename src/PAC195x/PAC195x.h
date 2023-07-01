@@ -92,9 +92,10 @@ enum class PAC195xRegID : uint8_t {
   ACCUM_CONFIG_LATCH  = 68,  // 0x4B  1    R
   PROD_ID             = 69,  // 0xFD  1    R  (Discontinuity)
   MANU_ID             = 70,  // 0xFE  1    R
-  REVISION_ID         = 71   // 0xFF  1    R
+  REVISION_ID         = 71,  // 0xFF  1    R
+  INVALID             = 72   // End-of-enum. There are 72 registers.
 };
-#define PAC195X_REG_COUNT   72  // There are 72 registers.
+#define PAC195X_REG_COUNT   ((uint8_t) PAC195xRegID::INVALID)
 
 
 /*
@@ -177,38 +178,47 @@ enum class PAC195xState : uint8_t {
 #define PAC195X_FLAG_RESET_MASK  (PAC195X_FLAG_DEVICE_PRESENT | PAC195X_FLAG_PINS_CONFIGURED)
 
 
+// TODO: might replace these with higher-level data selections. Don't code too
+//   deeply against this yet.
+#define PAC195X_CHAN_MASK_0   0x01  //
+#define PAC195X_CHAN_MASK_1   0x02  //
+#define PAC195X_CHAN_MASK_2   0x04  //
+#define PAC195X_CHAN_MASK_3   0x08  //
+#define PAC195X_CHAN_VOLTAGE  0x10  //
+
+
 /*
 * A class to hold enum'd config for the sensor.
 */
 class PAC195xConfig {
   public:
-    uint32_t                   scan;
-    uint32_t                   flags;
-    PAC195xMode                mode;
-    PAC195xGPIOMode            gpio1_mode;
-    PAC195xGPIOMode            gpio2_mode;
+    uint8_t          scan;        // Bitmask of channels that should be reporting.
+    PAC195xMode      mode;        // The sensor sampling mode.
+    PAC195xGPIOMode  gpio1_mode;  //
+    PAC195xGPIOMode  gpio2_mode;  //
 
-    PAC195xConfig() : scan(0), flags(0),
-        mode(PAC195xMode::ONESHOT_STANDBY),
+    /* Trivial constructor. */
+    PAC195xConfig() : scan(0),
+        mode(PAC195xMode::SINGLE),
         gpio1_mode(PAC195xGPIOMode::SLOW_INPUT),
         gpio2_mode(PAC195xGPIOMode::GPIO_INPUT) {};
 
     PAC195xConfig(
-      const uint32_t SCAN,
-      const uint32_t FLAGS,
-      const PAC195xMode MODE,
-      const PAC195xGain GAIN,
-      const PAC195xBiasCurrent BIAS,
-      const PAC195xOversamplingRatio OVER,
-      const PAC195xAMCLKPrescaler PRESCALER
-    ) : scan(SCAN), flags(FLAGS),
-        mode(MODE), gain(GAIN), bias(BIAS),
-        over(OVER), prescaler(PRESCALER) {};
+      const uint8_t SCAN = 0,
+      const PAC195xMode MODE = PAC195xMode::SINGLE,
+      const PAC195xGPIOMode P1_MODE = PAC195xGPIOMode::SLOW_INPUT,
+      const PAC195xGPIOMode P2_MODE = PAC195xGPIOMode::GPIO_INPUT
+    ) : scan(SCAN),
+        mode(MODE),
+        gpio1_mode(P1_MODE),
+        gpio2_mode(P2_MODE) {};
 
-    PAC195xConfig(const PAC195xConfig* CFG) : scan(CFG->scan), flags(CFG->flags),
-        mode(CFG->mode), gain(CFG->gain), bias(CFG->bias),
-        over(CFG->over), prescaler(CFG->prescaler) {};
-
+    /* Copy constructor. */
+    PAC195xConfig(const PAC195xConfig* CFG) :
+      scan(CFG->scan),
+      mode(CFG->mode),
+      gpio1_mode(CFG->gpio1_mode),
+      gpio2_mode(CFG->gpio2_mode) {};
 
     ~PAC195xConfig() {};
 
@@ -227,10 +237,10 @@ class PAC195xChannel {
     ~PAC195xChannel() {};
 
     // Data accessors.
-    inline bool voltage() {   return _voltage;  };
-    inline bool power() {     return _power;    };
-    inline bool energy() {    return _energy;   };
-    inline bool fresh() {     return _fresh;    };
+    inline float  voltage() {   return _voltage;  };
+    inline float  power() {     return _power;    };
+    inline double energy() {    return _energy;   };
+    inline bool   fresh() {     return _fresh;    };
 
     // Wrapped channel operations. Calling these allows simpler application
     //   logic, and generates I/O from the driver.
@@ -283,6 +293,7 @@ class PAC195x : public I2CDevice {
     int8_t  trigger();       // For applications that use one-shot sample logic.
     int8_t  refresh();       // Refresh the state of the register shadows.
     bool    scanComplete();  // Were all configured channels sampled and updated?
+    bool    lowSideSensor(); // Returns true if the part is the low-side variant.
 
     inline uint32_t  lastRead() {        return micros_last_read;  };
     inline uint32_t  readCount() {       return read_count;        };
@@ -291,7 +302,6 @@ class PAC195x : public I2CDevice {
     inline bool ownsIRQPin(uint8_t x) {  return ((_ALERT1_PIN == x) | (_ALERT2_PIN == x));  };
     inline bool devFound() {             return _pac195x_flag(PAC195X_FLAG_DEVICE_PRESENT); };
     inline bool configured() {           return _pac195x_flag(PAC195X_FLAG_USER_CONFIG);    };
-    inline bool isrFired() {             return isr_fired;      };
 
     /* Functions for output and debug. */
     void printPins(StringBuilder*);
@@ -325,12 +335,12 @@ class PAC195x : public I2CDevice {
     const uint8_t  _ALERT1_PIN;
     const uint8_t  _ALERT2_PIN;
     const uint8_t  _PWR_DWN_PIN;
-    PAC195xConfig* _desired_conf;
+    PAC195xConfig  _desired_conf;
 
     I2CBusOp  _busop_irq_read;
     I2CBusOp  _busop_dat_read;
 
-    uint32_t _reg_shadows[163]     = {0, };  // Register shadows.
+    uint8_t  _reg_shadows[163]     = {0, };  // Register shadows.
     uint32_t _flags                = 0;
     uint32_t read_count            = 0;
     uint32_t micros_last_read      = 0;
@@ -346,10 +356,8 @@ class PAC195x : public I2CDevice {
 
     /* Everything below this line is up for review */
     int8_t  _post_reset_fxn();
-    int8_t  _proc_irq_register();
     int8_t  _ll_pin_init();
-    uint8_t _get_reg_addr(PAC195xRegID);
-    int8_t _send_fast_command(uint8_t cmd);
+    int8_t  _send_fast_command(uint8_t cmd);
 
     uint8_t _channel_count();
     int8_t  _set_scan_channels(uint32_t);
@@ -359,6 +367,7 @@ class PAC195x : public I2CDevice {
     int8_t   _set_shadow_value(PAC195xRegID, uint32_t val);
     uint32_t _get_shadow_value(PAC195xRegID);
     uint64_t _get_shadow_value64(PAC195xRegID);
+    uint8_t* _get_shadow_address(const PAC195xRegID);
     int8_t   _write_register(PAC195xRegID, uint32_t val);
     int8_t   _read_register(PAC195xRegID);
     int8_t   _proc_reg_write(PAC195xRegID);
@@ -368,7 +377,8 @@ class PAC195x : public I2CDevice {
     inline void _servicing_irqs(bool x) {  _pac195x_set_flag(PAC195X_FLAG_SERVICING_IRQS, x);   };
 
     inline bool _scan_covers_channel(PAC195xChannel c) {
-      return (0x01 & (_reg_shadows[(uint8_t) PAC195xRegID::SCAN] >> ((uint8_t) c)));
+      //return (0x01 & (_reg_shadows[(uint8_t) PAC195xRegID::SCAN] >> ((uint8_t) c)));
+      return false;
     };
 
     /* Flag manipulation inlines */
@@ -382,21 +392,12 @@ class PAC195x : public I2CDevice {
       else    _flags &= ~_flag;
     };
 
-    /* Flag manipulation inlines for individual channels */
-    inline void _channel_clear_new_flag(PAC195xChannel c) { _channel_flags &= ~(1 << (uint8_t) c);                 };
-    inline void _channel_set_new_flag(PAC195xChannel c) {   _channel_flags |= (1 << (uint8_t) c);                  };
-    inline bool _channel_has_new_value(PAC195xChannel c) {  return (_channel_flags & (1 << (uint8_t) c));          };
-    inline void _channel_clear_ovr_flag(PAC195xChannel c) { _channel_flags &= ~(0x00010000 << (uint8_t) c);        };
-    inline void _channel_set_ovr_flag(PAC195xChannel c) {   _channel_flags |= (0x00010000 << (uint8_t) c);         };
-    inline void _channel_set_ovr_flag(PAC195xChannel c, bool nu) {
-      _channel_flags = (nu) ? (_channel_flags | (0x00010000 << (uint8_t) c)) : (_channel_flags & ~(0x00010000 << (uint8_t) c));
-    };
-    inline bool _channel_over_range(PAC195xChannel c) {     return (_channel_flags & (0x00010000 << (uint8_t) c)); };
-
+    /* Static accessors for register constants. TODO: Conceal. */
     static const uint8_t _reg_addr(const PAC195xRegID);
     static const uint8_t _reg_shadow_offset(const PAC195xRegID);
     static const uint8_t _reg_width(const PAC195xRegID);
     static const char* const _reg_name_str(const PAC195xRegID);
+    static const PAC195xRegID _reg_id_from_addr(const uint8_t);
 };
 
 #endif  // __PAC195x_H__

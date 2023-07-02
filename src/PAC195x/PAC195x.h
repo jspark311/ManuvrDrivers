@@ -155,7 +155,6 @@ enum class PAC195xState : uint8_t {
   PREINIT,     // Pin control is being established.
   RESETTING,   // Driver is resetting the ADC.
   DISCOVERY,   // Driver is probing for the ADC.
-  REGINIT,     // The initial ADC configuration is being written.
   USR_CONF,    // User config is being written.
   IDLE,        // Powered up and calibrated, but not reading.
   READING,     // Everything running, data collection proceeding.
@@ -316,14 +315,6 @@ class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
     /* Built-in per-instance console handler. */
     int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
 
-    // TODO: Below should eventually be protected.
-    inline PAC195xState getPriorState() {       return _prior_state;     };
-    inline PAC195xState getCurrentState() {     return _current_state;   };
-    inline PAC195xState getDesiredState() {     return _desired_state;   };
-    inline void setDesiredState(PAC195xState x) {    _desired_state = x; };
-    inline bool stateStable() {   return (_desired_state == _current_state);  };
-    // TODO: Above should eventually be protected.
-
     /* Overrides from the BusAdapter interface */
     int8_t io_op_callahead(BusOp*);
     int8_t io_op_callback(BusOp*);
@@ -341,21 +332,15 @@ class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
     const uint8_t  _PWR_DWN_PIN;
     PAC195xConfig  _desired_conf;
 
-    I2CBusOp  _busop_irq_read;
-    I2CBusOp  _busop_dat_read;
-
     uint8_t  _reg_shadows[163]     = {0, };  // Register shadows.
     uint32_t _flags                = 0;
     uint32_t read_count            = 0;
     uint32_t micros_last_read      = 0;
-    PAC195xState _prior_state      = PAC195xState::UNINIT;
-    PAC195xState _current_state    = PAC195xState::UNINIT;
-    PAC195xState _desired_state    = PAC195xState::UNINIT;
+
+    I2CBusOp  _busop_irq_read;
+    I2CBusOp  _busop_dat_read;
 
 
-    /* State machine functions */
-    int8_t _step_state_machine();
-    void   _set_state(PAC195xState);
     void   _set_fault(const char*);
 
     /* Everything below this line is up for review */

@@ -86,7 +86,6 @@ const EnumDef<PAC195xState> _ENUM_LIST[] = {
   { PAC195xState::PREINIT,   "PREINIT"},
   { PAC195xState::RESETTING, "RESETTING"},
   { PAC195xState::DISCOVERY, "DISCOVERY"},
-  { PAC195xState::REGINIT,   "REGINIT"},
   { PAC195xState::USR_CONF,  "USR_CONF"},
   { PAC195xState::IDLE,      "IDLE"},
   { PAC195xState::READING,   "READING"},
@@ -214,15 +213,11 @@ int8_t PAC195x::init() {
     _busop_dat_read.shouldReap(false);
     //_busop_dat_read.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) PAC195xRegID::ADCDATA], 4);
 
-    if (PAC195xState::UNINIT == _desired_state) {
-      _desired_state = PAC195xState::READING;
-    }
-    _current_state = PAC195xState::PREINIT;
-    _step_state_machine();
-    ret = 0;
+    ret = _fsm_set_route(4, PAC195xState::PREINIT, PAC195xState::DISCOVERY, PAC195xState::USR_CONF, PAC195xState::IDLE);
   }
   return ret;
 }
+
 
 
 /**
@@ -693,7 +688,7 @@ int8_t PAC195x::_proc_reg_write(PAC195xRegID r) {
   uint32_t reg_val = _get_shadow_value(r);
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
   bool usr_conf_check = false;
-  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "PAC195x::_proc_reg_write(%s)  %u --> 0x%06x", stateStr(_current_state), (uint8_t) r, reg_val);
+  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "PAC195x::_proc_reg_write(%s)  %u --> 0x%06x", stateStr(currentState()), (uint8_t) r, reg_val);
 
   switch (r) {
     case PAC195xRegID::REFRESH:                 break;
@@ -771,13 +766,6 @@ int8_t PAC195x::_proc_reg_write(PAC195xRegID r) {
     default:   // Anything else is an illegal target for write.
       break;
   }
-
-  if (usr_conf_check) {
-    if (0 == _apply_usr_config()) {
-      // If the user's config is fully written, punch the FSM.
-      _step_state_machine();
-    }
-  }
   return ret;
 }
 
@@ -792,7 +780,7 @@ int8_t PAC195x::_proc_reg_write(PAC195xRegID r) {
 */
 int8_t PAC195x::_proc_reg_read(PAC195xRegID r) {
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "PAC195x::_proc_reg_read(%s)  %u --> 0x%02x", stateStr(_current_state), (uint8_t) r, reg_val);
+  //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "PAC195x::_proc_reg_read(%s)  %u --> 0x%02x", stateStr(currentState()), (uint8_t) r, reg_val);
 
   switch (r) {
     case PAC195xRegID::REFRESH:                 break;
@@ -961,180 +949,86 @@ int8_t PAC195x::queue_io_job(BusOp* _op) {
 *******************************************************************************/
 
 
+/**
+* NOTE: This function does not plan state machine routes, and should thus not
+*   call _set_fsm_position() directly. Only _advance_state_machine().
+*
+* @return  1 on state shift
+*          0 on no action
+*         -1 on error
+*/
 int8_t PAC195x::_fsm_poll() {
-  int8_t ret = -1;
-  return ret;
-}
-
-
-int8_t PAC195x::_fsm_set_position(PAC195xState new_state) {
-  int8_t ret = -1;
-  return ret;
-}
-
-
-/**
-* This is NOT a polling loop. It doesn't check for valid conditions for
-*   advancing to a given state. It only chooses and imparts the next state.
-*
-* @return
-*   -1 on error
-*   0 on nominal polling with stable state achieved
-*   1 on unstable state with no advancement on this call
-*   2 on advancement of current state toward desired state
-*/
-int8_t PAC195x::_step_state_machine() {
   int8_t ret = 0;
-  if (!stateStable()) {
-    // Check for globally-accessible desired states early so we don't repeat
-    //   ourselves in several case blocks later on.
-    bool continue_looping = true;
-    switch (_desired_state) {
-      case PAC195xState::RESETTING:
-        break;
-      default:
-        break;
-    }
+  bool fsm_advance = false;
 
-    ret++;
-    while (continue_looping) {
-      continue_looping = false;   // Abort the loop by default.
+  switch (currentState()) {
+    // Exit conditions: Memory is allocated, pin control is established.
+    case PAC195xState::UNINIT:
+      fsm_advance = (0 == _ll_pin_init());  // Configure the pins if they are not already.
+      break;
 
-      switch (_current_state) {
-        case PAC195xState::PREINIT:
-          // Regardless of where we are going, we only have one way out of here.
-          // Check for memory allocation, pin control
-          if (0 == _ll_pin_init()) {  // Configure the pins if they are not already.
-            ret = 2;
-          }
-          else {
-            ret = -1;
-          }
-          break;
-
-        case PAC195xState::RESETTING:
-          // If we were given one, check that the IRQ pin pulsed.
-          break;
-
-        case PAC195xState::DISCOVERY:
-          if (devFound()) {
-            if (0 == _post_reset_fxn()) {
-              _set_state(PAC195xState::REGINIT);
-              ret = 2;
-            }
-            else {
-              _set_fault("_post_reset_fxn() failed");
-              ret = -1;
-            }
-          }
-          else {
-            _set_fault("Failed to find PAC195x");
-            ret = -1;
-          }
-          break;
-
-        case PAC195xState::REGINIT:
-          ret = 1;
-          // If a re-init cycle happened after the clock and cal steps, jump
-          //   right to reading.
-          switch (_desired_state) {
-            case PAC195xState::IDLE:     _set_state(PAC195xState::IDLE);     break;
-            case PAC195xState::READING:  _set_state(PAC195xState::READING);  break;
-            default:                     _set_state(PAC195xState::IDLE);     break;
-          }
-          continue_looping = true;
-          break;
-
-        case PAC195xState::USR_CONF:
-          if (configured()) {
-            switch (_desired_state) {
-              case PAC195xState::IDLE:     _set_state(PAC195xState::IDLE);     break;
-              case PAC195xState::READING:  _set_state(PAC195xState::READING);  break;
-              default:                     _set_state(PAC195xState::IDLE);     break;
-            }
-            continue_looping = true;
-            ret = 2;
-          }
-          break;
-
-        case PAC195xState::IDLE:
-          switch (_desired_state) {
-            case PAC195xState::IDLE:
-              break;
-            case PAC195xState::READING:
-              //if () {  // If the ADC is in one-shot mode, initiate a conversion cycle.
-              //}
-              //else {
-              //}
-              break;
-            default:
-              _set_fault("Illegal _desired_state");
-              ret = -1;
-              break;
-          }
-          break;
-        case PAC195xState::READING:
-          switch (_desired_state) {
-            case PAC195xState::REGINIT:
-              break;
-            case PAC195xState::IDLE:
-              break;
-            case PAC195xState::READING:
-              break;
-            case PAC195xState::FAULT:
-              _set_fault("Fault entered by outside caller.");
-              ret = 2;
-              break;
-            default:
-              _set_fault("Illegal _desired_state");
-              ret = -1;
-              break;
-          }
-          break;
-
-        case PAC195xState::UNINIT:  // We can't step our way into this mess. We need to call init().
-        case PAC195xState::FAULT:   // We can't step our way out of this mess. We need to be reset().
-          break;
-        default:
-          _set_fault("Illegal _current_state");
-          ret = -1;
-          break;
-      }
-    }
-  }
-  return ret;
-}
-
-
-/**
-* Only two cases should not set _current_state by calling this function.
-*   1) set_fault(msg);
-*   2) Exit from FAULT;
-*
-* @param e The state that should be stored in _current_state.
-* @return 0 always
-*/
-void PAC195x::_set_state(PAC195xState e) {
-  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "PAC195xState:  %s --> %s", stateStr(_current_state), stateStr(e));
-  switch (e) {
+    // Exit conditions:Bus is assigned, and any user-provided configuration is valid.
     case PAC195xState::PREINIT:
+      break;
+
     case PAC195xState::RESETTING:
     case PAC195xState::DISCOVERY:
-    case PAC195xState::REGINIT:
     case PAC195xState::USR_CONF:
     case PAC195xState::IDLE:
     case PAC195xState::READING:
-      _prior_state = _current_state;
-      _current_state = e;
       break;
-    case PAC195xState::FAULT:
-      _set_fault("Fault entry by outside caller.");
-      break;
-    case PAC195xState::UNINIT:
-    default:
-      _set_fault("_set_state(): Illegal state");
+
+    default:   // Can't exit from an unknown or fault states.
+      ret = -1;
       break;
   }
+
+  // If the current state's exit criteria is met, we advance the FSM.
+  if (fsm_advance & (-1 != ret)) {
+    ret = (0 == _fsm_advance()) ? 1 : 0;
+  }
+  return ret;
+}
+
+
+/**
+* Takes actions appropriate for entry into the given state, and sets the current
+*   FSM position if successful. Records the existing state as having been the
+*   prior state.
+*
+* @param The FSM code to test.
+* @return 0 on success, -1 otherwise.
+*/
+int8_t PAC195x::_fsm_set_position(PAC195xState new_state) {
+  int8_t fxn_ret = -1;
+  bool state_entry_success = false;   // Fail by default.
+  if (!_fsm_is_waiting()) {
+    switch (new_state) {
+      case PAC195xState::PREINIT:
+      case PAC195xState::RESETTING:
+      case PAC195xState::DISCOVERY:
+      case PAC195xState::USR_CONF:
+      case PAC195xState::IDLE:
+      case PAC195xState::READING:
+        break;
+
+      case PAC195xState::FAULT:
+        state_entry_success = true;
+        _fsm_mark_current_state(new_state);
+        break;
+
+      default:
+        _set_fault("_set_state(): Illegal state");
+        break;
+    }
+
+    if (state_entry_success) {
+      c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "PAC195x FSM moved %s ---> %s", FSM_STATE_LIST.enumStr(currentState()), FSM_STATE_LIST.enumStr(new_state));
+      fxn_ret = 0;
+    }
+  }
+
+  return fxn_ret;
 }
 
 
@@ -1145,8 +1039,7 @@ void PAC195x::_set_state(PAC195xState e) {
 */
 void PAC195x::_set_fault(const char* msg) {
   c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "PAC195x fault: %s", msg);
-  _prior_state = _current_state;
-  _current_state = PAC195xState::FAULT;
+  _fsm_set_position(PAC195xState::FAULT);
 }
 
 
@@ -1184,14 +1077,7 @@ void PAC195x::printDebug(StringBuilder* output) {
   else prod_str.concat("x (not found)");
 
   StringBuilder::styleHeader2(output, (const char*) prod_str.string());
-  if (stateStable()) {
-    output->concatf("\tState stable:   %s\n", stateStr(_current_state));
-  }
-  else {
-    output->concatf("\tCurrent State:\t%s\n", stateStr(_current_state));
-    output->concatf("\tPrior State:  \t%s\n", stateStr(_prior_state));
-    output->concatf("\tDesired State:\t%s\n", stateStr(_desired_state));
-  }
+  printFSM(output);
   if (devFound()) {
     output->concatf("\tChannels:       %u\n", _channel_count());
     output->concatf("\tConfigured:     %c\n", (configured() ? 'y' : 'n'));
@@ -1221,6 +1107,7 @@ void PAC195xChannel::printChannel(StringBuilder* output) {
 void PAC195x::printChannelValues(StringBuilder* output) {
   if (devFound()) {
     for (uint8_t chan = 1; chan <= _channel_count(); chan++) {
+      output->concatf("Chan-%u: ", chan);
       switch (chan) {
         case 1:   chan_1.printChannel(output);   break;
         case 2:   chan_2.printChannel(output);   break;
@@ -1284,50 +1171,6 @@ int8_t PAC195x::console_handler(StringBuilder* text_return, StringBuilder* args)
     }
     else if (0 == StringBuilder::strcasecmp(cmd, "trigger")) {
       text_return->concatf("PAC195x trigger() returns %d\n", trigger());
-    }
-    else if (0 == StringBuilder::strcasecmp(cmd, "state")) {
-      bool print_state_map = (2 > args->count());
-      if (!print_state_map) {
-        PAC195xState state = (PAC195xState) args->position_as_int(1);
-        switch (state) {
-          case PAC195xState::PREINIT:
-          case PAC195xState::RESETTING:
-          case PAC195xState::DISCOVERY:
-          case PAC195xState::REGINIT:
-          case PAC195xState::USR_CONF:
-          case PAC195xState::IDLE:
-          case PAC195xState::READING:
-            text_return->concatf("PAC195x setDesiredState(%s)\n", PAC195x::stateStr(state));
-            break;
-          case PAC195xState::UNINIT:
-          case PAC195xState::FAULT:
-            text_return->concatf("PAC195x illegal desired state (%s).\n", PAC195x::stateStr(state));
-            setDesiredState(state);
-            break;
-          default:
-            print_state_map = true;
-            break;
-        }
-      }
-
-      if (print_state_map) {
-        for (uint8_t i = 0; i < 11; i++) {
-          PAC195xState ste = (PAC195xState) i;
-          text_return->concatf("%u:\t%s", i, PAC195x::stateStr(ste));
-          if (ste == _current_state) {
-            text_return->concat("  <--- Current\n");
-          }
-          else if (ste == _prior_state) {
-            text_return->concat("  <--- Prior\n");
-          }
-          else if (ste == _desired_state) {
-            text_return->concat("  <--- Desired\n");
-          }
-          else {
-            text_return->concat("\n");
-          }
-        }
-      }
     }
   }
   else {

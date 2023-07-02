@@ -182,16 +182,16 @@ class SX127x : public BusOpCallback {
     const SX127xOpts _opts;
     FlagContainer32  _flags;       // Class state tracking.
     SPIAdapter*      _BUS = nullptr;
-    uint8_t          _tx_buffer[512] = {0, };
-    uint8_t          _rx_buffer[512] = {0, };
-    uint8_t          _shadows[27]    = {0, };
-    uint8_t          _verbosity      = LOG_LEV_NOTICE;
-    SPIBusOp         _tx_busop;
-    SPIBusOp         _rx_busop;
     uint32_t         _pkts_rx_good = 0;
     uint32_t         _pkts_rx_drop = 0;
     uint32_t         _pkts_tx_good = 0;
     uint32_t         _pkts_tx_drop = 0;
+    uint8_t          _shadows[27]    = {0, };
+    uint8_t          _verbosity      = LOG_LEV_NOTICE;
+    uint8_t          _tx_buffer[512] = {0, };
+    uint8_t          _rx_buffer[512] = {0, };
+    SPIBusOp         _tx_busop;
+    SPIBusOp         _rx_busop;
 
     /* FSM markers */
     uint32_t    _fsm_lockout_ms; // Used to enforce a delay between state transitions.

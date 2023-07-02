@@ -10,10 +10,12 @@ Date:   2023.06.24
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdarg.h>
-#include <CppPotpourri.h>
-#include <I2CAdapter.h>
-#include <StopWatch.h>
-#include <StringBuilder.h>
+#include "StringBuilder.h"
+#include "CppPotpourri.h"
+#include "StopWatch.h"
+#include "I2CAdapter.h"
+#include "EnumWrapper.h"
+#include "FiniteStateMachine.h"
 
 class PAC195x;
 
@@ -157,7 +159,8 @@ enum class PAC195xState : uint8_t {
   USR_CONF,    // User config is being written.
   IDLE,        // Powered up and calibrated, but not reading.
   READING,     // Everything running, data collection proceeding.
-  FAULT        // State machine encountered something it couldn't cope with.
+  FAULT,       // State machine encountered something it couldn't cope with.
+  INVALID      // Catch-all for illegal states.
 };
 
 
@@ -267,7 +270,7 @@ class PAC195xChannel {
 
 
 /* The driver. */
-class PAC195x : public I2CDevice {
+class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
   public:
     bool alert1_irq = false;
     bool alert2_irq = false;
@@ -294,6 +297,7 @@ class PAC195x : public I2CDevice {
     int8_t  refresh();       // Refresh the state of the register shadows.
     bool    scanComplete();  // Were all configured channels sampled and updated?
     bool    lowSideSensor(); // Returns true if the part is the low-side variant.
+    inline int8_t poll() {   return _fsm_poll();     };
 
     inline uint32_t  lastRead() {        return micros_last_read;  };
     inline uint32_t  readCount() {       return read_count;        };
@@ -357,7 +361,6 @@ class PAC195x : public I2CDevice {
     /* Everything below this line is up for review */
     int8_t  _post_reset_fxn();
     int8_t  _ll_pin_init();
-    int8_t  _send_fast_command(uint8_t cmd);
 
     uint8_t _channel_count();
     int8_t  _set_scan_channels(uint32_t);
@@ -380,6 +383,11 @@ class PAC195x : public I2CDevice {
       //return (0x01 & (_reg_shadows[(uint8_t) PAC195xRegID::SCAN] >> ((uint8_t) c)));
       return false;
     };
+
+    /* Mandatory overrides from StateMachine. */
+    int8_t _fsm_poll();                     // Polling for state exit.
+    int8_t _fsm_set_position(PAC195xState); // Attempt a state entry.
+
 
     /* Flag manipulation inlines */
     inline uint32_t _pac195x_flags() {                return _flags;           };

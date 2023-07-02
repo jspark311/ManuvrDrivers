@@ -7,6 +7,11 @@ Date:   2023.06.24
 #include "PAC195x.h"
 
 /*******************************************************************************
+* Private types and defines.
+*******************************************************************************/
+#define PAC195X_FSM_WAYPOINT_DEPTH  8
+
+/*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
 *     /       |           |   /   \  |           ||  |  /      |   /       |
 *    |   (----`---|  |----`  /  ^  \ `---|  |----`|  | |  ,----'  |   (----`
@@ -73,23 +78,28 @@ const PAC195xRegID PAC195x::_reg_id_from_addr(const uint8_t ADDR) {
 }
 
 
+/*
+* StateMachine enum definition.
+*/
+const EnumDef<PAC195xState> _ENUM_LIST[] = {
+  { PAC195xState::UNINIT,    "UNINIT"},
+  { PAC195xState::PREINIT,   "PREINIT"},
+  { PAC195xState::RESETTING, "RESETTING"},
+  { PAC195xState::DISCOVERY, "DISCOVERY"},
+  { PAC195xState::REGINIT,   "REGINIT"},
+  { PAC195xState::USR_CONF,  "USR_CONF"},
+  { PAC195xState::IDLE,      "IDLE"},
+  { PAC195xState::READING,   "READING"},
+  { PAC195xState::FAULT,     "FAULT"},
+  { PAC195xState::INVALID,   "INVALID", (ENUM_WRAPPER_FLAG_CATCHALL)}
+};
+const EnumDefList<PAC195xState> FSM_STATE_LIST(&_ENUM_LIST[0], (sizeof(_ENUM_LIST) / sizeof(_ENUM_LIST[0])));
+
 /**
 * Static function to convert enum to string.
 */
 const char* PAC195x::stateStr(const PAC195xState e) {
-  switch (e) {
-    case PAC195xState::UNINIT:        return "UNINIT";
-    case PAC195xState::PREINIT:       return "PREINIT";
-    case PAC195xState::RESETTING:     return "RESETTING";
-    case PAC195xState::DISCOVERY:     return "DISCOVERY";
-    case PAC195xState::REGINIT:       return "REGINIT";
-    case PAC195xState::USR_CONF:      return "USR_CONF";
-    case PAC195xState::IDLE:          return "IDLE";
-    case PAC195xState::READING:       return "READING";
-    case PAC195xState::FAULT:         return "FAULT";
-    default:   break;
-  }
-  return "INVALID";
+  return FSM_STATE_LIST.enumStr(e);
 }
 
 
@@ -114,6 +124,7 @@ void pac195x_isr1() {
 }
 
 
+
 /*******************************************************************************
 *   ___ _              ___      _ _              _      _
 *  / __| |__ _ ______ | _ ) ___(_) |___ _ _ _ __| |__ _| |_ ___
@@ -134,6 +145,9 @@ PAC195x::PAC195x(
   const uint8_t pin_pwr_dwn
 ) :
   I2CDevice(addr),
+  StateMachine<PAC195xState>(
+    "PAC195x_FSM", &FSM_STATE_LIST, PAC195xState::UNINIT, PAC195X_FSM_WAYPOINT_DEPTH
+  ),
   _ALERT1_PIN(pin_a1), _ALERT2_PIN(pin_a2), _PWR_DWN_PIN(pin_pwr_dwn),
   _desired_conf(CONF),
   _busop_irq_read(BusOpcode::RX, this),
@@ -390,6 +404,26 @@ bool PAC195x::lowSideSensor() {
   const uint8_t REG_VAL = _get_shadow_value(PAC195xRegID::PROD_ID);
   return ((REG_VAL == 0x79) | (REG_VAL == 0x7B));
 };
+
+
+/**
+* Calling this function will cause the user's desired configuration to be
+*   written to the registers. It may be necessary to call this several times
+*   to achieve complete configuration. So call it until it returns 0.
+*
+* @return 1 on success with pending I/O
+*         0 on success with no changes
+*        -1 on failure.
+*/
+int8_t PAC195x::_apply_usr_config() {
+  int8_t ret = -1;
+  switch (ret) {
+    case -1:   _set_fault("Failed to apply usr config.");    break;
+    case 0:    _pac195x_set_flag(PAC195X_FLAG_USER_CONFIG);  break;
+    default:   break;
+  }
+  return ret;
+}
 
 
 
@@ -923,32 +957,21 @@ int8_t PAC195x::queue_io_job(BusOp* _op) {
 
 
 /*******************************************************************************
-* Register abstraction functions
+* State machine parts
 *******************************************************************************/
 
-/**
-* Calling this function will cause the user's desired configuration to be
-*   written to the registers. It may be necessary to call this several times
-*   to achieve complete configuration. So call it until it returns 0.
-*
-* @return 1 on success with pending I/O
-*         0 on success with no changes
-*        -1 on failure.
-*/
-int8_t PAC195x::_apply_usr_config() {
+
+int8_t PAC195x::_fsm_poll() {
   int8_t ret = -1;
-  switch (ret) {
-    case -1:   _set_fault("Failed to apply usr config.");    break;
-    case 0:    _pac195x_set_flag(PAC195X_FLAG_USER_CONFIG);  break;
-    default:   break;
-  }
   return ret;
 }
 
 
-/*******************************************************************************
-* State machine parts
-*******************************************************************************/
+int8_t PAC195x::_fsm_set_position(PAC195xState new_state) {
+  int8_t ret = -1;
+  return ret;
+}
+
 
 /**
 * This is NOT a polling loop. It doesn't check for valid conditions for

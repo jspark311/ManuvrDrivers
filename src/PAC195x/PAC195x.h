@@ -14,6 +14,7 @@ Date:   2023.06.24
 #include "CppPotpourri.h"
 #include "StopWatch.h"
 #include "I2CAdapter.h"
+#include "FlagContainer.h"
 #include "EnumWrapper.h"
 #include "FiniteStateMachine.h"
 
@@ -153,8 +154,8 @@ enum class PAC195xAccumTarget : uint8_t {
 enum class PAC195xState : uint8_t {
   UNINIT = 0,  // init() has never been called.
   PREINIT,     // Pin control is being established.
-  RESETTING,   // Driver is resetting the ADC.
-  DISCOVERY,   // Driver is probing for the ADC.
+  RESETTING,   // Driver is resetting the sensor.
+  DISCOVERY,   // Driver is probing for the sensor.
   USR_CONF,    // User config is being written.
   IDLE,        // Powered up and calibrated, but not reading.
   READING,     // Everything running, data collection proceeding.
@@ -235,14 +236,11 @@ class PAC195xConfig {
 */
 class PAC195xChannel {
   public:
-    PAC195xChannel() : _voltage(0.0f), _power(0.0f), _energy(0.0f), _fresh(false) {};
-    ~PAC195xChannel() {};
-
     // Data accessors.
     inline float  voltage() {   return _voltage;  };
     inline float  power() {     return _power;    };
     inline double energy() {    return _energy;   };
-    inline bool   fresh() {     return _fresh;    };
+    inline bool   fresh() {     return (!_conf_dirty & _fresh);    };
 
     // Wrapped channel operations. Calling these allows simpler application
     //   logic, and generates I/O from the driver.
@@ -255,15 +253,22 @@ class PAC195xChannel {
 
   private:
     friend PAC195x;
-    float  _voltage;  // Primary data. Voltage at SENSE+ pin
-    float  _power;    // Primary data. Instantaneous power through the channel.
-    double _energy;   // Primary data. The accumulated energy through the channel.
-    bool   _fresh;    // Has the channel been updated since the last time it was checked?
 
-    float _sense_ohms;  // Channel config. Value (in Ohm's) of the sense resistor.
+    PAC195xChannel(const PAC195x*, const float OHMS, const uint8_t C_NUM);
+    ~PAC195xChannel() {};
+
+    const PAC195x* _SENSOR_PTR;
+    const float    _SENSE_OHMS;  // Channel config. Value (in Ohm's) of the sense resistor.
+    const uint8_t  _CHAN_NUM;    // The channel number.
     PAC195xChanTopology _topo;
     PAC195xAccumTarget  _acc_target;
-    uint32_t _acc_time;  // The system time when we began accumulating.
+    bool     _conf_dirty;  // Are the channel settings in flux?
+    bool     _fresh;       // Has the channel been updated since the last time it was checked?
+
+    float    _voltage;     // Primary data. Voltage at SENSE+ pin
+    float    _power;       // Primary data. Instantaneous power through the channel.
+    double   _energy;      // Primary data. The accumulated energy through the channel.
+    uint32_t _acc_time;    // The system time when we began accumulating.
 };
 
 
@@ -303,8 +308,8 @@ class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
     inline void      resetReadCount() {  read_count = 0;           };
 
     inline bool ownsIRQPin(uint8_t x) {  return ((_ALERT1_PIN == x) | (_ALERT2_PIN == x));  };
-    inline bool devFound() {             return _pac195x_flag(PAC195X_FLAG_DEVICE_PRESENT); };
-    inline bool configured() {           return _pac195x_flag(PAC195X_FLAG_USER_CONFIG);    };
+    inline bool devFound() {             return _flags.value(PAC195X_FLAG_DEVICE_PRESENT); };
+    inline bool configured() {           return _flags.value(PAC195X_FLAG_USER_CONFIG);    };
 
     /* Functions for output and debug. */
     void printPins(StringBuilder*);
@@ -331,9 +336,9 @@ class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
     const uint8_t  _ALERT2_PIN;
     const uint8_t  _PWR_DWN_PIN;
     PAC195xConfig  _desired_conf;
+    FlagContainer32 _flags;
 
     uint8_t  _reg_shadows[163]     = {0, };  // Register shadows.
-    uint32_t _flags                = 0;
     uint32_t read_count            = 0;
     uint32_t micros_last_read      = 0;
 
@@ -350,19 +355,25 @@ class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
     uint8_t _channel_count();
     int8_t  _set_scan_channels(uint32_t);
     int8_t  _apply_usr_config();
+    int8_t  _send_dev_refresh(bool general_call = false);
 
     void     _clear_registers();
     int8_t   _set_shadow_value(PAC195xRegID, uint32_t val);
     uint32_t _get_shadow_value(PAC195xRegID);
     uint64_t _get_shadow_value64(PAC195xRegID);
     uint8_t* _get_shadow_address(const PAC195xRegID);
+
+
+    int8_t   _write_registers(PAC195xRegID, uint8_t count);
+    int8_t   _read_registers(PAC195xRegID, uint8_t count);
     int8_t   _write_register(PAC195xRegID, uint32_t val);
     int8_t   _read_register(PAC195xRegID);
     int8_t   _proc_reg_write(PAC195xRegID);
     int8_t   _proc_reg_read(PAC195xRegID);
 
-    inline bool _servicing_irqs() {        return _pac195x_flag(PAC195X_FLAG_SERVICING_IRQS);   };
-    inline void _servicing_irqs(bool x) {  _pac195x_set_flag(PAC195X_FLAG_SERVICING_IRQS, x);   };
+    /* Flag manipulation inlines */
+    inline bool _servicing_irqs() {        return _flags.value(PAC195X_FLAG_SERVICING_IRQS);   };
+    inline void _servicing_irqs(bool x) {  _flags.set(PAC195X_FLAG_SERVICING_IRQS, x);         };
 
     inline bool _scan_covers_channel(PAC195xChannel c) {
       //return (0x01 & (_reg_shadows[(uint8_t) PAC195xRegID::SCAN] >> ((uint8_t) c)));
@@ -373,17 +384,6 @@ class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
     int8_t _fsm_poll();                     // Polling for state exit.
     int8_t _fsm_set_position(PAC195xState); // Attempt a state entry.
 
-
-    /* Flag manipulation inlines */
-    inline uint32_t _pac195x_flags() {                return _flags;           };
-    inline bool _pac195x_flag(uint32_t _flag) {       return (_flags & _flag); };
-    inline void _pac195x_flip_flag(uint32_t _flag) {  _flags ^= _flag;         };
-    inline void _pac195x_clear_flag(uint32_t _flag) { _flags &= ~_flag;        };
-    inline void _pac195x_set_flag(uint32_t _flag) {   _flags |= _flag;         };
-    inline void _pac195x_set_flag(uint32_t _flag, bool nu) {
-      if (nu) _flags |= _flag;
-      else    _flags &= ~_flag;
-    };
 
     /* Static accessors for register constants. TODO: Conceal. */
     static const uint8_t _reg_addr(const PAC195xRegID);

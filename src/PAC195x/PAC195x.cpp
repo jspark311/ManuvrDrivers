@@ -11,6 +11,8 @@ Date:   2023.06.24
 *******************************************************************************/
 #define PAC195X_FSM_WAYPOINT_DEPTH  8
 
+#define PAC195X_FLAG_PREINIT_EXIT_MASK (PAC195X_FLAG_DEVICE_PRESENT | PAC195X_FLAG_REFRESH_CYCLE)
+
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
 *     /       |           |   /   \  |           ||  |  /      |   /       |
@@ -147,6 +149,10 @@ PAC195x::PAC195x(
   StateMachine<PAC195xState>(
     "PAC195x_FSM", &FSM_STATE_LIST, PAC195xState::UNINIT, PAC195X_FSM_WAYPOINT_DEPTH
   ),
+  chan_1(this, 0.0f, 1),
+  chan_2(this, 0.0f, 2),
+  chan_3(this, 0.0f, 3),
+  chan_4(this, 0.0f, 4),
   _ALERT1_PIN(pin_a1), _ALERT2_PIN(pin_a2), _PWR_DWN_PIN(pin_pwr_dwn),
   _desired_conf(CONF),
   _busop_irq_read(BusOpcode::RX, this),
@@ -199,19 +205,21 @@ PAC195x::~PAC195x() {
 */
 int8_t PAC195x::init() {
   int8_t ret = -1;
+  _flags.clear(~PAC195X_FLAG_RESET_MASK);  // Reset the flags.
+  read_count       = 0;
+  micros_last_read = 0;
+  _clear_registers();
   if (nullptr != _bus) {
-    _clear_registers();
     _busop_irq_read.dev_addr = _dev_addr;
     _busop_irq_read.sub_addr = 0x00;
     _busop_irq_read.setAdapter(_bus);
     _busop_irq_read.shouldReap(false);
-    //_busop_irq_read.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) PAC195xRegID::IRQ], 1);
 
     _busop_dat_read.dev_addr = _dev_addr;
     _busop_dat_read.sub_addr = 0x00;
     _busop_dat_read.setAdapter(_bus);
     _busop_dat_read.shouldReap(false);
-    //_busop_dat_read.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) PAC195xRegID::ADCDATA], 4);
+    _busop_dat_read.setBuffer(_get_shadow_address(PAC195xRegID::ACC_COUNT), 48);
 
     ret = _fsm_set_route(4, PAC195xState::PREINIT, PAC195xState::DISCOVERY, PAC195xState::USR_CONF, PAC195xState::IDLE);
   }
@@ -289,7 +297,7 @@ int8_t PAC195x::trigger() {
 */
 int8_t PAC195x::_ll_pin_init() {
   int8_t ret = 0;
-  if (!_pac195x_flag(PAC195X_FLAG_PINS_CONFIGURED)) {
+  if (!_flags.value(PAC195X_FLAG_PINS_CONFIGURED)) {
     if (255 != _ALERT1_PIN) {
       switch (_desired_conf.gpio1_mode) {
         case PAC195xGPIOMode::GPIO_OUTPUT_OD:
@@ -352,7 +360,7 @@ int8_t PAC195x::_ll_pin_init() {
     }
 
     if (-1 == ret) {    _set_fault("_ll_pin_init() failed");    }
-    else {  _pac195x_set_flag(PAC195X_FLAG_PINS_CONFIGURED);    }
+    else {  _flags.set(PAC195X_FLAG_PINS_CONFIGURED);    }
   }
   return ret;
 }
@@ -362,14 +370,19 @@ int8_t PAC195x::_ll_pin_init() {
 * Causes a full refresh. Update our shadows with the state of the hardware
 *   registers.
 *
-* @return
-*    -2 on no bus adapter.
-*    -1 on failure to read register.
-*    0  on success.
+* @return 0 on success
+*        -1 on no bus adapter.
+*        -2 on failure to read register.
 */
 int8_t PAC195x::refresh() {
   int8_t  ret = -1;
-  _pac195x_set_flag(PAC195X_FLAG_REFRESH_CYCLE);
+  _flags.set(PAC195X_FLAG_REFRESH_CYCLE);
+  if (nullptr != _bus) {
+
+  }
+  if (0 == _read_registers(PAC195xRegID::CTRL, 26)) {
+
+  }
 
   if (0 != ret) {
     _set_fault("Failed to refresh()");
@@ -403,8 +416,7 @@ bool PAC195x::lowSideSensor() {
 
 /**
 * Calling this function will cause the user's desired configuration to be
-*   written to the registers. It may be necessary to call this several times
-*   to achieve complete configuration. So call it until it returns 0.
+*   written to the registers.
 *
 * @return 1 on success with pending I/O
 *         0 on success with no changes
@@ -414,8 +426,34 @@ int8_t PAC195x::_apply_usr_config() {
   int8_t ret = -1;
   switch (ret) {
     case -1:   _set_fault("Failed to apply usr config.");    break;
-    case 0:    _pac195x_set_flag(PAC195X_FLAG_USER_CONFIG);  break;
+    case 0:    _flags.set(PAC195X_FLAG_USER_CONFIG);  break;
     default:   break;
+  }
+  return ret;
+}
+
+
+/**
+* Calling this function will cause the user's desired configuration that was
+*   written to the registers to be applied and take effect in the sensor.
+*
+* @return 1 on success with pending I/O
+*         0 on success with no changes
+*        -1 on failure.
+*/
+int8_t PAC195x::_send_dev_refresh(bool general_call) {
+  int8_t ret = -1;
+  PAC195xRegID refresh_cmd = (general_call ? PAC195xRegID::REFRESH_G : PAC195xRegID::REFRESH);
+  if (devFound()) {
+    I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
+    if (nullptr != op) {
+      op->dev_addr = _dev_addr;
+      op->sub_addr = (uint8_t) refresh_cmd;
+      //op->setBuffer(ptr, byte_len);
+      if (0 == _bus->queue_io_job(op)) {
+        ret = 0;
+      }
+    }
   }
   return ret;
 }
@@ -452,18 +490,20 @@ uint8_t PAC195x::_channel_count() {
 * @return 0 always
 */
 void PAC195x::_clear_registers() {
-  _flags = _flags & PAC195X_FLAG_RESET_MASK;  // Reset the flags.
   for (uint32_t i = 0; i < sizeof(_reg_shadows); i++) {
     // TODO: We decline to revert registers needed for device identity.
     _reg_shadows[i] = 0;
   }
-  read_count       = 0;
-  micros_last_read = 0;
+}
+
+
+uint8_t* PAC195x::_get_shadow_address(const PAC195xRegID REG) {
+  return &_reg_shadows[_reg_shadow_offset(REG)];
 }
 
 
 /*
-* Function stores register values as the ADC's native endianess (Big).
+* Function stores register values as the sensor's native endianess (Big).
 */
 int8_t PAC195x::_set_shadow_value(PAC195xRegID r, uint32_t val) {
   int8_t ret = -1;
@@ -526,6 +566,70 @@ uint64_t PAC195x::_get_shadow_value64(PAC195xRegID r) {
 }
 
 
+
+/**
+* Internal function for writing registers.
+* Does safety checks on the given value/register combo, updates the shadow, and
+*   writes to the part.
+*
+* @param r The first register to be written.
+* @param count The number of registers (not bytes) to be written.
+* @return 0 on success
+*        -1 on improper state
+*        -2 on unworkable parameters
+*        -3 on I/O failure
+*/
+int8_t PAC195x::_write_registers(PAC195xRegID reg, uint8_t count) {
+  int8_t ret = -1;
+  if (devFound()) {
+    ret--;
+    if (count > 0) {
+      const uint8_t REG_ADDR = _reg_addr(reg);
+      uint8_t* ptr = _get_shadow_address(reg);
+      uint8_t byte_len = 0;
+      for (uint8_t i = 0; i < count; i++) {
+        const PAC195xRegID REG_CURRENT = (PAC195xRegID) ((uint8_t) reg + i);
+        // If the address range is discontinuous, or any register in the range
+        //   is read-only, we will fail immediately. Also, there are three
+        //   pseudo-registers (REFRESH, REFRESH_G, and REFRESH_V) that will fail
+        //   this check if they are part of the range.
+        // Otherwise, continue to accrue length value.
+        switch (REG_CURRENT) {
+          // Pseudo registers that don't actually have any content.
+          case PAC195xRegID::REFRESH:
+          case PAC195xRegID::REFRESH_G:
+          case PAC195xRegID::REFRESH_V:
+          // Read-only registers
+          case PAC195xRegID::PROD_ID:
+          case PAC195xRegID::MANU_ID:
+          case PAC195xRegID::REVISION_ID:
+            return -2;
+          default:
+            // Register isn't forbidden. Discontinuous addresses?
+            if (_reg_addr(REG_CURRENT) - REG_ADDR != i) {
+              return -2;
+            }
+            byte_len += _reg_width(REG_CURRENT);
+            break;
+        }
+      }
+      ret--;
+
+      I2CBusOp* op = _bus->new_op(BusOpcode::TX, this);
+      if (nullptr != op) {
+        op->dev_addr = _dev_addr;
+        op->sub_addr = REG_ADDR;
+        op->setBuffer(ptr, byte_len);
+        if (0 == _bus->queue_io_job(op)) {
+          ret = 0;
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+
 /**
 * Internal function for writing registers.
 * Does safety checks on the given value/register combo, updates the shadow, and
@@ -541,7 +645,7 @@ uint64_t PAC195x::_get_shadow_value64(PAC195xRegID r) {
 */
 int8_t PAC195x::_write_register(PAC195xRegID r, uint32_t val) {
   uint32_t safe_val = 0;
-  int8_t ret = -2;
+  int8_t ret = -1;
   if (nullptr != _bus) {
     switch (r) {
       // No safety required.
@@ -642,6 +746,62 @@ int8_t PAC195x::_write_register(PAC195xRegID r, uint32_t val) {
 
 
 /**
+* Reads the given span of registers from the hardware.
+*
+* @param r The first register to be read.
+* @param count The number of registers (not bytes) to be read.
+* @return 0 on success
+*        -1 on improper state
+*        -2 on unworkable parameters
+*        -3 on I/O failure
+*/
+int8_t PAC195x::_read_registers(PAC195xRegID reg, uint8_t count) {
+  int8_t ret = -1;
+  if (devFound()) {
+    ret--;
+    if (count > 0) {
+      const uint8_t REG_ADDR = _reg_addr(reg);
+      uint8_t* ptr = _get_shadow_address(reg);
+      uint8_t byte_len = 0;
+      for (uint8_t i = 0; i < count; i++) {
+        const PAC195xRegID REG_CURRENT = (PAC195xRegID) ((uint8_t) reg + i);
+        // If the address range is discontinuous we will fail immediately.
+        //   Also, there are three pseudo-registers (REFRESH, REFRESH_G, and
+        //   REFRESH_V) that will fail this check if they are part of the range.
+        // Otherwise, continue to accrue length value.
+        switch (REG_CURRENT) {
+          // Pseudo registers that don't actually have any content.
+          case PAC195xRegID::REFRESH:
+          case PAC195xRegID::REFRESH_G:
+          case PAC195xRegID::REFRESH_V:
+            return -2;
+          default:
+            // Register isn't forbidden. Discontinuous addresses?
+            if (_reg_addr(REG_CURRENT) - REG_ADDR != i) {
+              return -2;
+            }
+            byte_len += _reg_width(REG_CURRENT);
+            break;
+        }
+      }
+      ret--;
+
+      I2CBusOp* op = _bus->new_op(BusOpcode::RX, this);
+      if (nullptr != op) {
+        op->dev_addr = _dev_addr;
+        op->sub_addr = REG_ADDR;
+        op->setBuffer(ptr, byte_len);
+        if (0 == _bus->queue_io_job(op)) {
+          ret = 0;
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+
+/**
 * Reads the given register.
 *
 * @param r The register to be read.
@@ -667,16 +827,25 @@ int8_t PAC195x::_read_register(PAC195xRegID r) {
 }
 
 
-uint8_t* PAC195x::_get_shadow_address(const PAC195xRegID REG) {
-  return &_reg_shadows[_reg_shadow_offset(REG)];
-}
-
 
 /*******************************************************************************
 * ___     _       _                      These members are mandatory overrides
 *  |   / / \ o   | \  _     o  _  _      for implementing I/O callbacks. They
 * _|_ /  \_/ o   |_/ (/_ \/ | (_ (/_     are also implemented by Adapters.
 *******************************************************************************/
+/**
+* Called prior to the given bus operation beginning.
+* Returning 0 will allow the operation to continue.
+* Returning anything else will fail the operation with IO_RECALL.
+*   Operations failed this way will have their callbacks invoked as normal.
+*
+* @param  _op  The bus operation that is about to run.
+* @return 0 to run the op, or non-zero to cancel it.
+*/
+int8_t PAC195x::io_op_callahead(BusOp* _op) {
+  return 0;
+}
+
 
 /**
 * Processes the consequences of a register write.
@@ -691,78 +860,75 @@ int8_t PAC195x::_proc_reg_write(PAC195xRegID r) {
   c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "PAC195x::_proc_reg_write(%s)  %u --> 0x%06x", stateStr(currentState()), (uint8_t) r, reg_val);
 
   switch (r) {
-    case PAC195xRegID::REFRESH:                 break;
-    case PAC195xRegID::CTRL:                    break;
-    case PAC195xRegID::ACC_COUNT:               break;
-    case PAC195xRegID::V_ACC_1:                 break;
-    case PAC195xRegID::V_ACC_2:                 break;
-    case PAC195xRegID::V_ACC_3:                 break;
-    case PAC195xRegID::V_ACC_4:                 break;
-    case PAC195xRegID::V_BUS_1:                 break;
-    case PAC195xRegID::V_BUS_2:                 break;
-    case PAC195xRegID::V_BUS_3:                 break;
-    case PAC195xRegID::V_BUS_4:                 break;
-    case PAC195xRegID::V_SENSE_0:               break;
-    case PAC195xRegID::V_SENSE_1:               break;
-    case PAC195xRegID::V_SENSE_2:               break;
-    case PAC195xRegID::V_SENSE_3:               break;
-    case PAC195xRegID::V_BUS_AVG_0:             break;
-    case PAC195xRegID::V_BUS_AVG_1:             break;
-    case PAC195xRegID::V_BUS_AVG_2:             break;
-    case PAC195xRegID::V_BUS_AVG_3:             break;
-    case PAC195xRegID::V_SENSE_AVG_0:           break;
-    case PAC195xRegID::V_SENSE_AVG_1:           break;
-    case PAC195xRegID::V_SENSE_AVG_2:           break;
-    case PAC195xRegID::V_SENSE_AVG_3:           break;
-    case PAC195xRegID::V_POWER_0:               break;
-    case PAC195xRegID::V_POWER_1:               break;
-    case PAC195xRegID::V_POWER_2:               break;
-    case PAC195xRegID::V_POWER_3:               break;
-    case PAC195xRegID::SMBUS_SETTINGS:          break;
-    case PAC195xRegID::NEG_PWR_FSR:             break;
-    case PAC195xRegID::REFRESH_G:               break;
-    case PAC195xRegID::REFRESH_V:               break;
-    case PAC195xRegID::SLOW:                    break;
-    case PAC195xRegID::CTRL_ACTIVE:             break;
-    case PAC195xRegID::NEG_PWR_FSR_ACTIVE:      break;
-    case PAC195xRegID::CTRL_LATCH:              break;
-    case PAC195xRegID::NEG_PWR_FSR_LATCH:       break;
-    case PAC195xRegID::ACCUM_CONFIG:            break;
-    case PAC195xRegID::ALERT_STATUS:            break;
-    case PAC195xRegID::SLOW_ALERT1:             break;
-    case PAC195xRegID::GPIO_ALERT2:             break;
-    case PAC195xRegID::ACC_FULLNESS_LIMITS:     break;
-    case PAC195xRegID::OC_LIMIT_0:              break;
-    case PAC195xRegID::OC_LIMIT_1:              break;
-    case PAC195xRegID::OC_LIMIT_2:              break;
-    case PAC195xRegID::OC_LIMIT_3:              break;
-    case PAC195xRegID::UC_LIMIT_0:              break;
-    case PAC195xRegID::UC_LIMIT_1:              break;
-    case PAC195xRegID::UC_LIMIT_2:              break;
-    case PAC195xRegID::UC_LIMIT_3:              break;
-    case PAC195xRegID::OP_LIMIT_0:              break;
-    case PAC195xRegID::OP_LIMIT_1:              break;
-    case PAC195xRegID::OP_LIMIT_2:              break;
-    case PAC195xRegID::OP_LIMIT_3:              break;
-    case PAC195xRegID::OV_LIMIT_0:              break;
-    case PAC195xRegID::OV_LIMIT_1:              break;
-    case PAC195xRegID::OV_LIMIT_2:              break;
-    case PAC195xRegID::OV_LIMIT_3:              break;
-    case PAC195xRegID::UV_LIMIT_0:              break;
-    case PAC195xRegID::UV_LIMIT_1:              break;
-    case PAC195xRegID::UV_LIMIT_2:              break;
-    case PAC195xRegID::UV_LIMIT_3:              break;
-    case PAC195xRegID::OC_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::UC_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::OP_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::OV_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::UV_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::ALERT_ENABLE:            break;
-    case PAC195xRegID::ACCUM_CONFIG_ACTIVE:     break;
-    case PAC195xRegID::ACCUM_CONFIG_LATCH:      break;
-    case PAC195xRegID::PROD_ID:                 break;
-    case PAC195xRegID::MANU_ID:                 break;
-    case PAC195xRegID::REVISION_ID:             break;
+    case PAC195xRegID::REFRESH:
+    case PAC195xRegID::CTRL:
+    case PAC195xRegID::ACC_COUNT:
+    case PAC195xRegID::V_ACC_1:
+    case PAC195xRegID::V_ACC_2:
+    case PAC195xRegID::V_ACC_3:
+    case PAC195xRegID::V_ACC_4:
+    case PAC195xRegID::V_BUS_1:
+    case PAC195xRegID::V_BUS_2:
+    case PAC195xRegID::V_BUS_3:
+    case PAC195xRegID::V_BUS_4:
+    case PAC195xRegID::V_SENSE_0:
+    case PAC195xRegID::V_SENSE_1:
+    case PAC195xRegID::V_SENSE_2:
+    case PAC195xRegID::V_SENSE_3:
+    case PAC195xRegID::V_BUS_AVG_0:
+    case PAC195xRegID::V_BUS_AVG_1:
+    case PAC195xRegID::V_BUS_AVG_2:
+    case PAC195xRegID::V_BUS_AVG_3:
+    case PAC195xRegID::V_SENSE_AVG_0:
+    case PAC195xRegID::V_SENSE_AVG_1:
+    case PAC195xRegID::V_SENSE_AVG_2:
+    case PAC195xRegID::V_SENSE_AVG_3:
+    case PAC195xRegID::V_POWER_0:
+    case PAC195xRegID::V_POWER_1:
+    case PAC195xRegID::V_POWER_2:
+    case PAC195xRegID::V_POWER_3:
+    case PAC195xRegID::SMBUS_SETTINGS:
+    case PAC195xRegID::NEG_PWR_FSR:
+    case PAC195xRegID::REFRESH_G:
+    case PAC195xRegID::REFRESH_V:
+    case PAC195xRegID::SLOW:
+    case PAC195xRegID::CTRL_ACTIVE:
+    case PAC195xRegID::NEG_PWR_FSR_ACTIVE:
+    case PAC195xRegID::CTRL_LATCH:
+    case PAC195xRegID::NEG_PWR_FSR_LATCH:
+    case PAC195xRegID::ACCUM_CONFIG:
+    case PAC195xRegID::ALERT_STATUS:
+    case PAC195xRegID::SLOW_ALERT1:
+    case PAC195xRegID::GPIO_ALERT2:
+    case PAC195xRegID::ACC_FULLNESS_LIMITS:
+    case PAC195xRegID::OC_LIMIT_0:
+    case PAC195xRegID::OC_LIMIT_1:
+    case PAC195xRegID::OC_LIMIT_2:
+    case PAC195xRegID::OC_LIMIT_3:
+    case PAC195xRegID::UC_LIMIT_0:
+    case PAC195xRegID::UC_LIMIT_1:
+    case PAC195xRegID::UC_LIMIT_2:
+    case PAC195xRegID::UC_LIMIT_3:
+    case PAC195xRegID::OP_LIMIT_0:
+    case PAC195xRegID::OP_LIMIT_1:
+    case PAC195xRegID::OP_LIMIT_2:
+    case PAC195xRegID::OP_LIMIT_3:
+    case PAC195xRegID::OV_LIMIT_0:
+    case PAC195xRegID::OV_LIMIT_1:
+    case PAC195xRegID::OV_LIMIT_2:
+    case PAC195xRegID::OV_LIMIT_3:
+    case PAC195xRegID::UV_LIMIT_0:
+    case PAC195xRegID::UV_LIMIT_1:
+    case PAC195xRegID::UV_LIMIT_2:
+    case PAC195xRegID::UV_LIMIT_3:
+    case PAC195xRegID::OC_LIMIT_SAMPLES:
+    case PAC195xRegID::UC_LIMIT_SAMPLES:
+    case PAC195xRegID::OP_LIMIT_SAMPLES:
+    case PAC195xRegID::OV_LIMIT_SAMPLES:
+    case PAC195xRegID::UV_LIMIT_SAMPLES:
+    case PAC195xRegID::ALERT_ENABLE:
+    case PAC195xRegID::ACCUM_CONFIG_ACTIVE:
+    case PAC195xRegID::ACCUM_CONFIG_LATCH:
     default:   // Anything else is an illegal target for write.
       break;
   }
@@ -771,7 +937,7 @@ int8_t PAC195x::_proc_reg_write(PAC195xRegID r) {
 
 
 /**
-* Processes the consequences of a register read.
+* Processes the consequences of a single register read.
 *
 * @param r The register that was freshly read.
 * @return
@@ -783,96 +949,94 @@ int8_t PAC195x::_proc_reg_read(PAC195xRegID r) {
   //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "PAC195x::_proc_reg_read(%s)  %u --> 0x%02x", stateStr(currentState()), (uint8_t) r, reg_val);
 
   switch (r) {
-    case PAC195xRegID::REFRESH:                 break;
-    case PAC195xRegID::CTRL:                    break;
-    case PAC195xRegID::ACC_COUNT:               break;
-    case PAC195xRegID::V_ACC_1:                 break;
-    case PAC195xRegID::V_ACC_2:                 break;
-    case PAC195xRegID::V_ACC_3:                 break;
-    case PAC195xRegID::V_ACC_4:                 break;
-    case PAC195xRegID::V_BUS_1:                 break;
-    case PAC195xRegID::V_BUS_2:                 break;
-    case PAC195xRegID::V_BUS_3:                 break;
-    case PAC195xRegID::V_BUS_4:                 break;
-    case PAC195xRegID::V_SENSE_0:               break;
-    case PAC195xRegID::V_SENSE_1:               break;
-    case PAC195xRegID::V_SENSE_2:               break;
-    case PAC195xRegID::V_SENSE_3:               break;
-    case PAC195xRegID::V_BUS_AVG_0:             break;
-    case PAC195xRegID::V_BUS_AVG_1:             break;
-    case PAC195xRegID::V_BUS_AVG_2:             break;
-    case PAC195xRegID::V_BUS_AVG_3:             break;
-    case PAC195xRegID::V_SENSE_AVG_0:           break;
-    case PAC195xRegID::V_SENSE_AVG_1:           break;
-    case PAC195xRegID::V_SENSE_AVG_2:           break;
-    case PAC195xRegID::V_SENSE_AVG_3:           break;
-    case PAC195xRegID::V_POWER_0:               break;
-    case PAC195xRegID::V_POWER_1:               break;
-    case PAC195xRegID::V_POWER_2:               break;
-    case PAC195xRegID::V_POWER_3:               break;
-    case PAC195xRegID::SMBUS_SETTINGS:          break;
-    case PAC195xRegID::NEG_PWR_FSR:             break;
-    case PAC195xRegID::REFRESH_G:               break;
-    case PAC195xRegID::REFRESH_V:               break;
-    case PAC195xRegID::SLOW:                    break;
-    case PAC195xRegID::CTRL_ACTIVE:             break;
-    case PAC195xRegID::NEG_PWR_FSR_ACTIVE:      break;
-    case PAC195xRegID::CTRL_LATCH:              break;
-    case PAC195xRegID::NEG_PWR_FSR_LATCH:       break;
-    case PAC195xRegID::ACCUM_CONFIG:            break;
-    case PAC195xRegID::ALERT_STATUS:            break;
-    case PAC195xRegID::SLOW_ALERT1:             break;
-    case PAC195xRegID::GPIO_ALERT2:             break;
-    case PAC195xRegID::ACC_FULLNESS_LIMITS:     break;
-    case PAC195xRegID::OC_LIMIT_0:              break;
-    case PAC195xRegID::OC_LIMIT_1:              break;
-    case PAC195xRegID::OC_LIMIT_2:              break;
-    case PAC195xRegID::OC_LIMIT_3:              break;
-    case PAC195xRegID::UC_LIMIT_0:              break;
-    case PAC195xRegID::UC_LIMIT_1:              break;
-    case PAC195xRegID::UC_LIMIT_2:              break;
-    case PAC195xRegID::UC_LIMIT_3:              break;
-    case PAC195xRegID::OP_LIMIT_0:              break;
-    case PAC195xRegID::OP_LIMIT_1:              break;
-    case PAC195xRegID::OP_LIMIT_2:              break;
-    case PAC195xRegID::OP_LIMIT_3:              break;
-    case PAC195xRegID::OV_LIMIT_0:              break;
-    case PAC195xRegID::OV_LIMIT_1:              break;
-    case PAC195xRegID::OV_LIMIT_2:              break;
-    case PAC195xRegID::OV_LIMIT_3:              break;
-    case PAC195xRegID::UV_LIMIT_0:              break;
-    case PAC195xRegID::UV_LIMIT_1:              break;
-    case PAC195xRegID::UV_LIMIT_2:              break;
-    case PAC195xRegID::UV_LIMIT_3:              break;
-    case PAC195xRegID::OC_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::UC_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::OP_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::OV_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::UV_LIMIT_SAMPLES:        break;
-    case PAC195xRegID::ALERT_ENABLE:            break;
-    case PAC195xRegID::ACCUM_CONFIG_ACTIVE:     break;
-    case PAC195xRegID::ACCUM_CONFIG_LATCH:      break;
-    case PAC195xRegID::PROD_ID:                 break;
-    case PAC195xRegID::MANU_ID:                 break;
-    case PAC195xRegID::REVISION_ID:             break;
+    case PAC195xRegID::REFRESH:
+    case PAC195xRegID::CTRL:
+    case PAC195xRegID::ACC_COUNT:
+    case PAC195xRegID::V_ACC_1:
+    case PAC195xRegID::V_ACC_2:
+    case PAC195xRegID::V_ACC_3:
+    case PAC195xRegID::V_ACC_4:
+    case PAC195xRegID::V_BUS_1:
+    case PAC195xRegID::V_BUS_2:
+    case PAC195xRegID::V_BUS_3:
+    case PAC195xRegID::V_BUS_4:
+    case PAC195xRegID::V_SENSE_0:
+    case PAC195xRegID::V_SENSE_1:
+    case PAC195xRegID::V_SENSE_2:
+    case PAC195xRegID::V_SENSE_3:
+    case PAC195xRegID::V_BUS_AVG_0:
+    case PAC195xRegID::V_BUS_AVG_1:
+    case PAC195xRegID::V_BUS_AVG_2:
+    case PAC195xRegID::V_BUS_AVG_3:
+    case PAC195xRegID::V_SENSE_AVG_0:
+    case PAC195xRegID::V_SENSE_AVG_1:
+    case PAC195xRegID::V_SENSE_AVG_2:
+    case PAC195xRegID::V_SENSE_AVG_3:
+    case PAC195xRegID::V_POWER_0:
+    case PAC195xRegID::V_POWER_1:
+    case PAC195xRegID::V_POWER_2:
+    case PAC195xRegID::V_POWER_3:
+    case PAC195xRegID::SMBUS_SETTINGS:
+    case PAC195xRegID::NEG_PWR_FSR:
+    case PAC195xRegID::REFRESH_G:
+    case PAC195xRegID::REFRESH_V:
+    case PAC195xRegID::SLOW:
+    case PAC195xRegID::CTRL_ACTIVE:
+    case PAC195xRegID::NEG_PWR_FSR_ACTIVE:
+    case PAC195xRegID::CTRL_LATCH:
+    case PAC195xRegID::NEG_PWR_FSR_LATCH:
+    case PAC195xRegID::ACCUM_CONFIG:
+    case PAC195xRegID::ALERT_STATUS:
+    case PAC195xRegID::SLOW_ALERT1:
+    case PAC195xRegID::GPIO_ALERT2:
+    case PAC195xRegID::ACC_FULLNESS_LIMITS:
+    case PAC195xRegID::OC_LIMIT_0:
+    case PAC195xRegID::OC_LIMIT_1:
+    case PAC195xRegID::OC_LIMIT_2:
+    case PAC195xRegID::OC_LIMIT_3:
+    case PAC195xRegID::UC_LIMIT_0:
+    case PAC195xRegID::UC_LIMIT_1:
+    case PAC195xRegID::UC_LIMIT_2:
+    case PAC195xRegID::UC_LIMIT_3:
+    case PAC195xRegID::OP_LIMIT_0:
+    case PAC195xRegID::OP_LIMIT_1:
+    case PAC195xRegID::OP_LIMIT_2:
+    case PAC195xRegID::OP_LIMIT_3:
+    case PAC195xRegID::OV_LIMIT_0:
+    case PAC195xRegID::OV_LIMIT_1:
+    case PAC195xRegID::OV_LIMIT_2:
+    case PAC195xRegID::OV_LIMIT_3:
+    case PAC195xRegID::UV_LIMIT_0:
+    case PAC195xRegID::UV_LIMIT_1:
+    case PAC195xRegID::UV_LIMIT_2:
+    case PAC195xRegID::UV_LIMIT_3:
+    case PAC195xRegID::OC_LIMIT_SAMPLES:
+    case PAC195xRegID::UC_LIMIT_SAMPLES:
+    case PAC195xRegID::OP_LIMIT_SAMPLES:
+    case PAC195xRegID::OV_LIMIT_SAMPLES:
+    case PAC195xRegID::UV_LIMIT_SAMPLES:
+    case PAC195xRegID::ALERT_ENABLE:
+    case PAC195xRegID::ACCUM_CONFIG_ACTIVE:
+    case PAC195xRegID::ACCUM_CONFIG_LATCH:
+      break;
+
+    case PAC195xRegID::PROD_ID:  // Handled as a single case with REVISION_ID.
+    case PAC195xRegID::MANU_ID:  // Handled as a single case with REVISION_ID.
+      break;
+    case PAC195xRegID::REVISION_ID:
+      // The last value to be read during a refresh cycle will unlock the state
+      //   machine to progress out of DISCOVERY.
+      if (_flags.value(PAC195X_FLAG_REFRESH_CYCLE)) {
+        _flags.clear(PAC195X_FLAG_REFRESH_CYCLE);
+      }
+      _flags.set(PAC195X_FLAG_DEVICE_PRESENT, (0 < _channel_count()));
+      break;
+
     default:   break;
   }
   return ret;
 }
 
-
-/**
-* Called prior to the given bus operation beginning.
-* Returning 0 will allow the operation to continue.
-* Returning anything else will fail the operation with IO_RECALL.
-*   Operations failed this way will have their callbacks invoked as normal.
-*
-* @param  _op  The bus operation that is about to run.
-* @return 0 to run the op, or non-zero to cancel it.
-*/
-int8_t PAC195x::io_op_callahead(BusOp* _op) {
-  return 0;
-}
 
 /**
 * When a bus operation completes, it is passed back to its issuing class.
@@ -902,25 +1066,7 @@ int8_t PAC195x::io_op_callback(BusOp* _op) {
   else {
     // This was register access.
     const PAC195xRegID REG_ID = _reg_id_from_addr(op->sub_addr);
-    if (BusOpcode::TX == op->get_opcode()) {
-      ret = _proc_reg_write(REG_ID);
-    }
-    else {
-      if (_pac195x_flag(PAC195X_FLAG_REFRESH_CYCLE)) {
-        // if (15 > reg_idx) {
-        //   reg_idx++;
-        //   op->sub_addr = _reg_addr(REG_ID);
-        //   op->setBuffer((uint8_t*) &_reg_shadow_offset(REG_ID), _reg_width(REG_ID));
-        //   ret = BUSOP_CALLBACK_RECYCLE;
-        // }
-        // else {   // This is the end of the refresh cycle.
-        // }
-        _pac195x_clear_flag(PAC195X_FLAG_REFRESH_CYCLE);
-      }
-      else {
-        ret = _proc_reg_read(REG_ID);
-      }
-    }
+    ret = (BusOpcode::TX == op->get_opcode()) ? _proc_reg_write(REG_ID) : _proc_reg_read(REG_ID);
   }
   return ret;
 }
@@ -967,12 +1113,17 @@ int8_t PAC195x::_fsm_poll() {
       fsm_advance = (0 == _ll_pin_init());  // Configure the pins if they are not already.
       break;
 
-    // Exit conditions:Bus is assigned, and any user-provided configuration is valid.
+    // Exit conditions: Bus is assigned, and any user-provided configuration is valid.
     case PAC195xState::PREINIT:
       break;
 
-    case PAC195xState::RESETTING:
     case PAC195xState::DISCOVERY:
+      if (_flags.value(PAC195X_FLAG_PREINIT_EXIT_MASK)) {   // Has the initial register mirroring finished?
+        fsm_advance = false;
+      }
+      break;
+
+    case PAC195xState::RESETTING:
     case PAC195xState::USR_CONF:
     case PAC195xState::IDLE:
     case PAC195xState::READING:
@@ -1089,19 +1240,6 @@ void PAC195x::printDebug(StringBuilder* output) {
 
 
 /**
-* Prints a single channel.
-*/
-void PAC195xChannel::printChannel(StringBuilder* output) {
-  output->concatf(
-    "\t%.5fV\t%.5fW\t%.5fWh\n",
-    voltage(),
-    power(),
-    energy()
-  );
-}
-
-
-/**
 * Prints the values of all enabled channels.
 */
 void PAC195x::printChannelValues(StringBuilder* output) {
@@ -1178,4 +1316,57 @@ int8_t PAC195x::console_handler(StringBuilder* text_return, StringBuilder* args)
   }
 
   return ret;
+}
+
+
+
+/*******************************************************************************
+* PAC195xChannel
+*******************************************************************************/
+
+PAC195xChannel::PAC195xChannel(const PAC195x* S_PTR, const float OHMS, const uint8_t C_NUM) :
+  _SENSOR_PTR(S_PTR), _SENSE_OHMS(OHMS), _CHAN_NUM(C_NUM),
+  _topo(PAC195xChanTopology::UNIPOLAR), _acc_target(PAC195xAccumTarget::V_POWER),
+  _conf_dirty(false), _fresh(false),
+  _voltage(0.0f), _power(0.0f), _energy(0.0f), _acc_time(0)
+{
+}
+
+
+/**
+*
+*/
+int8_t PAC195xChannel::resetAccumulator() {
+  int8_t ret = -1;
+  return ret;
+}
+
+
+/**
+*
+*/
+int8_t PAC195xChannel::enabled(bool) {
+  int8_t ret = -1;
+  return ret;
+}
+
+
+/**
+*
+*/
+bool PAC195xChannel::enabled() {
+  return false;
+}
+
+
+/**
+* Prints a single channel.
+*/
+void PAC195xChannel::printChannel(StringBuilder* output) {
+  output->concatf(
+    "\t%.5fV\t%.5fW\t%.5fWh\n",
+    voltage(),
+    power(),
+    energy()
+  );
 }

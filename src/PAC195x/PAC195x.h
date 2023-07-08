@@ -24,44 +24,44 @@ class PAC195x;
 enum class PAC195xRegID : uint8_t {
   /*                    Idx    Addr   Sz   Notes
   ----------------------------------------------------- */
-  REFRESH             = 0,   // 0x00  0    (empty)
+  REFRESH             = 0,   // 0x00  0    W (empty)
   CTRL                = 1,   // 0x01  2    RW
-  ACC_COUNT           = 2,   // 0x02  4    RW
-  V_ACC_1             = 3,   // 0x03  7    RW
-  V_ACC_2             = 4,   // 0x04  7    RW
-  V_ACC_3             = 5,   // 0x05  7    RW
-  V_ACC_4             = 6,   // 0x06  7    RW
-  V_BUS_1             = 7,   // 0x07  2    RW
-  V_BUS_2             = 8,   // 0x08  2    RW
-  V_BUS_3             = 9,   // 0x09  2    RW
-  V_BUS_4             = 10,  // 0x0A  2    RW
-  V_SENSE_0           = 11,  // 0x0B  2    RW
-  V_SENSE_1           = 12,  // 0x0C  2    RW
-  V_SENSE_2           = 13,  // 0x0D  2    RW
-  V_SENSE_3           = 14,  // 0x0E  2    RW
-  V_BUS_AVG_0         = 15,  // 0x0F  2    RW
-  V_BUS_AVG_1         = 16,  // 0x10  2    RW
-  V_BUS_AVG_2         = 17,  // 0x11  2    RW
-  V_BUS_AVG_3         = 18,  // 0x12  2    RW
-  V_SENSE_AVG_0       = 19,  // 0x13  2    RW
-  V_SENSE_AVG_1       = 20,  // 0x14  2    RW
-  V_SENSE_AVG_2       = 21,  // 0x15  2    RW
-  V_SENSE_AVG_3       = 22,  // 0x16  2    RW
-  V_POWER_0           = 23,  // 0x17  4    RW
-  V_POWER_1           = 24,  // 0x18  4    RW
-  V_POWER_2           = 25,  // 0x19  4    RW
-  V_POWER_3           = 26,  // 0x1A  4    RW
+  ACC_COUNT           = 2,   // 0x02  4    R
+  V_ACC_1             = 3,   // 0x03  7    R
+  V_ACC_2             = 4,   // 0x04  7    R
+  V_ACC_3             = 5,   // 0x05  7    R
+  V_ACC_4             = 6,   // 0x06  7    R
+  V_BUS_1             = 7,   // 0x07  2    R
+  V_BUS_2             = 8,   // 0x08  2    R
+  V_BUS_3             = 9,   // 0x09  2    R
+  V_BUS_4             = 10,  // 0x0A  2    R
+  V_SENSE_0           = 11,  // 0x0B  2    R
+  V_SENSE_1           = 12,  // 0x0C  2    R
+  V_SENSE_2           = 13,  // 0x0D  2    R
+  V_SENSE_3           = 14,  // 0x0E  2    R
+  V_BUS_AVG_0         = 15,  // 0x0F  2    R
+  V_BUS_AVG_1         = 16,  // 0x10  2    R
+  V_BUS_AVG_2         = 17,  // 0x11  2    R
+  V_BUS_AVG_3         = 18,  // 0x12  2    R
+  V_SENSE_AVG_0       = 19,  // 0x13  2    R
+  V_SENSE_AVG_1       = 20,  // 0x14  2    R
+  V_SENSE_AVG_2       = 21,  // 0x15  2    R
+  V_SENSE_AVG_3       = 22,  // 0x16  2    R
+  V_POWER_0           = 23,  // 0x17  4    R
+  V_POWER_1           = 24,  // 0x18  4    R
+  V_POWER_2           = 25,  // 0x19  4    R
+  V_POWER_3           = 26,  // 0x1A  4    R
   SMBUS_SETTINGS      = 27,  // 0x1C  1    RW  (Discontinuity)
   NEG_PWR_FSR         = 28,  // 0x1D  2    RW
-  REFRESH_G           = 29,  // 0x1E  0    (empty)
-  REFRESH_V           = 30,  // 0x1F  0    (empty)
+  REFRESH_G           = 29,  // 0x1E  0    W (empty)
+  REFRESH_V           = 30,  // 0x1F  0    W (empty)
   SLOW                = 31,  // 0x20  1    RW
-  CTRL_ACTIVE         = 32,  // 0x21  2    RW
-  NEG_PWR_FSR_ACTIVE  = 33,  // 0x22  2    RW
-  CTRL_LATCH          = 34,  // 0x23  2    RW
-  NEG_PWR_FSR_LATCH   = 35,  // 0x24  2    RW
+  CTRL_ACTIVE         = 32,  // 0x21  2    R
+  NEG_PWR_FSR_ACTIVE  = 33,  // 0x22  2    R
+  CTRL_LATCH          = 34,  // 0x23  2    R
+  NEG_PWR_FSR_LATCH   = 35,  // 0x24  2    R
   ACCUM_CONFIG        = 36,  // 0x25  1    RW
-  ALERT_STATUS        = 37,  // 0x26  3    RW
+  ALERT_STATUS        = 37,  // 0x26  3    RW  (write to clear status)
   SLOW_ALERT1         = 38,  // 0x27  3    RW
   GPIO_ALERT2         = 39,  // 0x28  3    RW
   ACC_FULLNESS_LIMITS = 40,  // 0x29  2    RW
@@ -103,7 +103,7 @@ enum class PAC195xRegID : uint8_t {
 
 /*
 * Conversion modes
-* These enum values translate directly to register values.
+* NOTE: These enum values translate directly to register values.
 */
 enum class PAC195xMode : uint8_t {
   SPS_ADAPTIVE_1024 = 0x00,
@@ -129,6 +129,19 @@ enum class PAC195xGPIOMode : uint8_t {
   GPIO_OUTPUT_OD = 1,
   ALERT_OUTPUT   = 2,
   SLOW_INPUT     = 3   // Default on reset for ALERT1.
+};
+
+/*
+* For the purposes of alerts when programmed limits are exceeded, we can specify
+*   sample counts for which the condition of excess must persist before an
+*   interrupt is triggered.
+* NOTE: These enum values translate directly to register values.
+*/
+enum class PAC195xAlertHysterisis : uint8_t {
+  SAMPLES_1  = 0,  // Default is no alert hysteresis.
+  SAMPLES_4  = 1,
+  SAMPLES_8  = 2,
+  SAMPLES_16 = 3
 };
 
 /*
@@ -174,7 +187,8 @@ enum class PAC195xState : uint8_t {
 #define PAC195X_FLAG_DEVICE_PRESENT   0x00000001  // Part is likely an PAC195x.
 #define PAC195X_FLAG_PINS_CONFIGURED  0x00000002  // Low-level pin setup is complete.
 #define PAC195X_FLAG_USER_CONFIG      0x00000004  // Registers are initialized with the user's values.
-#define PAC195X_FLAG_REFRESH_CYCLE    0x00002000  // We are undergoing a full register refresh.
+#define PAC195X_FLAG_REFRESH_CYCLE    0x00000008  // We are undergoing a full register refresh.
+#define PAC195X_FLAG_PENDING_POR      0x00002000  // We are waiting for the POR bit to clear.
 #define PAC195X_FLAG_SERVICING_IRQS   0x00010000  // The class will respond to IRQ signals.
 
 // Bits to preserve through reset.
@@ -248,16 +262,20 @@ class PAC195xChannel {
     int8_t enabled(bool);
     bool   enabled();
 
+    int8_t setVoltageLimits(float under_volt, float over_volt, PAC195xAlertHysterisis hyst);
+    int8_t setCurrentLimits(float under_amp,  float over_amp,  PAC195xAlertHysterisis hyst);
+    int8_t setPowerLimit(float over_wattage, PAC195xAlertHysterisis hyst);
+
     void printChannel(StringBuilder*);
 
 
   private:
     friend PAC195x;
 
-    PAC195xChannel(const PAC195x*, const float OHMS, const uint8_t C_NUM);
+    PAC195xChannel(PAC195x*, const float OHMS, const uint8_t C_NUM);
     ~PAC195xChannel() {};
 
-    const PAC195x* _SENSOR_PTR;
+    PAC195x* _SENSOR_PTR;
     const float    _SENSE_OHMS;  // Channel config. Value (in Ohm's) of the sense resistor.
     const uint8_t  _CHAN_NUM;    // The channel number.
     PAC195xChanTopology _topo;
@@ -265,10 +283,32 @@ class PAC195xChannel {
     bool     _conf_dirty;  // Are the channel settings in flux?
     bool     _fresh;       // Has the channel been updated since the last time it was checked?
 
-    float    _voltage;     // Primary data. Voltage at SENSE+ pin
+    float    _voltage;     // Primary data. Instantaneous Voltage at SENSE+ pin
+    float    _current;     // Primary data. Instantaneous Amperage through the sense resistor.
     float    _power;       // Primary data. Instantaneous power through the channel.
+    double   _voltage_avg; // Primary data. Rolling average of Voltage.
+    double   _current_avg; // Primary data. Rolling average of power.
     double   _energy;      // Primary data. The accumulated energy through the channel.
     uint32_t _acc_time;    // The system time when we began accumulating.
+
+    // Value update functions called by the driver at the end of I/O handling.
+    int8_t _update_from_vacc_reg(uint64_t);
+    int8_t _update_from_vbus_reg(uint32_t);
+    int8_t _update_from_vsense_reg(uint32_t);
+    int8_t _update_from_vbus_avg_reg(uint32_t);
+    int8_t _update_from_vsense_avg_reg(uint32_t);
+    int8_t _update_from_vpower_reg(uint32_t);
+
+    // Scaling and parameter derivation functions.
+    bool _is_accumulator_unsigned();
+    uint32_t _denominator();
+    float  _sample_rate();
+
+    /*
+    * Given the current channel settings, calculates and returns the PowerFSR value.
+    * Units for this value are V^2/R
+    */
+    inline const double _power_fsr() {  return (3.200D / _SENSE_OHMS);  };
 };
 
 
@@ -306,6 +346,7 @@ class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
     inline uint32_t  lastRead() {        return micros_last_read;  };
     inline uint32_t  readCount() {       return read_count;        };
     inline void      resetReadCount() {  read_count = 0;           };
+    inline uint32_t  accumulationCount() {   return _get_shadow_value(PAC195xRegID::ACC_COUNT);   };
 
     inline bool ownsIRQPin(uint8_t x) {  return ((_ALERT1_PIN == x) | (_ALERT2_PIN == x));  };
     inline bool devFound() {             return _flags.value(PAC195X_FLAG_DEVICE_PRESENT); };
@@ -358,9 +399,9 @@ class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
     int8_t  _send_dev_refresh(bool general_call = false);
 
     void     _clear_registers();
-    int8_t   _set_shadow_value(PAC195xRegID, uint32_t val);
-    uint32_t _get_shadow_value(PAC195xRegID);
-    uint64_t _get_shadow_value64(PAC195xRegID);
+    int8_t   _set_shadow_value(const PAC195xRegID, uint32_t val);
+    uint32_t _get_shadow_value(const PAC195xRegID);
+    uint64_t _get_shadow_value64(const PAC195xRegID);
     uint8_t* _get_shadow_address(const PAC195xRegID);
 
 
@@ -389,6 +430,7 @@ class PAC195x : public I2CDevice, public StateMachine<PAC195xState> {
     static const uint8_t _reg_addr(const PAC195xRegID);
     static const uint8_t _reg_shadow_offset(const PAC195xRegID);
     static const uint8_t _reg_width(const PAC195xRegID);
+    static const bool    _reg_writable(const PAC195xRegID);
     static const char* const _reg_name_str(const PAC195xRegID);
     static const PAC195xRegID _reg_id_from_addr(const uint8_t);
 };

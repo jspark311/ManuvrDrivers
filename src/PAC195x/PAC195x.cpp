@@ -52,6 +52,15 @@ static const uint8_t PAC195X_SHADOW_OFFSETS[PAC195X_REG_COUNT] = {  // Shadow of
   120, 122, 125, 128, 131, 134, 136, 138, 140, 142, 144, 146,
   148, 150, 151, 152, 153, 154, 155, 158, 159, 160, 161, 162
 };
+static const bool PAC195X_WRITABLE[PAC195X_REG_COUNT] = {  // Register is RW if true.
+  true,  true,  false, false, false, false, false, false, false, false, false, false,
+  false, false, false, false, false, false, false, false, false, false, false, false,
+  false, false, false, true,  true,  true,  true,  true,  false, false, false, false,
+  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+  true,  true,  true,  true,  true,  true,  true,  false, false, false, false, false
+};
+
 
 static const char* const PAC195X_REG_NAME_MAP[PAC195X_REG_COUNT] = {  // Textual representations
   "REFRESH", "CTRL", "ACC_COUNT", "V_ACC_1", "V_ACC_2", "V_ACC_3",
@@ -71,6 +80,7 @@ static const char* const PAC195X_REG_NAME_MAP[PAC195X_REG_COUNT] = {  // Textual
 const uint8_t PAC195x::_reg_addr(const PAC195xRegID id) {           return PAC195X_ADDR_MAP[(const uint8_t) id];        }
 const uint8_t PAC195x::_reg_shadow_offset(const PAC195xRegID id) {  return PAC195X_SHADOW_OFFSETS[(const uint8_t) id];  }
 const uint8_t PAC195x::_reg_width(const PAC195xRegID id) {          return PAC195X_REG_WIDTHS[(const uint8_t) id];      }
+const bool    PAC195x::_reg_writable(const PAC195xRegID id) {       return PAC195X_WRITABLE[(const uint8_t) id];        }
 const char* const PAC195x::_reg_name_str(const PAC195xRegID id) {   return PAC195X_REG_NAME_MAP[(const uint8_t) id];    }
 const PAC195xRegID PAC195x::_reg_id_from_addr(const uint8_t ADDR) {
   for (uint32_t i = 0; i < PAC195X_REG_COUNT; i++) {
@@ -485,7 +495,6 @@ uint8_t PAC195x::_channel_count() {
 
 /**
 * Resets the internal register shadows to their default values.
-* Also resets internal second-order data to avoid corrupted results.
 *
 * @return 0 always
 */
@@ -497,24 +506,54 @@ void PAC195x::_clear_registers() {
 }
 
 
+/**
+* NOTE: Probably the only functions that should call this will be involved in
+*   I/O. Higher-level driver functions should access register values via one of
+*   the endian-controlled accessor functions.
+*
+* @param REG is the register.
+* @return a pointer to the first byte of the shadow region that represents the register.
+*/
 uint8_t* PAC195x::_get_shadow_address(const PAC195xRegID REG) {
   return &_reg_shadows[_reg_shadow_offset(REG)];
 }
 
 
-/*
-* Function stores register values as the sensor's native endianess (Big).
+/**
+* Set the shadow value of a register. Usually as preparation for a write.
+* NOTE: This function is an endian-control point.
+*
+* @param r is the register to be written.
+* @param val is the value to store (in host endian form).
+* @return 0 on success.
 */
-int8_t PAC195x::_set_shadow_value(PAC195xRegID r, uint32_t val) {
+int8_t PAC195x::_set_shadow_value(const PAC195xRegID REG, uint32_t val) {
   int8_t ret = -1;
-  uint8_t register_size = _reg_width(r);
-  uint8_t* buf_base = (uint8_t*) (_reg_shadows + _reg_shadow_offset(r));
+  uint8_t register_size = _reg_width(REG);
+  uint8_t* buf_base = (uint8_t*) (_reg_shadows + _reg_shadow_offset(REG));
   uint8_t i = 0;
+  uint32_t safe_val = val;
+
+  // Enforce any reserved bit positions or other safety checks on values ahead
+  //   of writing them to the shadow.
+  switch (REG) {
+    case PAC195xRegID::REFRESH:
+    case PAC195xRegID::REFRESH_G:
+    case PAC195xRegID::REFRESH_V:
+      return -2;    // Pseudo-registers should have their shadows ignored.
+
+    case PAC195xRegID::CTRL:
+      safe_val &= 0x0000FFF0;  // Filter out the unimplemented bits.
+      break;
+
+    default:  break;     // No safety required.
+  }
+
   switch (register_size) {
-    case 4:    *(buf_base + i++) = ((uint8_t) (val >> 24) & 0xFF);   // MSB-first
-    case 3:    *(buf_base + i++) = ((uint8_t) (val >> 16) & 0xFF);
-    case 2:    *(buf_base + i++) = ((uint8_t) (val >> 8)  & 0xFF);
-    case 1:    *(buf_base + i++) = ((uint8_t) val & 0xFF);
+    case 4:    *(buf_base + i++) = ((uint8_t) (safe_val >> 24) & 0xFF);   // MSB-first
+    case 3:    *(buf_base + i++) = ((uint8_t) (safe_val >> 16) & 0xFF);
+    case 2:    *(buf_base + i++) = ((uint8_t) (safe_val >> 8)  & 0xFF);
+    case 1:    *(buf_base + i++) = ((uint8_t) safe_val & 0xFF);
       ret = 0;
       break;
     default:
@@ -525,11 +564,18 @@ int8_t PAC195x::_set_shadow_value(PAC195xRegID r, uint32_t val) {
 }
 
 
-uint32_t PAC195x::_get_shadow_value(PAC195xRegID r) {
+/**
+* Get the shadow value of a register.
+* NOTE: This function is an endian-control point.
+*
+* @param REG is the register to be returned.
+* @return The value of the given register shadow.
+*/
+uint32_t PAC195x::_get_shadow_value(const PAC195xRegID REG) {
   uint32_t ret = 0;
   uint8_t final_reg_val[4] = {0, 0, 0, 0};
-  uint8_t register_size = _reg_width(r);
-  uint8_t* buf_base = (uint8_t*) (_reg_shadows + _reg_shadow_offset(r));
+  uint8_t register_size = _reg_width(REG);
+  uint8_t* buf_base = (uint8_t*) (_reg_shadows + _reg_shadow_offset(REG));
   switch (register_size) {
     case 4:    final_reg_val[--register_size] = *(buf_base++);   // MSB-first
     case 3:    final_reg_val[--register_size] = *(buf_base++);
@@ -543,12 +589,18 @@ uint32_t PAC195x::_get_shadow_value(PAC195xRegID r) {
   return ret;
 }
 
-
-uint64_t PAC195x::_get_shadow_value64(PAC195xRegID r) {
+/**
+* Get the shadow value of a register.
+* NOTE: This function is an endian-control point.
+*
+* @param REG is the register to be returned.
+* @return The value of the given register shadow.
+*/
+uint64_t PAC195x::_get_shadow_value64(const PAC195xRegID REG) {
   uint64_t ret = 0;
   uint8_t final_reg_val[8] = {0, };
-  uint8_t register_size = _reg_width(r);
-  uint8_t* buf_base = (uint8_t*) (_reg_shadows + _reg_shadow_offset(r));
+  uint8_t register_size = _reg_width(REG);
+  uint8_t* buf_base = (uint8_t*) (_reg_shadows + _reg_shadow_offset(REG));
   switch (register_size) {
     case 7:    final_reg_val[--register_size] = *(buf_base++);   // MSB-first
     case 6:    final_reg_val[--register_size] = *(buf_base++);
@@ -595,20 +647,17 @@ int8_t PAC195x::_write_registers(PAC195xRegID reg, uint8_t count) {
         //   this check if they are part of the range.
         // Otherwise, continue to accrue length value.
         switch (REG_CURRENT) {
-          // Pseudo registers that don't actually have any content.
+          // Pseudo-registers that don't actually have any content. Writing to
+          //   these addresses is perfectly valid, but not when in a range.
           case PAC195xRegID::REFRESH:
           case PAC195xRegID::REFRESH_G:
           case PAC195xRegID::REFRESH_V:
-          // Read-only registers
-          case PAC195xRegID::PROD_ID:
-          case PAC195xRegID::MANU_ID:
-          case PAC195xRegID::REVISION_ID:
-            return -2;
+            if (1 != count) {    return -2;   }
+            break;
           default:
             // Register isn't forbidden. Discontinuous addresses?
-            if (_reg_addr(REG_CURRENT) - REG_ADDR != i) {
-              return -2;
-            }
+            if (_reg_addr(REG_CURRENT) - REG_ADDR != i) {       return -2;   }
+            if (!_reg_writable(REG_CURRENT) - REG_ADDR != i) {  return -2;   }
             byte_len += _reg_width(REG_CURRENT);
             break;
         }
@@ -619,7 +668,9 @@ int8_t PAC195x::_write_registers(PAC195xRegID reg, uint8_t count) {
       if (nullptr != op) {
         op->dev_addr = _dev_addr;
         op->sub_addr = REG_ADDR;
-        op->setBuffer(ptr, byte_len);
+        if (0 < byte_len) {
+          op->setBuffer(ptr, byte_len);
+        }
         if (0 == _bus->queue_io_job(op)) {
           ret = 0;
         }
@@ -646,87 +697,6 @@ int8_t PAC195x::_write_registers(PAC195xRegID reg, uint8_t count) {
 int8_t PAC195x::_write_register(PAC195xRegID r, uint32_t val) {
   uint32_t safe_val = 0;
   int8_t ret = -1;
-  if (nullptr != _bus) {
-    switch (r) {
-      // No safety required.
-      case PAC195xRegID::REFRESH:
-      case PAC195xRegID::CTRL:
-      case PAC195xRegID::ACC_COUNT:
-      case PAC195xRegID::V_ACC_1:
-      case PAC195xRegID::V_ACC_2:
-      case PAC195xRegID::V_ACC_3:
-      case PAC195xRegID::V_ACC_4:
-      case PAC195xRegID::V_BUS_1:
-      case PAC195xRegID::V_BUS_2:
-      case PAC195xRegID::V_BUS_3:
-      case PAC195xRegID::V_BUS_4:
-      case PAC195xRegID::V_SENSE_0:
-      case PAC195xRegID::V_SENSE_1:
-      case PAC195xRegID::V_SENSE_2:
-      case PAC195xRegID::V_SENSE_3:
-      case PAC195xRegID::V_BUS_AVG_0:
-      case PAC195xRegID::V_BUS_AVG_1:
-      case PAC195xRegID::V_BUS_AVG_2:
-      case PAC195xRegID::V_BUS_AVG_3:
-      case PAC195xRegID::V_SENSE_AVG_0:
-      case PAC195xRegID::V_SENSE_AVG_1:
-      case PAC195xRegID::V_SENSE_AVG_2:
-      case PAC195xRegID::V_SENSE_AVG_3:
-      case PAC195xRegID::V_POWER_0:
-      case PAC195xRegID::V_POWER_1:
-      case PAC195xRegID::V_POWER_2:
-      case PAC195xRegID::V_POWER_3:
-      case PAC195xRegID::SMBUS_SETTINGS:
-      case PAC195xRegID::NEG_PWR_FSR:
-      case PAC195xRegID::REFRESH_G:
-      case PAC195xRegID::REFRESH_V:
-      case PAC195xRegID::SLOW:
-      case PAC195xRegID::CTRL_ACTIVE:
-      case PAC195xRegID::NEG_PWR_FSR_ACTIVE:
-      case PAC195xRegID::CTRL_LATCH:
-      case PAC195xRegID::NEG_PWR_FSR_LATCH:
-      case PAC195xRegID::ACCUM_CONFIG:
-      case PAC195xRegID::ALERT_STATUS:
-      case PAC195xRegID::SLOW_ALERT1:
-      case PAC195xRegID::GPIO_ALERT2:
-      case PAC195xRegID::ACC_FULLNESS_LIMITS:
-      case PAC195xRegID::OC_LIMIT_0:
-      case PAC195xRegID::OC_LIMIT_1:
-      case PAC195xRegID::OC_LIMIT_2:
-      case PAC195xRegID::OC_LIMIT_3:
-      case PAC195xRegID::UC_LIMIT_0:
-      case PAC195xRegID::UC_LIMIT_1:
-      case PAC195xRegID::UC_LIMIT_2:
-      case PAC195xRegID::UC_LIMIT_3:
-      case PAC195xRegID::OP_LIMIT_0:
-      case PAC195xRegID::OP_LIMIT_1:
-      case PAC195xRegID::OP_LIMIT_2:
-      case PAC195xRegID::OP_LIMIT_3:
-      case PAC195xRegID::OV_LIMIT_0:
-      case PAC195xRegID::OV_LIMIT_1:
-      case PAC195xRegID::OV_LIMIT_2:
-      case PAC195xRegID::OV_LIMIT_3:
-      case PAC195xRegID::UV_LIMIT_0:
-      case PAC195xRegID::UV_LIMIT_1:
-      case PAC195xRegID::UV_LIMIT_2:
-      case PAC195xRegID::UV_LIMIT_3:
-      case PAC195xRegID::OC_LIMIT_SAMPLES:
-      case PAC195xRegID::UC_LIMIT_SAMPLES:
-      case PAC195xRegID::OP_LIMIT_SAMPLES:
-      case PAC195xRegID::OV_LIMIT_SAMPLES:
-      case PAC195xRegID::UV_LIMIT_SAMPLES:
-        safe_val = val;
-        break;
-
-      // Filter out the unimplemented bits.
-      case PAC195xRegID::ALERT_ENABLE:
-        safe_val = val & 0x0000000F;
-        break;
-
-      // Anything else is not writable.
-      default:   return -3;
-    }
-  }
 
   if (nullptr != _bus) {
     I2CBusOp* op = (I2CBusOp*) _bus->new_op(BusOpcode::TX, (BusOpCallback*) this);
@@ -770,7 +740,7 @@ int8_t PAC195x::_read_registers(PAC195xRegID reg, uint8_t count) {
         //   REFRESH_V) that will fail this check if they are part of the range.
         // Otherwise, continue to accrue length value.
         switch (REG_CURRENT) {
-          // Pseudo registers that don't actually have any content.
+          // Pseudo-registers that don't actually have any content.
           case PAC195xRegID::REFRESH:
           case PAC195xRegID::REFRESH_G:
           case PAC195xRegID::REFRESH_V:
@@ -842,9 +812,7 @@ int8_t PAC195x::_read_register(PAC195xRegID r) {
 * @param  _op  The bus operation that is about to run.
 * @return 0 to run the op, or non-zero to cancel it.
 */
-int8_t PAC195x::io_op_callahead(BusOp* _op) {
-  return 0;
-}
+int8_t PAC195x::io_op_callahead(BusOp* _op) {  return 0;  }
 
 
 /**
@@ -950,32 +918,36 @@ int8_t PAC195x::_proc_reg_read(PAC195xRegID r) {
 
   switch (r) {
     case PAC195xRegID::REFRESH:
+      break;
     case PAC195xRegID::CTRL:
+      break;
     case PAC195xRegID::ACC_COUNT:
-    case PAC195xRegID::V_ACC_1:
-    case PAC195xRegID::V_ACC_2:
-    case PAC195xRegID::V_ACC_3:
-    case PAC195xRegID::V_ACC_4:
-    case PAC195xRegID::V_BUS_1:
-    case PAC195xRegID::V_BUS_2:
-    case PAC195xRegID::V_BUS_3:
-    case PAC195xRegID::V_BUS_4:
-    case PAC195xRegID::V_SENSE_0:
-    case PAC195xRegID::V_SENSE_1:
-    case PAC195xRegID::V_SENSE_2:
-    case PAC195xRegID::V_SENSE_3:
-    case PAC195xRegID::V_BUS_AVG_0:
-    case PAC195xRegID::V_BUS_AVG_1:
-    case PAC195xRegID::V_BUS_AVG_2:
-    case PAC195xRegID::V_BUS_AVG_3:
-    case PAC195xRegID::V_SENSE_AVG_0:
-    case PAC195xRegID::V_SENSE_AVG_1:
-    case PAC195xRegID::V_SENSE_AVG_2:
-    case PAC195xRegID::V_SENSE_AVG_3:
-    case PAC195xRegID::V_POWER_0:
-    case PAC195xRegID::V_POWER_1:
-    case PAC195xRegID::V_POWER_2:
-    case PAC195xRegID::V_POWER_3:
+      break;
+
+    case PAC195xRegID::V_ACC_1:        chan_1._update_from_vacc_reg(_get_shadow_value64(r));      break;
+    case PAC195xRegID::V_ACC_2:        chan_2._update_from_vacc_reg(_get_shadow_value64(r));      break;
+    case PAC195xRegID::V_ACC_3:        chan_3._update_from_vacc_reg(_get_shadow_value64(r));      break;
+    case PAC195xRegID::V_ACC_4:        chan_4._update_from_vacc_reg(_get_shadow_value64(r));      break;
+    case PAC195xRegID::V_BUS_1:        chan_1._update_from_vbus_reg(_get_shadow_value(r));        break;
+    case PAC195xRegID::V_BUS_2:        chan_2._update_from_vbus_reg(_get_shadow_value(r));        break;
+    case PAC195xRegID::V_BUS_3:        chan_3._update_from_vbus_reg(_get_shadow_value(r));        break;
+    case PAC195xRegID::V_BUS_4:        chan_4._update_from_vbus_reg(_get_shadow_value(r));        break;
+    case PAC195xRegID::V_SENSE_0:      chan_1._update_from_vsense_reg(_get_shadow_value(r));      break;
+    case PAC195xRegID::V_SENSE_1:      chan_2._update_from_vsense_reg(_get_shadow_value(r));      break;
+    case PAC195xRegID::V_SENSE_2:      chan_3._update_from_vsense_reg(_get_shadow_value(r));      break;
+    case PAC195xRegID::V_SENSE_3:      chan_4._update_from_vsense_reg(_get_shadow_value(r));      break;
+    case PAC195xRegID::V_BUS_AVG_0:    chan_1._update_from_vbus_avg_reg(_get_shadow_value(r));    break;
+    case PAC195xRegID::V_BUS_AVG_1:    chan_2._update_from_vbus_avg_reg(_get_shadow_value(r));    break;
+    case PAC195xRegID::V_BUS_AVG_2:    chan_3._update_from_vbus_avg_reg(_get_shadow_value(r));    break;
+    case PAC195xRegID::V_BUS_AVG_3:    chan_4._update_from_vbus_avg_reg(_get_shadow_value(r));    break;
+    case PAC195xRegID::V_SENSE_AVG_0:  chan_1._update_from_vsense_avg_reg(_get_shadow_value(r));  break;
+    case PAC195xRegID::V_SENSE_AVG_1:  chan_2._update_from_vsense_avg_reg(_get_shadow_value(r));  break;
+    case PAC195xRegID::V_SENSE_AVG_2:  chan_3._update_from_vsense_avg_reg(_get_shadow_value(r));  break;
+    case PAC195xRegID::V_SENSE_AVG_3:  chan_4._update_from_vsense_avg_reg(_get_shadow_value(r));  break;
+    case PAC195xRegID::V_POWER_0:      chan_1._update_from_vpower_reg(_get_shadow_value(r));      break;
+    case PAC195xRegID::V_POWER_1:      chan_2._update_from_vpower_reg(_get_shadow_value(r));      break;
+    case PAC195xRegID::V_POWER_2:      chan_3._update_from_vpower_reg(_get_shadow_value(r));      break;
+    case PAC195xRegID::V_POWER_3:      chan_4._update_from_vpower_reg(_get_shadow_value(r));      break;
     case PAC195xRegID::SMBUS_SETTINGS:
     case PAC195xRegID::NEG_PWR_FSR:
     case PAC195xRegID::REFRESH_G:
@@ -1028,11 +1000,14 @@ int8_t PAC195x::_proc_reg_read(PAC195xRegID r) {
       //   machine to progress out of DISCOVERY.
       if (_flags.value(PAC195X_FLAG_REFRESH_CYCLE)) {
         _flags.clear(PAC195X_FLAG_REFRESH_CYCLE);
+        bool manu_is_microchip = (0x54 == _get_shadow_value(PAC195xRegID::MANU_ID));
+        bool chan_count_is_ok  = (0 < _channel_count());
+        _flags.set(PAC195X_FLAG_DEVICE_PRESENT, (manu_is_microchip & chan_count_is_ok));
       }
-      _flags.set(PAC195X_FLAG_DEVICE_PRESENT, (0 < _channel_count()));
       break;
 
-    default:   break;
+    default:
+      break;
   }
   return ret;
 }
@@ -1059,14 +1034,24 @@ int8_t PAC195x::io_op_callback(BusOp* _op) {
     }
   }
   else if (op == &_busop_dat_read) {
-    // DATA register read.
+    // DATA read.
     micros_last_read = micros();
     read_count++;
   }
   else {
-    // This was register access.
-    const PAC195xRegID REG_ID = _reg_id_from_addr(op->sub_addr);
-    ret = (BusOpcode::TX == op->get_opcode()) ? _proc_reg_write(REG_ID) : _proc_reg_read(REG_ID);
+    // This was register access. Loop and process the consequences.
+    // NOTE: This driver does not double-buffer I/O on shadows. Thus, there is
+    //   no need to actually examine the I2CBusOp's buffer. But we do need to
+    //   recover the length and base register from it.
+    int bytes_to_handle = op->bufferLen();
+    while (0 < bytes_to_handle) {
+      const PAC195xRegID REG_ID = _reg_id_from_addr(op->sub_addr);
+      int8_t ret_local = (BusOpcode::TX == op->get_opcode()) ? _proc_reg_write(REG_ID) : _proc_reg_read(REG_ID);
+      if (0 != ret_local) {
+        c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "Failed to process register value: %s", _reg_name_str(REG_ID));
+      }
+      bytes_to_handle -= _reg_width(REG_ID);
+    }
   }
   return ret;
 }
@@ -1324,7 +1309,7 @@ int8_t PAC195x::console_handler(StringBuilder* text_return, StringBuilder* args)
 * PAC195xChannel
 *******************************************************************************/
 
-PAC195xChannel::PAC195xChannel(const PAC195x* S_PTR, const float OHMS, const uint8_t C_NUM) :
+PAC195xChannel::PAC195xChannel(PAC195x* S_PTR, const float OHMS, const uint8_t C_NUM) :
   _SENSOR_PTR(S_PTR), _SENSE_OHMS(OHMS), _CHAN_NUM(C_NUM),
   _topo(PAC195xChanTopology::UNIPOLAR), _acc_target(PAC195xAccumTarget::V_POWER),
   _conf_dirty(false), _fresh(false),
@@ -1360,6 +1345,40 @@ bool PAC195xChannel::enabled() {
 
 
 /**
+* NOTE: Disable ALERTs before changing to avoid spurious interrupts.
+*
+* @return 0 on success, or non-zero on failure.
+*/
+int8_t PAC195xChannel::setVoltageLimits(float under_volt, float over_volt, PAC195xAlertHysterisis hyst) {
+  int8_t ret = -1;
+  return ret;
+}
+
+
+/**
+* NOTE: Disable ALERTs before changing to avoid spurious interrupts.
+*
+* @return 0 on success, or non-zero on failure.
+*/
+int8_t PAC195xChannel::setCurrentLimits(float under_amp,  float over_amp,  PAC195xAlertHysterisis hyst) {
+  int8_t ret = -1;
+  return ret;
+}
+
+
+/**
+* NOTE: Disable ALERTs before changing to avoid spurious interrupts.
+*
+* @return 0 on success, or non-zero on failure.
+*/
+int8_t PAC195xChannel::setPowerLimit(float over_wattage, PAC195xAlertHysterisis hyst) {
+  int8_t ret = -1;
+  return ret;
+}
+
+
+
+/**
 * Prints a single channel.
 */
 void PAC195xChannel::printChannel(StringBuilder* output) {
@@ -1369,4 +1388,87 @@ void PAC195xChannel::printChannel(StringBuilder* output) {
     power(),
     energy()
   );
+}
+
+
+/*
+* This function considers the register settings in the sensor and places the
+*   accumulator value in the correct member after taking sign extension into
+*   account.
+*
+* @param val is either a 56-bit unsigned, or a 55-bit signed int.
+* @return 0 on success.
+*/
+int8_t PAC195xChannel::_update_from_vacc_reg(uint64_t val) {
+  int8_t ret = 0;
+  int64_t signed_value = 0;
+  if (_is_accumulator_unsigned()) {
+    signed_value = (int64_t) val;
+  }
+  else {
+    signed_value = (int64_t) val;  // TODO
+  }
+  // Switch on accumulation target, and store to proper local member.
+  switch (_acc_target) {
+    case PAC195xAccumTarget::V_POWER:
+      _energy = (signed_value / _denominator()) * (_power_fsr() / _sample_rate());
+      break;
+    case PAC195xAccumTarget::V_SENSE:
+      // TODO
+      break;
+    case PAC195xAccumTarget::V_BUS:
+      // TODO
+      break;
+  }
+  return ret;
+}
+
+int8_t PAC195xChannel::_update_from_vbus_reg(uint32_t val) {
+  int8_t ret = 0;
+  return ret;
+}
+
+int8_t PAC195xChannel::_update_from_vsense_reg(uint32_t val) {
+  int8_t ret = 0;
+  return ret;
+}
+
+int8_t PAC195xChannel::_update_from_vbus_avg_reg(uint32_t val) {
+  int8_t ret = 0;
+  return ret;
+}
+
+int8_t PAC195xChannel::_update_from_vsense_avg_reg(uint32_t val) {
+  int8_t ret = 0;
+  return ret;
+}
+
+int8_t PAC195xChannel::_update_from_vpower_reg(uint32_t val) {
+  int8_t ret = 0;
+  _power = _power_fsr() * ((float) val / _denominator());
+  return ret;
+}
+
+
+bool PAC195xChannel::_is_accumulator_unsigned() {
+  return true;  // TODO
+}
+
+
+uint32_t PAC195xChannel::_denominator() {
+  switch (_topo) {
+    case PAC195xChanTopology::UNIPOLAR:
+    case PAC195xChanTopology::FSR_OVER_2:   return (1 << 30);
+    case PAC195xChanTopology::BIPOLAR:      return (1 << 29);
+    default:  return 1;  // This is an error condition the spares us DIV/0 risk.
+  }
+}
+
+
+/*
+*
+*/
+float PAC195xChannel::_sample_rate() {
+  // TODO: Would be better to do this with sensor sample rate if running continuously.
+  return ((millis() - _acc_time) / _SENSOR_PTR->accumulationCount());
 }

@@ -15,10 +15,14 @@ This class supports both interrupt pins (one for each 8-bit port), but having
   wired-OR configuration, and only pass in a single interrtupt pin to the
   constructor. If both pins are supplied, they will each trigger the same
   response from the driver (to read the state of the entire 16-bit port).
+If possible, interrupts are leveraged for all INPUT pins to keep driver state
+  as current as possible, regardless of whether or not the client software is
+  expecting change-notifications on such pins.
 
 The driver mirrors the pin states apart from the register shadows to provide
   assurances for their accuracy, and also to support its interrupt callback
   abstraction.
+
 
 Copyright 2019 Manuvr, Inc
 
@@ -50,12 +54,17 @@ enum class MCP23x17RegID : uint8_t {
   IODIR   = 0x00,
   IPOL    = 0x02,
   GPINTEN = 0x04,
-  GPPU    = 0x06,
-  GPIO    = 0x08,
-  OLAT    = 0x0A,
-  INVALID = 0xFF   // End-of-enum. There are 6 registers.
+  DEFVAL  = 0x06,
+  INTCON  = 0x08,
+  IOCON   = 0x0A,  // Technically an 8-bit register, but is replicated at the next address.
+  GPPU    = 0x0C,
+  INTF    = 0x0E,
+  INTCAP  = 0x10,
+  GPIO    = 0x12,
+  OLAT    = 0x14,
+  INVALID = 0xFF   // End-of-enum. There are 11 registers.
 };
-#define MCP23X17_REG_COUNT  6
+#define MCP23X17_REG_COUNT  11
 
 
 /*
@@ -65,7 +74,6 @@ enum class MCP23x17RegID : uint8_t {
 */
 class MCP23x17 {
   public:
-    int8_t init(I2CAdapter* b = nullptr);
     int8_t reset();
     int8_t poll();
     int8_t refresh();
@@ -88,12 +96,12 @@ class MCP23x17 {
     inline bool devFound() {                 return _dev_found;         };
     inline bool initialized() {              return _initialized;       };
 
-    void printDebug(StringBuilder*);
     void printPins(StringBuilder*);
     int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
 
 
   protected:
+    bool   _bit7_out_only  = false;  // Used as a proxy for variant identification.
     bool   _preserve_state = false;
     bool   _pins_confd     = false;
     bool   _dev_found      = false;
@@ -102,7 +110,8 @@ class MCP23x17 {
     /* This constructor is only a delegate to an extending class. */
     MCP23x17(const uint8_t RESET_PIN, const uint8_t IRQ_PIN_A, const uint8_t IRQ_PIN_B);
 
-    int8_t _ll_pin_init();
+    int8_t _deep_init();
+    void _print_debug(StringBuilder*);
 
     inline uint16_t _get_shadow_value(MCP23x17RegID r) {
       return ((_shadows[(uint8_t) r + 1]) | ((uint16_t) _shadows[(uint8_t) r] << 8));
@@ -121,12 +130,15 @@ class MCP23x17 {
     const uint8_t _RESET_PIN;
     const uint8_t _IRQ_PIN_A;
     const uint8_t _IRQ_PIN_B;
-    uint8_t       _shadows[12] = {0, };
+    uint8_t       _shadows[MCP23X17_REG_COUNT << 1] = {0, };
     PinCallback   _callback    = nullptr;
     uint16_t      _pin_states  = 0;
+    IRQCondition  _change_notice[16];
 
+    int8_t _ll_pin_init();
     int8_t _invoke_pin_callback(uint8_t pin, bool value);
 };
+
 
 
 /*
@@ -137,7 +149,7 @@ class MCP23017: public MCP23x17, public I2CDevice {
     MCP23017(uint8_t addr, const uint8_t RESET_PIN = 255, const uint8_t IRQ_PIN_A = 255, const uint8_t IRQ_PIN_B = 255);
     ~MCP23017();
 
-    int8_t init();
+    int8_t init(I2CAdapter* b = nullptr);
     void printDebug(StringBuilder*);
 
     /* Overrides from I2CDevice... */
@@ -148,6 +160,33 @@ class MCP23017: public MCP23x17, public I2CDevice {
   private:
     I2CBusOp  _busop_irq_read;
     I2CBusOp  _busop_pin_state;
+
+    int8_t _write_register(uint8_t addr, uint8_t* data);
+    int8_t _read_registers(uint8_t addr, uint8_t* data, uint8_t length);
+};
+
+
+
+/*
+* SPI Variant
+*/
+class MCP23S17: public MCP23x17, public BusOpCallback {
+  public:
+    MCP23S17(uint8_t cs_pin, uint8_t addr, const uint8_t RESET_PIN = 255, const uint8_t IRQ_PIN_A = 255, const uint8_t IRQ_PIN_B = 255);
+    ~MCP23S17();
+
+    int8_t init(SPIAdapter* b = nullptr);
+    void printDebug(StringBuilder*);
+
+    /* Overrides from BusOpCallback... */
+    int8_t io_op_callahead(BusOp*);
+    int8_t io_op_callback(BusOp*);
+
+
+  private:
+    const uint8_t _ADDR_BYTE;
+    SPIBusOp  _busop_irq_read;
+    SPIBusOp  _busop_pin_state;
 
     int8_t _write_register(uint8_t addr, uint8_t* data);
     int8_t _read_registers(uint8_t addr, uint8_t* data, uint8_t length);

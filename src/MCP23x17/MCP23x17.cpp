@@ -54,14 +54,13 @@ MCP23x17::MCP23x17(
   const uint8_t RESET_PIN,
   const uint8_t IRQ_PIN_A,
   const uint8_t IRQ_PIN_B
-) : _RESET_PIN(RESET_PIN), _IRQ_PIN_A(IRQ_PIN_A), _IRQ_PIN_B(IRQ_PIN_B) {}
-
-
-
-int8_t MCP23x17::init(I2CAdapter* b) {
-  int8_t ret = -1;
-  return ret;
+) : _RESET_PIN(RESET_PIN), _IRQ_PIN_A(IRQ_PIN_A), _IRQ_PIN_B(IRQ_PIN_B)
+{
+  for (uint8_t i = 0; i < 16; i++) {
+    _change_notice[i] = IRQCondition::NONE;
+  }
 }
+
 
 
 int8_t MCP23x17::reset() {
@@ -90,12 +89,30 @@ int8_t MCP23x17::refresh() {
 
 int8_t MCP23x17::gpioMode(uint8_t pin, GPIOMode mode) {
   int8_t ret = -1;
+  if (pin < 16) {
+    bool in = true;
+    bool pu = false;
+    switch (mode) {
+      case GPIOMode::OUTPUT:
+        in = false;
+        break;
+      case GPIOMode::INPUT_PULLUP:
+        pu = true;
+        // No break;
+      case GPIOMode::INPUT:
+        if (_bit7_out_only & (0 != (pin & 0x8080))) {  return -2;  }
+        break;
+      default:
+        return -2;
+    }
+    ret = 0;
+  }
   return ret;
 }
 
 
 GPIOMode MCP23x17::gpioMode(uint8_t pin) {
-  GPIOMode ret = GPIOMode::INPUT;
+  GPIOMode ret = GPIOMode::INPUT;   // Defaults to being an INPUT.
   return ret;
 }
 
@@ -113,8 +130,7 @@ uint8_t MCP23x17::digitalRead(uint8_t pin) {
 
 
 uint16_t MCP23x17::getPinValues() {
-  uint16_t ret = 0;
-  return ret;
+  return _pin_states;
 }
 
 
@@ -136,7 +152,8 @@ int8_t MCP23x17::detachInterrupt(uint8_t pin) {
 }
 
 
-void MCP23x17::printDebug(StringBuilder*) {
+void MCP23x17::_print_debug(StringBuilder* output) {
+  output->concatf("\tFound:          %c\n", (devFound() ? 'y' : 'n'));
 }
 
 
@@ -150,10 +167,16 @@ int8_t MCP23x17::console_handler(StringBuilder* text_return, StringBuilder* args
 }
 
 
+int8_t MCP23x17::_deep_init() {
+  int8_t ret = -1;
+  return ret;
+}
+
+
 
 
 /*******************************************************************************
-* Members and logic specific to the i2c package
+* Members and logic specific to the i2c variant
 *******************************************************************************/
 /*
 * Bus-specific constructor. IRQ pins are pass-through to the parent class.
@@ -165,7 +188,21 @@ MCP23017::MCP23017(
   const uint8_t IRQ_PIN_B
 ) : MCP23x17(RESET_PIN, IRQ_PIN_A, IRQ_PIN_B), I2CDevice(addr),
   _busop_irq_read(BusOpcode::RX, this),
-  _busop_pin_state(BusOpcode::RX, this) {}
+  _busop_pin_state(BusOpcode::RX, this)
+{
+  // This variant only supports OUTPUT mode on bit-7 of either 8-bit port.
+  _bit7_out_only = true;
+}
+
+
+/*
+* Destructor.
+*/
+MCP23017::~MCP23017() {
+  // TODO: Recall any I/O in progress.
+  // TODO: Consider preserve-on-destroy logic and set the RESET pin (or not).
+  // TODO: de-init MCU-bound pins (or not) and remove ISR hooks.
+}
 
 
 /**
@@ -208,9 +245,9 @@ int8_t MCP23017::_read_registers(uint8_t addr, uint8_t* data, uint8_t length) {
 }
 
 
-
-int8_t MCP23017::init() {
+int8_t MCP23017::init(I2CAdapter* b) {
   int8_t ret = -1;
+  if (nullptr != b) {  _bus = b;  }
   if (nullptr != _bus) {
   }
   return ret;
@@ -222,9 +259,10 @@ int8_t MCP23017::init() {
 */
 void MCP23017::printDebug(StringBuilder* output) {
   output->concatf("-- MCP23017 %sinitialized\n", (initialized() ? "" : "un"));
+  _print_debug(output);
   I2CDevice::printDebug(output);
-  output->concatf("\tFound:          %c\n", (devFound() ? 'y' : 'n'));
 }
+
 
 
 /*******************************************************************************
@@ -281,3 +319,8 @@ int8_t MCP23017::io_op_callback(BusOp* _op) {
   }
   return ret;
 }
+
+
+/*******************************************************************************
+* Members and logic specific to the SPI variant
+*******************************************************************************/

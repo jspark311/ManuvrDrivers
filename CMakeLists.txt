@@ -14,6 +14,7 @@ idf_component_register(
     "src/SSD13xx" "src/SX127x" "src/MCP4728" "src/ADG2128" "src/DS1881"
     "src/PAC195x" "src/MCP23x17" "src/TMP102" "src/LSM6DSOX"
     "src/Composites/ManuvrPMU" "src/AudemeMOVI"
+    "src/GPIOPatterns/GPIButton"
   INCLUDE_DIRS "src"
   REQUIRES CppPotpourri
 )

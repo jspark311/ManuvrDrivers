@@ -43,7 +43,7 @@ enum class LSM6DSOXRegister : uint8_t {
   // Name                     Idx       Addr   Offset  Width  Writable
   // ------------------------------------------------------------------
   FUNC_CONFIG_ACCESS       = 0x00,   // 0x01     0x00      1      true
-  PIN_CTRL                 = 0x01,   // 0x02     0x01      1      true
+  PIN_CTRL_REG             = 0x01,   // 0x02     0x01      1      true
   S4S_TPH                  = 0x02,   // 0x04     0x02      2      true
   S4S_RR                   = 0x03,   // 0x06     0x04      1      true
   FIFO_CTRL1               = 0x04,   // 0x07     0x05      1      true

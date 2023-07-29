@@ -757,7 +757,7 @@ int8_t LSM6DSOX::_bus_read_callback(uint8_t reg_addr, uint8_t* buf, uint16_t len
     if (_verbosity >= LOG_LEV_DEBUG) c3p_log(LOG_LEV_DEBUG, "IMU", "\tIMU read reg(0x%02x): 0x%04x", reg_addr, _get_shadow_value(reg));
     switch (reg) {   // Get the register byte.
       case LSM6DSOXRegister::FUNC_CONFIG_ACCESS:        // 1 byte      true
-      case LSM6DSOXRegister::PIN_CTRL:                  // 1 byte      true
+      case LSM6DSOXRegister::PIN_CTRL_REG:              // 1 byte      true
       case LSM6DSOXRegister::S4S_TPH:                   // 2 byte      true
       case LSM6DSOXRegister::S4S_RR:                    // 1 byte      true
       case LSM6DSOXRegister::FIFO_CTRL1:                // 1 byte      true
@@ -983,7 +983,7 @@ int8_t LSM6DSOX::_bus_write_callback(uint8_t reg_addr, uint8_t* buf, uint16_t le
     if (_verbosity >= LOG_LEV_DEBUG) c3p_log(LOG_LEV_DEBUG, "IMU", "\tIMU wrote reg(0x%02x): 0x%04x", reg_addr, _get_shadow_value(reg));
     switch (reg) {   // Get the register byte.
       case LSM6DSOXRegister::FUNC_CONFIG_ACCESS:
-      case LSM6DSOXRegister::PIN_CTRL:
+      case LSM6DSOXRegister::PIN_CTRL_REG:
       case LSM6DSOXRegister::S4S_TPH:                   // 2 bytes
       case LSM6DSOXRegister::S4S_RR:
       case LSM6DSOXRegister::FIFO_CTRL1:

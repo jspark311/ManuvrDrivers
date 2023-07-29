@@ -11,7 +11,7 @@ Other build systems may sensibly use this header to include the entire driver
 /*** Commodity hardware *******************************************************/
 #include "ShiftRegister/ShiftRegister.h"   // Drivers for SPI-connected shift-registers.
 #include "I2CEEPROM/I2CEEPROM.h"           // Common driver for many small I2C EEPROMS.
-#include "GPIButton/GPIButton.h"           // Push-buttons connected to GPIO pins.
+#include "GPIOPatterns/GPIButton/GPIButton.h"  // Push-buttons connected to GPIO pins.
 
 
 /*** Specific hardware drivers ************************************************/

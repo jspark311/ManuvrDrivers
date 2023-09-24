@@ -183,13 +183,12 @@ int8_t TSL2561::poll() {
       }
     }
     else {
-      uint32_t now = millis();
       uint32_t r_interval = 403;
       switch (integrationTime()) {
         case TSLIntegrationTime::MS_13:    r_interval -= 88;   // No break
         case TSLIntegrationTime::MS_101:   r_interval -= 301;  // No break
         case TSLIntegrationTime::MS_402:
-          if (wrap_accounted_delta(now, _last_read) >= r_interval) {
+          if (millis_since(_last_read) >= r_interval) {
             if (!_tsl_flag(TSL2561_FLAG_READ_IN_FLIGHT)) {
               ret = (0 <= _read_data_registers()) ? 0 : -1;
             }

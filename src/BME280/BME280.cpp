@@ -89,10 +89,9 @@ bool BME280::_priv_init() {
 int8_t BME280::poll() {
   int8_t ret = -3;
   if (initialized() && enabled()) {
-    uint32_t now = millis();
     uint32_t r_interval = 100;
     ret = 0;
-    if (wrap_accounted_delta(now, _last_read) >= r_interval) {
+    if (millis_since(_last_read) >= r_interval) {
       if (!_flags.value(BME280_FLAG_READ_IN_FLIGHT)) {
         ret = (_refresh_data() ? 0 : -1);
       }

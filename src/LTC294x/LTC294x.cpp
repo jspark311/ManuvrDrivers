@@ -317,9 +317,8 @@ int8_t LTC294x::io_op_callback(BusOp* _op) {
             //   timestamp of the measurement (neglecting bus latency).
             case LTC294xRegID::ACC_CHARGE:   // Note the time.
               if (_is_monitoring()) {
-                uint32_t now = millis();
-                _sample_dt = wrap_accounted_delta(now, _sample_time);
-                _sample_time = now;
+                _sample_dt = millis_since(_sample_time);
+                _sample_time = millis();
                 _read_registers(LTC294xRegID::VOLTAGE, 2);
               }
               break;

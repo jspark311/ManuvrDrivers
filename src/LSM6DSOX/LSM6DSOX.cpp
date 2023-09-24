@@ -188,7 +188,7 @@ void LSM6DSOX::printDebug(StringBuilder* output) {
     output->concatf("\tFIFO level:       %u\n", _fifo_remaining);
     output->concat("\tTemperature:      ");
     if (temperatureEnabled()) {
-      output->concatf("%.2fC (age: %ums)\n", _temperature, wrap_accounted_delta(now, _last_read_temp));
+      output->concatf("%.2fC (age: %ums)\n", _temperature, millis_since(_last_read_temp));
     }
     else {
       output->concat("Disabled\n");
@@ -282,21 +282,20 @@ int8_t LSM6DSOX::poll() {
   int8_t ret = -1;
   if (initialized() && enabled()) {
     const uint32_t POLLING_DELAY = (1000 / accODR());
-    uint32_t now = millis();
     if (false) {
       // Interrupt pin changed. Find out why.
     }
     else {
       // No IRQ pin. Resort to polling.
-      if (wrap_accounted_delta(_last_read_axes, now) >= POLLING_DELAY) {
+      if (millis_since(_last_read_axes) >= POLLING_DELAY) {
         if (0 == _fifo_remaining) {
-          if (wrap_accounted_delta(_last_read_fifo, now) >= (16*POLLING_DELAY)) {
+          if (millis_since(_last_read_fifo) >= (16*POLLING_DELAY)) {
             ret = _read_fifo_level();
           }
         }
       }
     }
-    if (wrap_accounted_delta(_last_read_temp, now) >= POLLING_DELAY) {
+    if (millis_since(_last_read_temp) >= POLLING_DELAY) {
       if (temperatureEnabled()) {
         _read_temperature();
       }

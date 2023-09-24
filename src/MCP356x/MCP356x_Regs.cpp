@@ -881,7 +881,7 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
   else if (op == &_busop_dat_read) {
     // DATA register read.
     micros_last_read = micros();
-    uint32_t window_width_us = wrap_accounted_delta(micros_last_read, micros_last_window);
+    uint32_t window_width_us = delta_assume_wrap(micros_last_read, micros_last_window);
     read_count++;
     read_accumulator++;
     if (window_width_us >= 1000000) {

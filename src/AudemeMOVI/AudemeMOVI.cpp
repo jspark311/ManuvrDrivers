@@ -35,6 +35,7 @@
 
 #include "AudemeMOVI.h"
 
+#define MOVI_MAX_RESPONSE_LENGTH 1024
 
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
@@ -262,7 +263,7 @@ MOVI::~MOVI() {
 /*
 * Implementation of BufferAccepter.
 */
-int8_t MOVI::provideBuffer(StringBuilder* buf) {
+int8_t MOVI::pushBuffer(StringBuilder* buf) {
   if (!buf->isEmpty()) {
     if (buf->contains('\n')) {
       // If the buffer contains a newline, we take that to be a message ending.
@@ -277,6 +278,14 @@ int8_t MOVI::provideBuffer(StringBuilder* buf) {
     }
   }
   return -1;
+}
+
+
+/*
+* Implementation of BufferAccepter.
+*/
+int32_t MOVI::bufferAvailable() {
+  return (MOVI_MAX_RESPONSE_LENGTH - _response.length());
 }
 
 
@@ -775,7 +784,7 @@ MOVIState MOVI::_poll_fsm() {
           str_bldr.concatf(" %s", (char*) waiting_cmd->outbound.string());
         }
         str_bldr.concat('\n');
-        waiting_cmd->was_sent = (0 <= _uart->provideBuffer(&str_bldr));
+        waiting_cmd->was_sent = (0 <= _uart->pushBuffer(&str_bldr));
 
         if (waiting_cmd->was_sent & (MOVIEvent::UNSUPPORTED == waiting_cmd->EXPECT)) {
           _waiting_cmds.remove(waiting_cmd);

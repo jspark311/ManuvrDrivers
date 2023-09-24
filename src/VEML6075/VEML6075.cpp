@@ -171,7 +171,7 @@ int8_t VEML6075::poll() {
   int8_t ret = -3;
   if (initialized() && enabled()) {
     ret = 0;
-    if (wrap_accounted_delta(millis(), _last_read) >= _integrationTime) {
+    if (millis_since(_last_read) >= _integrationTime) {
       if (!_veml_flag(VEML6075_FLAG_READ_IN_FLIGHT)) {
         ret = (VEML6075Err::SUCCESS == _read_data()) ? 0 : -1;
       }

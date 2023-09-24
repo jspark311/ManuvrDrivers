@@ -366,7 +366,7 @@ int8_t ManuvrPMU::poll() {
   uint32_t now = millis();
   int8_t ret = 0;
   if (ltc294x.initComplete()) {
-    if (wrap_accounted_delta(_last_meter_poll, now) >= _polling_period) {
+    if (strict_abs_delta(now, _last_meter_poll) >= _polling_period) {
       if (2 == ltc294x.poll()) {
         ret += 1;
       }
@@ -374,12 +374,12 @@ int8_t ManuvrPMU::poll() {
     }
   }
   if (bq24155.initComplete()) {
-    if (wrap_accounted_delta(_punch_timestamp, now) >= 1740000) {
+    if (strict_abs_delta(now, _punch_timestamp) >= 1740000) {
       // One every 32 minutes, the charger will stop.
       // We punch the safety timer every 29 minutes.
       bq24155.punch_safety_timer();
     }
-    if (wrap_accounted_delta(_last_charger_poll, now) >= _polling_period) {
+    if (strict_abs_delta(now, _last_charger_poll) >= _polling_period) {
       bq24155.refresh_status();
       _last_charger_poll = now;
     }

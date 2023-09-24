@@ -210,7 +210,8 @@ class MOVI : public BufferAccepter {
     ~MOVI();
 
     /* Implementation of BufferAccepter. */
-    int8_t provideBuffer(StringBuilder* buf);
+    int8_t pushBuffer(StringBuilder*);
+    int32_t bufferAvailable();
 
     // Gets the result string of an event. For example: MOVIEvent[201]: LET THERE LIGHT results in "LET THERE BE
     // LIGHT\n". The resulting string might need trimming for comparison to other strings. The resulting string

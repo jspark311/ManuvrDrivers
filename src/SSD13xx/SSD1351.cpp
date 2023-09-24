@@ -553,8 +553,7 @@ int8_t SSD1351::console_handler(StringBuilder* text_return, StringBuilder* args)
   }
 
   if (print_timer) {
-    uint32_t millis_1 = millis();
-    text_return->concatf("Display update took %ums\n", wrap_accounted_delta(millis_1, millis_0));
+    text_return->concatf("Display update took %ums\n", millis_since(millis_0));
   }
   return ret;
 }

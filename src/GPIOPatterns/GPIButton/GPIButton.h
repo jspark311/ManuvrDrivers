@@ -85,8 +85,8 @@ class GPIButton {
     GPIButtonState  _observed_state;    // The last state that we were asked for.
     unsigned int    _last_change;       // System time of last change in state.
     unsigned int    _last_polling;      // System time of last polling.
-    PeriodicTimeout _debounce_timeout;  // A timeout for optional software debounce.
-    PeriodicTimeout _lp_timer;          // A timeout for optional long-press tracking.
+    MillisTimeout   _debounce_timeout;  // A timeout for optional software debounce.
+    MillisTimeout   _lp_timer;          // A timeout for optional long-press tracking.
 
     bool _apply_debounce(const bool PIN_ACTIVE);
 };

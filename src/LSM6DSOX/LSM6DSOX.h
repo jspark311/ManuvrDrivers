@@ -16,7 +16,7 @@
 #include "AbstractPlatform.h"
 #include "BusQueue/SPIAdapter.h"
 #include "Vector3.h"
-#include "TripleAxisPipe/TripleAxisPipe.h"
+#include "Pipes/TripleAxisPipe/TripleAxisPipe.h"
 
 
 /*

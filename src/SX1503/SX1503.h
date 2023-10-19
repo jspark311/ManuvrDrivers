@@ -24,7 +24,7 @@ limitations under the License.
 
 #include <CppPotpourri.h>
 #include <AbstractPlatform.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 #define SX1503_I2C_ADDR           0x20  // Not configurable for SX1503.
 #define SX1503_SERIALIZE_VERSION  0x01  // Version code for serialized states.

@@ -40,7 +40,7 @@
 */
 
 #include <AbstractPlatform.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 #ifndef __VEML6075_DRIVER_H_
 #define __VEML6075_DRIVER_H_

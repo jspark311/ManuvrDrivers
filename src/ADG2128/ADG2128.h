@@ -24,7 +24,7 @@ limitations under the License.
 
 #include <AbstractPlatform.h>
 #include <StringBuilder.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 
 enum class ADG2128_ERROR : int8_t {

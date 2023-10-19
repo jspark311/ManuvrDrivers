@@ -42,8 +42,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #include "Image/Image.h"
-#include "SPIAdapter.h"
-#include "StopWatch.h"
+#include "BusQueue/SPIAdapter.h"
+#include "TimerTools.h"
 
 #ifndef __SSD13XX_DRIVER_H_
 #define __SSD13XX_DRIVER_H_

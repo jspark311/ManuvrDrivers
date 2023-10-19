@@ -12,8 +12,8 @@ Date:   2023.06.24
 #include <stdarg.h>
 #include "StringBuilder.h"
 #include "CppPotpourri.h"
-#include "StopWatch.h"
-#include "I2CAdapter.h"
+#include "TimerTools.h"
+#include "BusQueue/I2CAdapter.h"
 #include "FlagContainer.h"
 #include "EnumWrapper.h"
 #include "FiniteStateMachine.h"

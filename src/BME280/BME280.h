@@ -59,7 +59,7 @@ courtesy of Brian McNoldy at http://andrew.rsmas.miami.edu.
 
 #include <AbstractPlatform.h>
 #include <FlagContainer.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 #ifndef TG_BME_280_H
 #define TG_BME_280_H

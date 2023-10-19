@@ -4,7 +4,7 @@
 
 #include <AbstractPlatform.h>
 #include <EnumeratedTypeCodes.h>
-#include <SPIAdapter.h>
+#include "BusQueue/SPIAdapter.h"
 #include <FlagContainer.h>
 
 #ifndef __SX127X_DRIVER_H

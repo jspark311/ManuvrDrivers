@@ -43,7 +43,7 @@ SOFTWARE.
 
 #include <AbstractPlatform.h>
 #include <FlagContainer.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 /* Class flags */
 #define CCS811_FLAG_DEVICE_PRESENT   0x0001  // Part was found.

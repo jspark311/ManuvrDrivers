@@ -5,8 +5,8 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <CppPotpourri.h>
-#include <SPIAdapter.h>
-#include <StopWatch.h>
+#include "BusQueue/SPIAdapter.h"
+#include "TimerTools.h"
 #include <StringBuilder.h>
 
 /* In this case, these enum values translate directly to register addresses. */

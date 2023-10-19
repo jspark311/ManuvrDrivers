@@ -23,7 +23,7 @@ limitations under the License.
 #define __LSM9DS1_MERGED_H__
 
 #include <AbstractPlatform.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 #include "LSM9DS1Types.h"
 
 

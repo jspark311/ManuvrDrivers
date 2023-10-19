@@ -42,8 +42,8 @@ limitations under the License.
 
 #include <CppPotpourri.h>
 #include <AbstractPlatform.h>
-#include <I2CAdapter.h>
-#include <SPIAdapter.h>
+#include "BusQueue/I2CAdapter.h"
+#include "BusQueue/SPIAdapter.h"
 
 #ifndef MCP23X17_DRIVER_H
 #define MCP23X17_DRIVER_H

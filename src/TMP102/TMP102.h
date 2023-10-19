@@ -16,7 +16,7 @@ local, and you've found our code helpful, please buy us a round!
 Distributed as-is; no warranty is given.
 ******************************************************************************/
 #include <AbstractPlatform.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 #ifndef __TMP102_DRIVER_H_
 #define __TMP102_DRIVER_H_

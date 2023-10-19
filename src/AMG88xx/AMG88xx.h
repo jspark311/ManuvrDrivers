@@ -71,7 +71,7 @@
 */
 
 #include <AbstractPlatform.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 #ifndef __AMG88XX_DRIVER_H_
 #define __AMG88XX_DRIVER_H_

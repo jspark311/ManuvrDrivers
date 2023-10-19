@@ -32,7 +32,7 @@
 
 #include <AbstractPlatform.h>
 #include <FlagContainer.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 
 /**************************************************************************/

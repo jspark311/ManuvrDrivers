@@ -23,7 +23,7 @@ limitations under the License.
 #include <stdint.h>
 #include <CppPotpourri.h>
 #include <AbstractPlatform.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 #ifndef __SX8634_DRIVER_H__
 #define __SX8634_DRIVER_H__

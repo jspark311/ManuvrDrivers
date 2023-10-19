@@ -28,7 +28,7 @@
 #define MAX7219_H
 
 #include <stdint.h>
-#include <SPIAdapter.h>
+#include "BusQueue/SPIAdapter.h"
 
 
 class MAX7219 : public BusOpCallback {

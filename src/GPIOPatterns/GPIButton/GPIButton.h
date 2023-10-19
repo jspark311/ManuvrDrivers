@@ -16,7 +16,7 @@ TODO: Convert this class to a template that uses an enum for the ID field.
 
 #include <stdint.h>
 #include "AbstractPlatform.h"
-#include "StopWatch.h"
+#include "TimerTools.h"
 
 /**
 * @brief Used to determine a buttons current state

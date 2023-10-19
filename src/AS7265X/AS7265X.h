@@ -19,7 +19,7 @@
 
 #include <AbstractPlatform.h>
 #include <FlagContainer.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 #define AS72651_DEVICE_TYPE         0x00
 #define AS72651_HW_VERSION          0x01

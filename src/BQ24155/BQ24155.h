@@ -25,7 +25,7 @@ limitations under the License.
 #include <AbstractPlatform.h>
 #include <FlagContainer.h>
 #include <Battery.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 /* Driver state flags. */
 #define BQ24155_FLAG_INIT_CTRL      0x0001  // Register init flags.

@@ -29,7 +29,7 @@ LiPo is the assumed chemistry.
 #include <Battery.h>
 #include <FlagContainer.h>
 #include <AbstractPlatform.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 // Uses these two drivers from this same codebase
 #include "../../BQ24155/BQ24155.h"

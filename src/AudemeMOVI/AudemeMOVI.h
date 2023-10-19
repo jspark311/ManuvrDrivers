@@ -35,7 +35,7 @@
 #include "CppPotpourri.h"
 #include "FlagContainer.h"
 #include "LightLinkedList.h"
-#include "UARTAdapter.h"
+#include "BusQueue/UARTAdapter.h"
 
 #define MOVI_API_VERSION 9.99f
 

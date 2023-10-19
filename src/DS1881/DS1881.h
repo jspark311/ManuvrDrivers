@@ -22,7 +22,7 @@ limitations under the License.
 #define __DS1881_DRIVER_H__
 
 #include <AbstractPlatform.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 /* Hardware-defined registers */
 #define DS1881_BASE_I2C_ADDR   0x28

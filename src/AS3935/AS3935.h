@@ -41,8 +41,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <AbstractPlatform.h>
 #include <FlagContainer.h>
-#include <I2CAdapter.h>
-#include <SPIAdapter.h>
+#include "BusQueue/I2CAdapter.h"
+#include "BusQueue/SPIAdapter.h"
 
 #ifndef _SPARKFUN_AS3935_H_
 #define _SPARKFUN_AS3935_H_

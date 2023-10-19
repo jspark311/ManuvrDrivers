@@ -24,7 +24,7 @@ limitations under the License.
 
 #include <AbstractPlatform.h>
 #include <FlagContainer.h>
-#include <I2CAdapter.h>
+#include "BusQueue/I2CAdapter.h"
 
 #define LTC294X_I2CADDR        0x64
 #define DEG_K_C_OFFSET      272.15f

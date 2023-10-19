@@ -19,8 +19,8 @@
 #ifndef __I2C_EEPROM_H_
 #define __I2C_EEPROM_H_
 
-#include "Storage.h"
-#include "I2CAdapter.h"
+#include "Storage/Storage.h"
+#include "BusQueue/I2CAdapter.h"
 
 
 /* These are the enumerated positions in the driver's finite state machine. */

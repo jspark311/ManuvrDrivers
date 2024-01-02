@@ -6,7 +6,7 @@ Date:   2023.07.11
 This header provides common support for buttons connected to GPIO pins.
 
 NOTE: Strict attention must be paid to the ISR safety of the core operation of
-  these classes. Inline should be used wherever possible.
+  these classes. FAST_FUNC or inline should be used wherever possible.
 
 TODO: Convert this class to a template that uses an enum for the ID field.
 */
@@ -16,7 +16,7 @@ TODO: Convert this class to a template that uses an enum for the ID field.
 
 #include <stdint.h>
 #include "AbstractPlatform.h"
-#include "TimerTools.h"
+#include "TimerTools/TimerTools.h"
 
 /**
 * @brief Used to determine a buttons current state
@@ -73,7 +73,7 @@ class GPIButton {
 
 
   private:
-    const uint8_t   _PIN;               // TODO: Template and enum.
+    const uint8_t   _PIN;               // 
     const GPIOMode  _PIN_MODE;          // What GPIOMode should the pin be?
     const bool      _PIN_ACT_LOW;       // If true, the physical state will be inverted.
     bool            _pin_setup;         // Pin setup is complete.

@@ -3,6 +3,12 @@ File:   GPIButton.cpp
 Author: J. Ian Lindsay
 Date:   2023.07.12
 
+NOTE: Strict attention must be paid to the ISR safety of the core operation of
+  these classes. FAST_FUNC should be used wherever possible.
+
+NOTE: It is specifically NOT a template to allow it to be easilly located in the
+  FAST_FUNC region. If that problem can be solved, it would save a great deal of
+  ugly casting from product-spefici button enums into uint8, and back again.
 */
 
 #include "GPIButton.h"
@@ -76,7 +82,7 @@ int8_t GPIButton::deinit() {
 *
 * @return 1 on state-change, 0 on no change, -1 on no init.
 */
-int8_t GPIButton::poll() {
+FAST_FUNC int8_t GPIButton::poll() {
   const uint32_t NOW = millis();
   int8_t ret = -1;
   if (_pin_setup) {
@@ -148,7 +154,7 @@ int8_t GPIButton::poll() {
 *
 * @return The number of milliseconds that should elapse before next poll().
 */
-uint32_t GPIButton::next_poll_delay() {
+FAST_FUNC uint32_t GPIButton::next_poll_delay() {
   // TODO: Exploitation of integer overflow is not very portable, since the
   //   compiler gets to decide what to do about it.
   // TODO: If you are going to keep it this way, at least make this function
@@ -173,7 +179,7 @@ uint32_t GPIButton::next_poll_delay() {
 *
 * @return UNKNOWN if there is no fresh state, or else, the button state.
 */
-GPIButtonState GPIButton::getFreshState() {
+FAST_FUNC GPIButtonState GPIButton::getFreshState() {
   GPIButtonState ret = GPIButtonState::UNKNOWN;
   if (_debounced_state != _observed_state) {
     _observed_state = _debounced_state;
@@ -203,7 +209,7 @@ GPIButtonState GPIButton::getFreshState() {
 *
 * @return true to allow state-change observation, false to inhibit it
 */
-bool GPIButton::_apply_debounce(const bool PIN_ACTIVE) {
+FAST_FUNC bool GPIButton::_apply_debounce(const bool PIN_ACTIVE) {
   bool ret = true;
   const bool PIN_CHANGED = (_pin_filter ^ PIN_ACTIVE);
   if (_debounce_timeout.period() > 0) {  // If we are using the debounce feature...

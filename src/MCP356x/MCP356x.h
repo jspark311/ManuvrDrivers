@@ -131,7 +131,7 @@ enum class MCP356xAMCLKPrescaler : uint8_t {
 * digraph statemachine {
 *      node [shape=record, fontname=Helvetica, fontsize=10];
 *      UNINIT      [ label="Uninitialized"                  style="rounded,filled" ];
-*      PREINIT     [ label="Class setup"                    style="rounded,filled" ];
+*      PRE_INIT    [ label="Class setup"                    style="rounded,filled" ];
 *      RESETTING   [ label="Resetting"                    fillcolor="yellow" style="rounded,filled" ];
 *      DISCOVERY   [ label="Hardware discovery"           fillcolor="yellow" style="rounded,filled" ];
 *      REGINIT     [ label="Initialize register shadows"  fillcolor="yellow" style="rounded,filled" ];
@@ -142,8 +142,8 @@ enum class MCP356xAMCLKPrescaler : uint8_t {
 *      READING     [ label="Reading data"                 fillcolor="green"  style="rounded,filled" ];
 *      FAULT       [ label="Fault"                        fillcolor="red"    style="rounded,filled" ];
 *
-*      UNINIT      ->   PREINIT       [ label ="Call to init()", arrowhead="open", style="solid" ];
-*      PREINIT     ->   RESETTING     [ label ="Class members initialized", arrowhead="open", style="solid" ];
+*      UNINIT      ->   PRE_INIT      [ label ="Call to init()", arrowhead="open", style="solid" ];
+*      PRE_INIT    ->   RESETTING     [ label ="Class members initialized", arrowhead="open", style="solid" ];
 *      RESETTING   ->   DISCOVERY     [ label ="Reset complete", arrowhead="open", style="solid" ];
 *      DISCOVERY   ->   REGINIT       [ label ="Hardware found", arrowhead="open", style="solid" ];
 *      DISCOVERY   ->   FAULT         [ label ="Hardware not found", arrowhead="open", style="dashed" ];
@@ -161,22 +161,23 @@ enum class MCP356xAMCLKPrescaler : uint8_t {
 *      READING     ->   IDLE          [ label ="No data demand", arrowhead="open", style="solid" ];
 *      READING     ->   CALIBRATION   [ label ="Call to calibrate()", arrowhead="open", style="solid" ];
 *      READING     ->   FAULT         [ label ="Class fault while reading", arrowhead="open", style="dashed" ];
-*      FAULT       ->   PREINIT       [ label ="Call to reset()", arrowhead="open", style="solid" ];
+*      FAULT       ->   PRE_INIT      [ label ="Call to reset()", arrowhead="open", style="solid" ];
 *  }
 *  \enddot
 */
 enum class MCP356xState : uint8_t {
   UNINIT      = 0,   // init() has never been called.
-  PREINIT     = 1,   // Pin control is being established.
+  PRE_INIT    = 1,   // Pin control is being established.
   RESETTING   = 2,   // Driver is resetting the ADC.
   DISCOVERY   = 3,   // Driver is probing for the ADC.
-  REGINIT     = 4,   // The initial ADC configuration is being written.
+  POST_INIT   = 4,   // The initial ADC configuration is being written.
   CLK_MEASURE = 5,   // Driver is measuring the clock.
   CALIBRATION = 6,   // The ADC is self-calibrating.
   USR_CONF    = 7,   // User config is being written.
   IDLE        = 8,   // Powered up and calibrated, but not reading.
   READING     = 9,   // Everything running, data collection proceeding.
   FAULT       = 10   // State machine encountered something it couldn't cope with.
+  INVALID     = 255  // FSM hygiene.
 };
 
 
@@ -213,6 +214,10 @@ enum class MCP356xState : uint8_t {
 
 // Bits indicating calibration steps.
 #define MCP356X_FLAG_ALL_CAL_MASK     (MCP356X_FLAG_SAMPLED_AVDD | MCP356X_FLAG_SAMPLED_VCM | MCP356X_FLAG_SAMPLED_OFFSET)
+
+
+/* A callback to be notified of new values. */
+typedef void (*ADCValueCallback)(uint8_t chan, double voltage);
 
 
 /* A class to hold enum'd config for the ADC. */
@@ -254,10 +259,8 @@ class MCP356xConfig {
 };
 
 
-class MCP356x : public BusOpCallback {
+class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
   public:
-    bool isr_fired = false;
-
     MCP356x(
       const uint8_t irq_pin,
       const uint8_t cs_pin,
@@ -268,11 +271,13 @@ class MCP356x : public BusOpCallback {
     ~MCP356x();
 
     int8_t  reset();
-    int8_t  init(SPIAdapter*);
-    inline  int8_t  init() {     return init(_BUS);    };
+    int8_t  init(SPIAdapter* bus = nullptr);
     inline  void setAdapter(SPIAdapter* b) {  _BUS = b;     };
     int8_t  read();
     int8_t  refresh();
+    int8_t  poll();
+
+
     double  valueAsVoltage(MCP356xChannel);
     int32_t value(MCP356xChannel);
 
@@ -301,15 +306,16 @@ class MCP356x : public BusOpCallback {
     inline uint8_t getIRQPin() {        return _IRQ_PIN;  };
     inline bool    adcFound() {         return _mcp356x_flag(MCP356X_FLAG_DEVICE_PRESENT);    };
     inline bool    adcConfigured() {    return _mcp356x_flag(MCP356X_FLAG_USER_CONFIG);       };
-    inline bool    adcCalibrating() {   return (_current_state == MCP356xState::CALIBRATION); };
+    inline bool    adcCalibrating() {   return (currentState() == MCP356xState::CALIBRATION); };
     inline bool    adcCalibrated() {    return _mcp356x_flag(MCP356X_FLAG_CALIBRATED);        };
     inline bool    hasInternalVref() {  return _mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF);   };
     bool usingInternalVref();
     int8_t useInternalVref(bool);
 
-    inline bool   isrFired() {             return isr_fired;      };
+    inline void   isr_fxn();
     inline int8_t busPriority() {          return _bus_priority;  };
     inline void   busPriority(int8_t p) {  _bus_priority = p;     };
+    inline bool io_in_flight() {   return (_io_dispatched > _io_called_back);  };
 
     void   discardUnsettledSamples();
     float  getTemperature();
@@ -327,16 +333,10 @@ class MCP356x : public BusOpCallback {
     void printChannelValues(StringBuilder*);
     void printChannel(MCP356xChannel, StringBuilder*);
 
+    inline void valueCallback(ADCValueCallback x) { _value_callback = x; };
+
     /* Built-in per-instance console handler. */
     int8_t console_handler(StringBuilder* text_return, StringBuilder* args);
-
-    // TODO: Below should eventually be protected.
-    inline MCP356xState getPriorState() {       return _prior_state;     };
-    inline MCP356xState getCurrentState() {     return _current_state;   };
-    inline MCP356xState getDesiredState() {     return _desired_state;   };
-    inline void setDesiredState(MCP356xState x) {    _desired_state = x; };
-    inline bool stateStable() {   return (_desired_state == _current_state);  };
-    // TODO: Above should eventually be protected.
 
     /* Overrides from the BusAdapter interface */
     int8_t io_op_callahead(BusOp*);
@@ -354,6 +354,20 @@ class MCP356x : public BusOpCallback {
     const uint8_t  _MCLK_PIN;
     const uint8_t  _DEV_ADDR;
     MCP356xConfig* _desired_conf;
+    ADCValueCallback _value_callback = nullptr;
+    uint32_t  _io_dispatched   = 0;   // How many I/O operations were sent out?
+    uint32_t  _io_called_back  = 0;   // How many I/O operations came back?
+    uint32_t  _irqs_noted      = 0;   // How many IRQs hit the pin?
+    uint32_t  _irqs_serviced   = 0;   // How many IRQs triggered read operations?
+
+    StopWatch _profiler_irq_timing;
+    StopWatch _profiler_result_read;
+    MillisTimeout _discard_window;    // Enforces periods of result non-obsesrvance.
+    //uint32_t _discard_until_micros = 0;
+    //uint32_t micros_last_read      = 0;
+    //uint32_t micros_last_window    = 0;
+    //uint32_t read_count            = 0;
+    //uint16_t reads_per_second      = 0;
 
     SPIBusOp  _busop_irq_read;
     SPIBusOp  _busop_dat_read;
@@ -368,28 +382,25 @@ class MCP356x : public BusOpCallback {
     int32_t  channel_vals[16];    // Normalized channel values.
     uint32_t _flags                = 0;
     uint32_t _channel_flags        = 0;
-    uint32_t _discard_until_micros = 0;
     uint32_t _circuit_settle_ms    = 0;  // A optional constant from the application.
     uint32_t _settling_ms          = 0;  // Settling time of the ADC alone.
     uint32_t read_accumulator      = 0;
-    uint32_t read_count            = 0;
-    uint32_t micros_last_read      = 0;
-    uint32_t micros_last_window    = 0;
-    uint16_t reads_per_second      = 0;
     int8_t   _bus_priority         = 0;  // Defaults to neutral.
     uint8_t  _slot_number          = 0;
-    MCP356xState _prior_state      = MCP356xState::UNINIT;
-    MCP356xState _current_state    = MCP356xState::UNINIT;
-    MCP356xState _desired_state    = MCP356xState::UNINIT;
+    bool     _isr_fired            = false;
 
+    /* Mandatory overrides from StateMachine. */
+    int8_t   _fsm_poll();                        // Polling for state exit.
+    int8_t   _fsm_set_position(MCP356xState);    // Attempt a state entry.
 
     /* State machine functions */
-    int8_t _step_state_machine();
-    void   _set_state(MCP356xState);
+    //int8_t _step_state_machine();
+    //void   _set_state(MCP356xState);
     void   _set_fault(const char*);
     inline bool _measuring_clock() {  return (MCP356xState::CLK_MEASURE == _current_state);  };
 
     /* Everything below this line is up for review */
+    int8_t  _reset_fxn();
     int8_t  _post_reset_fxn();
     int8_t  _proc_irq_register();
     int8_t  _ll_pin_init();
@@ -451,6 +462,7 @@ class MCP356x : public BusOpCallback {
 
     static const uint16_t OSR1_VALUES[16];
     static const uint16_t OSR3_VALUES[16];
+    static const EnumDefList<MCP356xState> _FSM_STATES;
 };
 
 #endif  // __MCP356x_H__

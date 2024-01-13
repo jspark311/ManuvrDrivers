@@ -5,6 +5,8 @@ Author: J. Ian Lindsay
 
 #include "MCP356x.h"
 
+#define MCP356X_FSM_WAYPOINT_DEPTH  12
+
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
 *     /       |           |   /   \  |           ||  |  /      |   /       |
@@ -15,25 +17,35 @@ Author: J. Ian Lindsay
 *
 * Static members and initializers should be located here.
 *******************************************************************************/
+
+const EnumDef<MCP356xState> _STATE_LIST[] = {
+  { MCP356xState::UNINIT,      "UNINIT"},      // init() has never been called.
+  { MCP356xState::PRE_INIT,    "PRE_INIT"),    // Pin control is being established.
+  { MCP356xState::RESETTING,   "RESETTING"),   // Driver is resetting the ADC.
+  { MCP356xState::DISCOVERY,   "DISCOVERY"),   // Driver is probing for the ADC.
+  { MCP356xState::REGINIT,     "REGINIT"),     // The initial ADC configuration is being written.
+  { MCP356xState::CLK_MEASURE, "CLK_MEASURE"), // Driver is measuring the clock.
+  { MCP356xState::CALIBRATION, "CALIBRATION"), // The ADC is self-calibrating.
+  { MCP356xState::USR_CONF,    "USR_CONF"),    // User config is being written.
+  { MCP356xState::IDLE,        "IDLE"),        // Powered up and calibrated, but not reading.
+  { MCP356xState::READING,     "READING"),     // Everything running, data collection proceeding.
+  { MCP356xState::FAULT,       "FAULT"),       // State machine encountered something it couldn't cope with.
+  { MCP356xState::INVALID,     "INVALID", (ENUM_WRAPPER_FLAG_CATCHALL)}  // FSM hygiene.
+};
+const EnumDefList<MCP356xState> MCP356x::_FSM_STATES(&_STATE_LIST[0], (sizeof(_STATE_LIST) / sizeof(_STATE_LIST[0])), "MCP356xState");
+
+
 // We can have up to two of these in a given system.
 // TODO: AbstractPlatform needs a way to call specific objects from setPinFxn()
 //   to avoid these sorts of pseudo-singleton patterns. ISR function scope.
 #define MCP356X_MAX_INSTANCES    2
-volatile static MCP356x* INSTANCES[MCP356X_MAX_INSTANCES] = {0, };
+volatile static MCP356x* INSTANCES[MCP356X_MAX_INSTANCES] = {0};
 
-/**
-* This is an ISR.
-*/
-void mcp356x_isr0() {
-  ((MCP356x*) INSTANCES[0])->isr_fired = true;
-}
+/* This is an ISR. */
+void mcp356x_isr0() {  ((MCP356x*) INSTANCES[0])->isr_fxn();  }
 
-/**
-* This is an ISR.
-*/
-void mcp356x_isr1() {
-  ((MCP356x*) INSTANCES[1])->isr_fired = true;
-}
+/* This is an ISR. */
+void mcp356x_isr1() {  ((MCP356x*) INSTANCES[1])->isr_fxn();  }
 
 
 /*******************************************************************************
@@ -49,6 +61,7 @@ void mcp356x_isr1() {
 * Constructor specifying every setting.
 */
 MCP356x::MCP356x(const uint8_t irq_pin, const uint8_t cs_pin, const uint8_t mclk_pin, const uint8_t addr, const MCP356xConfig* CONF) :
+  StateMachine<MCP356xState>("MCP356x-FSM", &MCP356x::_FSM_STATES, MCP356x::UNINIT, MCP356X_FSM_WAYPOINT_DEPTH),
   _IRQ_PIN(irq_pin), _CS_PIN(cs_pin), _MCLK_PIN(mclk_pin), _DEV_ADDR(addr),
   _desired_conf(CONF),
   _busop_irq_read(BusOpcode::RX, this, cs_pin, false),
@@ -71,12 +84,14 @@ MCP356x::MCP356x(const uint8_t irq_pin, const uint8_t cs_pin, const uint8_t mclk
 * Destructor
 */
 MCP356x::~MCP356x() {
-  // TODO: This will almost certainly NEVER be called. Might be smart to wall
-  //   it off with a preprocessor directive for pedantic destructors.
-  if (255 != _IRQ_PIN) {
-    unsetPinFxn(_IRQ_PIN);
-  }
-  INSTANCES[_slot_number] = nullptr;
+  // This will almost certainly NEVER be called. It is can be discarded with
+  //   build options.
+  #if !defined(CONFIG_C3P_OMIT_DRIVER_DESTRUCTORS)
+    if (255 != _IRQ_PIN) {
+      unsetPinFxn(_IRQ_PIN);
+    }
+    INSTANCES[_slot_number] = nullptr;
+  #endif  // CONFIG_C3P_OMIT_DRIVER_DESTRUCTORS
 }
 
 
@@ -92,9 +107,11 @@ MCP356x::~MCP356x() {
 *    -1 if there was a problem writing the reset command.
 *    0 if reset command was sent successfully.
 */
-int8_t MCP356x::reset() {
+int8_t MCP356x::_reset_fxn() {
   _clear_registers();
-  isr_fired = false;
+  _isr_fired = false;
+  _irqs_noted = 0;
+  _irqs_serviced = 0;
   int8_t ret = _send_fast_command(0x38);
   if (0 == ret) {
     _set_state(MCP356xState::RESETTING);
@@ -107,41 +124,56 @@ int8_t MCP356x::reset() {
 
 
 /**
-* Clears the class, assigns the SPIAdapter, and allows the state machine
-*   to march forward.
+* Plan the state route to reset the ADC.
+*
+* @return 0 on success
+*        -1 on insufficient driver state
+*        -2 on state not stable
+*        -3 on state planning failure
+*/
+int8_t MCP356x::reset() {
+  int8_t ret = -1;
+  bool allow_reset = false;
+  switch (currentState()) {
+    case MCP356xState::FAULT:   // We allow this if pin setup previously finished.
+      allow_reset = _mcp356x_flag(MCP356X_FLAG_PINS_CONFIGURED);
+      break;
+    case MCP356xState::UNINIT:  // No pin setup has happened.
+      break;
+    default:
+      allow_reset = true;
+      break;
+  }
+  if (allow_reset) {
+    ret--;
+    if (_fsm_stable()) {
+      ret--;
+      // TODO: Consider CAL state, etc...
+      if (0 == _fsm_set_route(2, MCP356xState::RESETTING, ASIC2State::IDLE)) {
+    }
+  }
+  return ret;
+}
+
+
+/**
+* Clears the class, (possibly) assigns the SPIAdapter, and allows the state
+*   machine to march forward.
 *
 * @return -1 on failure, 0 on success.
 */
 int8_t MCP356x::init(SPIAdapter* b) {
   int8_t ret = -1;
-  if (nullptr != b) {
-    _BUS = b;
-  }
-  if (nullptr != _BUS) {
-    _clear_registers();
-    _busop_irq_read.setAdapter(_BUS);
-    _busop_irq_read.shouldReap(false);
-    _busop_irq_read.setParams((uint8_t) _get_reg_addr(MCP356xRegister::IRQ) | 0x01);
-    _busop_irq_read.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) MCP356xRegister::IRQ], 1);
-    _busop_irq_read.maxFreq(19000000);
-    _busop_irq_read.cpol(false);
-    _busop_irq_read.cpha(false);
+  if (nullptr != b) {  _BUS = b;  }
 
-    _busop_dat_read.setAdapter(_BUS);
-    _busop_dat_read.shouldReap(false);
-    _busop_dat_read.setParams((uint8_t) _get_reg_addr(MCP356xRegister::ADCDATA) | 0x01);
-    _busop_dat_read.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) MCP356xRegister::ADCDATA], 4);
-    _busop_dat_read.maxFreq(19000000);
-    _busop_dat_read.cpol(false);
-    _busop_dat_read.cpha(false);
+  _clear_registers();
+  setOption(_desired_conf->flags);
 
-    setOption(_desired_conf->flags);
 
-    if (MCP356xState::UNINIT == _desired_state) {
-      _desired_state = MCP356xState::READING;
+  if (0 == _fsm_set_route(8, MCP356xState::PRE_INIT, MCP356xState::RESETTING, MCP356xState::DISCOVERY,  MCP356xState::POST_INIT, MCP356xState::CLK_MEASURE, MCP356xState::CALIBRATION, MCP356xState::USR_CONF, MCP356xState::IDLE)) {
+    if (_mcp356x_flag(MCP356X_FLAG_GENERATE_MCLK)) {
+      // TODO: Isolate CLK measurement selection.
     }
-    _current_state = MCP356xState::PREINIT;
-    _step_state_machine();
     ret = 0;
   }
   return ret;
@@ -561,6 +593,11 @@ int8_t MCP356x::calibrate() {
 }
 
 
+void MCP356x::isr_fxn() {
+  _irqs_noted++;
+  _isr_fired = true;
+}
+
 
 /*******************************************************************************
 * Hardware discovery functions
@@ -696,6 +733,260 @@ int8_t MCP356x::_apply_usr_config() {
 *******************************************************************************/
 
 /**
+*
+*
+* @return
+*   -1 on error
+*   0 on nominal polling with stable state achieved
+*   1 on unstable state with no advancement on this call
+*   2 on advancement of current state toward desired state
+*/
+int8_t MCP356x::poll() {
+  if ((!force & !automatedFSM()) | io_in_flight()) {  return 0;  }  // Bailout clauses
+
+  if (adcFound() & _isr_fired) {
+    // If the driver knows the hardware is present, and the IRQ pin demands
+    //   service, read the status registers.
+    if (0 == _read_isr_registers()) {
+      _isr_fired = false;
+    }
+  }
+
+  return _fsm_poll();
+}
+
+
+
+/**
+* Called in idle time by the firmware to prod the driver's state machine forward.
+* Considers the current driver state, and decides whether or not to advance the
+*   driver's state machine.
+* NOTE: This function does not plan state machine routes, and should thus not
+*   call _fsm_set_position() directly. Only _advance_state_machine().
+*
+* @return  1 on state shift
+*          0 on no action
+*         -1 on error
+*/
+FAST_FUNC int8_t MCP356x::_fsm_poll() {
+  int8_t ret = 0;
+  bool fsm_advance = false;
+  switch (currentState()) {
+    // Exit conditions: The next state is PRE_INIT.
+    case MCP356xState::UNINIT:
+      fsm_advance = _fsm_is_next_pos(MCP356xState::PRE_INIT);
+      break;
+
+    // Exit conditions: Unconditional. If we're here, we are clear to proceed.
+    case MCP356xState::PRE_INIT:
+      fsm_advance = true;
+      break;
+
+    // Exit conditions: The IRQ pin indicates that the chip has completed its
+    //   reset cycle (if we were given one). Otherwise, we blindly advance.
+    case MCP356xState::RESETTING:
+      fsm_advance = ((255 == _IRQ_PIN) | (0 < _irqs_noted));
+      break;
+
+    // Exit conditions: A compatible device was found by register refresh.
+    case MCP356xState::DISCOVERY:
+      fsm_advance = adcFound();
+      // TODO: Need fault timeout logic to makew this work again. It was
+      //   synchronous via sleep before the FSM toss-up.
+      //_set_fault("Failed to find MCP356x");
+      //ret = -1;
+      break;
+
+    // Exit conditions: Configuration for calibration has been imparted.
+    case MCP356xState::POST_INIT:
+      break;
+
+    // Exit conditions: Input clock has been measured, and timing calibrated.
+    case MCP356xState::CLK_MEASURE:
+      fsm_advance = _mclk_in_bounds();
+      break;
+
+    // Exit conditions: The driver and the hardware are both calibrated.
+    case MCP356xState::CALIBRATION:
+      fsm_advance = adcCalibrated();
+      break;
+
+    // Exit conditions: The intended operating configuration has been imparted.
+    case MCP356xState::USR_CONF:
+      fsm_advance = adcConfigured();
+      if (fsm_advance) {
+        c3p_log(LOG_LEV_NOTICE, LOCAL_LOG_TAG, "MCP356x initialized.");
+      }
+      break;
+
+    // Exit conditions: These states are canonically stable. So we advance when
+    //   the state is not stable (the driver has somewhere else it wants to be).
+    case MCP356xState::IDLE:
+    case MCP356xState::READING:
+      fsm_advance = !_fsm_is_stable();
+      break;
+
+    // We can't step our way out of this mess. We need to be init().
+    case MCP356xState::FAULT:       // If the driver is in a FAULT, do nothing.
+      break;
+    default:   // Can't exit from an unknown state.
+      ret = -1;
+      break;
+  }
+
+  // If the current state's exit criteria is met, we advance the FSM.
+  if (fsm_advance & (-1 != ret)) {
+    ret = (0 == _fsm_advance()) ? 1 : 0;
+  }
+  return ret;
+}
+
+
+/**
+* Takes actions appropriate for entry into the given state, and sets the current
+*   FSM position if successful. Records the existing state as having been the
+*   prior state.
+* NOTE: Except in edge-cases (reset, init, etc), this function should ONLY be
+*   called by _advance_state_machine().
+*
+* @param The FSM code to test.
+* @return 0 on success, -1 otherwise.
+*/
+FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
+  int8_t ret = -1;
+  bool state_entry_success = false;   // Succeed by default.
+  switch (new_state) {
+    // We can't step our way into this mess. We need to call init().
+    case MCP356xState::UNINIT:
+      _set_fault("Tried to _fsm_set_position(UNINIT)");
+      break;
+
+    // Entry into PRE_INIT means that the GPIO pins are initiallized, the
+    //   SPIAdapter is defined, and any private BusOps are ready for use.
+    case MCP356xState::PRE_INIT:
+      if (nullptr != _BUS) {
+        _busop_irq_read.setAdapter(_BUS);
+        _busop_irq_read.shouldReap(false);
+        _busop_irq_read.setParams((uint8_t) _get_reg_addr(MCP356xRegister::IRQ) | 0x01);
+        _busop_irq_read.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) MCP356xRegister::IRQ], 1);
+        _busop_irq_read.maxFreq(19000000);
+        _busop_irq_read.cpol(false);
+        _busop_irq_read.cpha(false);
+
+        _busop_dat_read.setAdapter(_BUS);
+        _busop_dat_read.shouldReap(false);
+        _busop_dat_read.setParams((uint8_t) _get_reg_addr(MCP356xRegister::ADCDATA) | 0x01);
+        _busop_dat_read.setBuffer((uint8_t*) &_reg_shadows[(uint8_t) MCP356xRegister::ADCDATA], 4);
+        _busop_dat_read.maxFreq(19000000);
+        _busop_dat_read.cpol(false);
+        _busop_dat_read.cpha(false);
+        state_entry_success = (0 == _ll_pin_init());
+        if (!state_entry_success) {
+          _set_fault("_ll_pin_init() failed");
+        }
+      }
+      break;
+
+    // Entry into RESET means we didn't fail to reset the part.
+    case MCP356xState::RESETTING:
+      state_entry_success = (0 == _reset_fxn());
+      if (state_entry_success) {
+        if (255 == _IRQ_PIN) {     // If we were not given an IRQ pin,
+          _fsm_lockout(75);        //   observe an arbitrary delay value.
+        }
+      }
+      else {
+        _set_fault("_reset_fxn() failed");
+        ret = -1;
+      }
+      break;
+
+    // Entry into DISCOVERY means we dispatched I/O that will mirror the hardware
+    //   register states.
+    case MCP356xState::DISCOVERY:
+      state_entry_success = (0 == refresh());
+      if (!state_entry_success) {
+        _set_fault("refresh() failed");
+        ret = -1;
+      }
+      break;
+
+    // Entry into POST_INIT means we didn't fail to reset the part.
+    case MCP356xState::POST_INIT:
+      state_entry_success = (0 == _post_reset_fxn());
+      if (!state_entry_success) {
+        _set_fault("_post_reset_fxn() failed");
+        ret = -1;
+      }
+      break;
+
+    case MCP356xState::CLK_MEASURE:
+      if (fsm_advance) {
+        c3p_log(LOG_LEV_NOTICE, LOCAL_LOG_TAG, "MCP356x initialized.");
+      }
+      break;
+
+    case MCP356xState::CALIBRATION:
+      state_entry_success = _calibrate();
+      if (!state_entry_success) {
+        _set_fault("_calibrate() failed");
+        ret = -1;
+      }
+      break;
+
+    case MCP356xState::USR_CONF:
+      state_entry_success = (0 == _apply_usr_config());
+      if (!state_entry_success) {
+        _set_fault("_apply_usr_config() failed");
+        ret = -1;
+      }
+      break;
+
+    // Entry to IDLE always succeeds.
+    case MCP356xState::IDLE:
+      state_entry_success = true;
+      break;
+
+    case MCP356xState::READING:
+      break;
+
+
+    // We allow fault entry to be done this way.
+    case MCP356xState::FAULT:
+      if (ASIC2Err::NONE != _last_err) {
+        //state_entry_success = (0 <= _invoke_gen_callback(ASIC2Alert::FAULT, (uint32_t) _last_err));
+      }
+      else {
+        if (LOG_LEV_ALERT <= _verbosity) {
+          c3p_log(LOG_LEV_ALERT, LOCAL_LOG_TAG, "Entered FAULT without a fault being set.");
+        }
+        state_entry_success = true;
+      }
+      if (state_entry_success) {
+        _fsm_mark_current_state(new_state);
+      }
+      break;
+
+    default:
+      c3p_log(LOG_LEV_ALERT, LOCAL_LOG_TAG, "_fsm_set_position(%s) is unhandled.", _FSM_STATES.enumStr(new_state));
+      _report_fault_condition(ASIC2Err::ILLEGAL_FSM, "Unhandled MCP356xState");
+      break;
+  }
+
+  if (state_entry_success) {
+    c3p_log(LOG_LEV_NOTICE, LOCAL_LOG_TAG, "MCP356x State %s ---> %s", _FSM_STATES.enumStr(currentState()), _FSM_STATES.enumStr(new_state));
+    ret = 0;
+  }
+  return ret;
+}
+
+
+
+
+
+
+
+/**
 * This is NOT a polling loop. It doesn't check for valid conditions for
 *   advancing to a given state. It only chooses and imparts the next state.
 *
@@ -711,72 +1002,11 @@ int8_t MCP356x::_step_state_machine() {
     // Check for globally-accessible desired states early so we don't repeat
     //   ourselves in several case blocks later on.
     bool continue_looping = true;
-    switch (_desired_state) {
-      case MCP356xState::RESETTING:
-        ret = (0 == reset()) ? 2 : -1;
-        break;
-      default:
-        break;
-    }
 
-    ret++;
     while (continue_looping) {
       continue_looping = false;   // Abort the loop by default.
 
       switch (_current_state) {
-        case MCP356xState::PREINIT:
-          // Regardless of where we are going, we only have one way out of here.
-          // Check for memory allocation, pin control
-          if (0 == _ll_pin_init()) {  // Configure the pins if they are not already.
-            ret = (0 == reset()) ? 2 : -1;
-          }
-          else {
-            ret = -1;
-          }
-          break;
-
-        case MCP356xState::RESETTING:
-          // If we were given one, check that the IRQ pin pulsed.
-          if (255 != _IRQ_PIN) {
-            sleep_ms(10);   // TODO: Wrong
-            if (0 == refresh()) {
-              _set_state(MCP356xState::DISCOVERY);
-              ret = 2;
-            }
-            else {
-              ret = -1;
-            }
-          }
-          else {
-            // Otherwise, observe a delay.
-            sleep_ms(75);   // <--- Arbitrary delay value
-            if (0 == refresh()) {
-              _set_state(MCP356xState::DISCOVERY);
-              ret = 2;
-            }
-            else {
-              ret = -1;
-            }
-          }
-          break;
-
-        case MCP356xState::DISCOVERY:
-          if (adcFound()) {
-            if (0 == _post_reset_fxn()) {
-              _set_state(MCP356xState::REGINIT);
-              ret = 2;
-            }
-            else {
-              _set_fault("_post_reset_fxn() failed");
-              ret = -1;
-            }
-          }
-          else {
-            _set_fault("Failed to find MCP356x");
-            ret = -1;
-          }
-          break;
-
         case MCP356xState::REGINIT:
           ret = 1;
           if (!_mclk_in_bounds()) {
@@ -814,129 +1044,10 @@ int8_t MCP356x::_step_state_machine() {
             ret = 2;
           }
           break;
-
-        case MCP356xState::CLK_MEASURE:
-          ret = 1;
-          if (_mclk_in_bounds()) {
-            if (!adcCalibrated()) {
-              ret = (0 == calibrate()) ? 2 : -1;
-            }
-            else {
-              switch (_desired_state) {
-                case MCP356xState::IDLE:     _set_state(MCP356xState::IDLE);     break;
-                case MCP356xState::READING:  _set_state(MCP356xState::READING);  break;
-                default:                     _set_state(MCP356xState::IDLE);     break;
-              }
-              continue_looping = true;
-            }
-            ret = 2;
-          }
-          break;
-
-        case MCP356xState::CALIBRATION:
-          if (adcCalibrated()) {
-            _set_state(MCP356xState::USR_CONF);
-            continue_looping = true;
-            ret = 2;
-          }
-          break;
-
-        case MCP356xState::USR_CONF:
-          if (adcConfigured()) {
-            switch (_desired_state) {
-              case MCP356xState::IDLE:     _set_state(MCP356xState::IDLE);     break;
-              case MCP356xState::READING:  _set_state(MCP356xState::READING);  break;
-              default:                     _set_state(MCP356xState::IDLE);     break;
-            }
-            continue_looping = true;
-            ret = 2;
-          }
-          break;
-
-        case MCP356xState::IDLE:
-          switch (_desired_state) {
-            case MCP356xState::CALIBRATION:
-              break;
-            case MCP356xState::IDLE:
-              break;
-            case MCP356xState::READING:
-              //if () {  // If the ADC is in one-shot mode, initiate a conversion cycle.
-              //}
-              //else {
-              //}
-              break;
-            default:
-              _set_fault("Illegal _desired_state");
-              ret = -1;
-              break;
-          }
-          break;
-        case MCP356xState::READING:
-          switch (_desired_state) {
-            case MCP356xState::REGINIT:
-              break;
-            case MCP356xState::CALIBRATION:
-              break;
-            case MCP356xState::IDLE:
-              break;
-            case MCP356xState::READING:
-              break;
-            case MCP356xState::FAULT:
-              _set_fault("Fault entered by outside caller.");
-              ret = 2;
-              break;
-            default:
-              _set_fault("Illegal _desired_state");
-              ret = -1;
-              break;
-          }
-          break;
-
-        case MCP356xState::UNINIT:  // We can't step our way into this mess. We need to call init().
-        case MCP356xState::FAULT:   // We can't step our way out of this mess. We need to be reset().
-          break;
-        default:
-          _set_fault("Illegal _current_state");
-          ret = -1;
-          break;
       }
     }
   }
   return ret;
-}
-
-
-/**
-* Only two cases should not set _current_state by calling this function.
-*   1) set_fault(msg);
-*   2) Exit from FAULT;
-*
-* @param e The state that should be stored in _current_state.
-* @return 0 always
-*/
-void MCP356x::_set_state(MCP356xState e) {
-  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356xState:  %s --> %s", stateStr(_current_state), stateStr(e));
-  switch (e) {
-    case MCP356xState::PREINIT:
-    case MCP356xState::RESETTING:
-    case MCP356xState::DISCOVERY:
-    case MCP356xState::REGINIT:
-    case MCP356xState::CLK_MEASURE:
-    case MCP356xState::CALIBRATION:
-    case MCP356xState::USR_CONF:
-    case MCP356xState::IDLE:
-    case MCP356xState::READING:
-      _prior_state = _current_state;
-      _current_state = e;
-      break;
-    case MCP356xState::FAULT:
-      _set_fault("Fault entry by outside caller.");
-      break;
-    case MCP356xState::UNINIT:
-    default:
-      _set_fault("_set_state(): Illegal state");
-      break;
-  }
 }
 
 
@@ -947,6 +1058,17 @@ void MCP356x::_set_state(MCP356xState e) {
 */
 void MCP356x::_set_fault(const char* msg) {
   c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "MCP356x fault: %s", msg);
-  _prior_state = _current_state;
-  _current_state = MCP356xState::FAULT;
+  _fsm_set_position(MCP356xState::FAULT);
+}
+
+
+/*
+* Only returns true if in "true idle".
+* State is IDLE, No I/O in-flight, and no further states planned.
+*/
+FAST_FUNC bool MCP356x::isIdle() {
+  switch (currentState()) {
+    case MCP356xState::IDLE:  return (!io_in_flight() & _fsm_is_stable());
+    default:                  return false;
+  }
 }

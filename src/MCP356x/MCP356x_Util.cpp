@@ -15,21 +15,7 @@ static const char* CHAN_NAMES[16] = {
 * Static function to convert enum to string.
 */
 const char* MCP356x::stateStr(const MCP356xState e) {
-  switch (e) {
-    case MCP356xState::UNINIT:        return "UNINIT";
-    case MCP356xState::PREINIT:       return "PREINIT";
-    case MCP356xState::RESETTING:     return "RESETTING";
-    case MCP356xState::DISCOVERY:     return "DISCOVERY";
-    case MCP356xState::REGINIT:       return "REGINIT";
-    case MCP356xState::CLK_MEASURE:   return "CLK_MEASURE";
-    case MCP356xState::CALIBRATION:   return "CALIBRATION";
-    case MCP356xState::USR_CONF:      return "USR_CONF";
-    case MCP356xState::IDLE:          return "IDLE";
-    case MCP356xState::READING:       return "READING";
-    case MCP356xState::FAULT:         return "FAULT";
-    default:   break;
-  }
-  return "INVALID";
+  return _FSM_STATES.enumStr(e);
 }
 
 
@@ -235,7 +221,7 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
           case MCP356xState::PREINIT:
           case MCP356xState::RESETTING:
           case MCP356xState::DISCOVERY:
-          case MCP356xState::REGINIT:
+          case MCP356xState::POST_INIT:
           case MCP356xState::CLK_MEASURE:
           case MCP356xState::CALIBRATION:
           case MCP356xState::USR_CONF:

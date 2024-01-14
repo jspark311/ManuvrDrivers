@@ -12,7 +12,7 @@ Date:   2023.06.24
 #include <stdarg.h>
 #include "StringBuilder.h"
 #include "CppPotpourri.h"
-#include "TimerTools.h"
+#include "TimerTools/TimerTools.h"
 #include "BusQueue/I2CAdapter.h"
 #include "FlagContainer.h"
 #include "EnumWrapper.h"

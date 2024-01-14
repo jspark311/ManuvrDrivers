@@ -51,7 +51,7 @@ void MCP356x::printTimings(StringBuilder* output) {
   output->concatf("\tMCLK                = %.4f MHz\n", _mclk_freq / 1000000.0);
   output->concatf("\tDMCLK               = %.4f MHz\n", _dmclk_freq / 1000000.0);
   output->concatf("\tData rate           = %.4f KHz\n", _drclk_freq / 1000.0);
-  output->concatf("\tReal sample rate    = %u\n", reads_per_second);
+  output->concatf("\tReal sample rate    = %u\n", getSampleRate());
   output->concatf("\tADC settling time   = %u\n", getSettlingTime());
   output->concatf("\tTotal settling time = %u\n", _circuit_settle_ms);
   output->concatf("\tLast read (micros)  = %u\n", micros_last_read);
@@ -79,15 +79,15 @@ void MCP356x::printDebug(StringBuilder* output) {
 
   if (adcFound()) {
     output->concatf("\tChannels:       %u\n", _channel_count());
-    output->concatf("\tClock running:  %c\n", (_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING) ? 'y' : 'n'));
+    output->concatf("\tClock running:  %c\n", (_flags.value(MCP356X_FLAG_MCLK_RUNNING) ? 'y' : 'n'));
     output->concatf("\tConfigured:     %c\n", (adcConfigured() ? 'y' : 'n'));
     output->concatf("\tCalibrated:     %c\n", (adcCalibrated() ? 'y' : 'n'));
     if (!adcCalibrated()) {
-      output->concatf("\t  SAMPLED_OFFSET: %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_OFFSET) ? 'y' : 'n'));
-      output->concatf("\t  SAMPLED_VCM:    %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_VCM) ? 'y' : 'n'));
-      output->concatf("\t  SAMPLED_AVDD:   %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_AVDD) ? 'y' : 'n'));
+      output->concatf("\t  SAMPLED_OFFSET: %c\n", (_flags.value(MCP356X_FLAG_SAMPLED_OFFSET) ? 'y' : 'n'));
+      output->concatf("\t  SAMPLED_VCM:    %c\n", (_flags.value(MCP356X_FLAG_SAMPLED_VCM) ? 'y' : 'n'));
+      output->concatf("\t  SAMPLED_AVDD:   %c\n", (_flags.value(MCP356X_FLAG_SAMPLED_AVDD) ? 'y' : 'n'));
     }
-    output->concatf("\tCRC Error:      %c\n", (_mcp356x_flag(MCP356X_FLAG_CRC_ERROR) ? 'y' : 'n'));
+    output->concatf("\tCRC Error:      %c\n", (_flags.value(MCP356X_FLAG_CRC_ERROR) ? 'y' : 'n'));
     output->concatf("\tRead count:     %u\n", _profiler_result_read.executions());
     output->concatf("\tGain:           x%.2f\n", _gain_value());
     uint8_t _osr_idx = (uint8_t) getOversamplingRatio();
@@ -95,10 +95,10 @@ void MCP356x::printDebug(StringBuilder* output) {
     output->concatf("\tVref source:    %sternal\n", (usingInternalVref() ? "In": "Ex"));
     output->concatf("\tVref declared:  %c\n", (_vref_declared() ? 'y' : 'n'));
     output->concatf("\tVref range:     %.3f / %.3f\n", _vref_minus, _vref_plus);
-    output->concatf("\tClock SRC:      %sternal\n", (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK) ? "In" : "Ex"));
+    output->concatf("\tClock SRC:      %sternal\n", (_flags.value(MCP356X_FLAG_USE_INTRNL_CLK) ? "In" : "Ex"));
     if (_scan_covers_channel(MCP356xChannel::TEMP)) {
       output->concatf("\tTemperature:    %.2fC\n", getTemperature());
-      output->concatf("\tThermo fitting: %s\n", (_mcp356x_flag(MCP356X_FLAG_3RD_ORDER_TEMP) ? "3rd-order" : "Linear"));
+      output->concatf("\tThermo fitting: %s\n", (_flags.value(MCP356X_FLAG_3RD_ORDER_TEMP) ? "3rd-order" : "Linear"));
     }
     if (adcCalibrated()) {
       output->concat("\t");
@@ -208,46 +208,26 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
     else if (0 == StringBuilder::strcasecmp(cmd, "init")) {
       text_return->concatf("MCP356x init() returns %d.\n", init());
     }
-    else if (0 == StringBuilder::strcasecmp(cmd, "read")) {
-      text_return->concatf("MCP356x read() returns %d\n", read());
+    else if (0 == StringBuilder::strcasecmp(cmd, "poll")) {
+      text_return->concatf("MCP356x poll() returns %d\n", poll());
     }
     else if (0 == StringBuilder::strcasecmp(cmd, "irq")) {
-      isr_fired = true;
+      _isr_fired = true;
     }
-    else if (0 == StringBuilder::strcasecmp(cmd, "state")) {
-      bool print_state_map = (2 > args->count());
-      if (!print_state_map) {
-        MCP356xState state = (MCP356xState) args->position_as_int(1);
-        switch (state) {
-          case MCP356xState::PREINIT:
-          case MCP356xState::RESETTING:
-          case MCP356xState::DISCOVERY:
-          case MCP356xState::POST_INIT:
-          case MCP356xState::CLK_MEASURE:
-          case MCP356xState::CALIBRATION:
-          case MCP356xState::USR_CONF:
-          case MCP356xState::IDLE:
-          case MCP356xState::READING:
-            text_return->concatf("MCP356x setDesiredState(%s)\n", MCP356x::stateStr(state));
-            break;
-          case MCP356xState::UNINIT:
-          case MCP356xState::FAULT:
-            text_return->concatf("MCP356x illegal desired state (%s).\n", MCP356x::stateStr(state));
-            setDesiredState(state);
-            break;
-          default:
-            print_state_map = true;
-            break;
-        }
-      }
-
-      if (print_state_map) {
+    else if (0 == StringBuilder::strcasecmp(cmd, "fsm")) {
+      char* sub_cmd = args->position_trimmed(1);
+      if (0 == StringBuilder::strcasecmp(sub_cmd, "map")) {
         printFSM(text_return);
-        text_return.concat("\nStates: ");
+        text_return->concat("\nStates: ");
         StringBuilder tmp;
         _FSM_STATES.exportKeys(&tmp);
         tmp.implode(", ");
-        text_return.concatHandoff(&tmp);
+        text_return->concatHandoff(&tmp);
+      }
+      else {
+        // Shunt into the FSM object's console handler.
+        args->drop_position(0);
+        ret = fsm_console_handler(text_return, args);
       }
     }
   }

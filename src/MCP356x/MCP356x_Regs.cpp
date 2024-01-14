@@ -207,7 +207,7 @@ MCP356xOversamplingRatio MCP356x::getOversamplingRatio() {
 */
 bool MCP356x::usingInternalVref() {
   bool ret = false;
-  if (_mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF)) {
+  if (_flags.value(MCP356X_FLAG_HAS_INTRNL_VREF)) {
     ret = (0 != (_get_shadow_value(MCP356xRegister::CONFIG0) & 0x00000040));
   }
   return ret;
@@ -222,7 +222,7 @@ bool MCP356x::usingInternalVref() {
 */
 int8_t MCP356x::useInternalVref(bool x) {
   int8_t ret = -1;
-  if (_mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF)) {
+  if (_flags.value(MCP356X_FLAG_HAS_INTRNL_VREF)) {
     uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0) & 0x00FFFFBF;
     if (x) {
       c0_val |= 0x00000040;
@@ -306,9 +306,9 @@ int8_t MCP356x::_normalize_data_register() {
     case MCP356xChannel::TEMP:
       break;
     case MCP356xChannel::AVDD:
-      if (!_mcp356x_flag(MCP356X_FLAG_SAMPLED_AVDD)) {
-        _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_AVDD);
-        if (!_mcp356x_flag(MCP356X_FLAG_VREF_DECLARED)) {
+      if (!_flags.value(MCP356X_FLAG_SAMPLED_AVDD)) {
+        _flags.set(MCP356X_FLAG_SAMPLED_AVDD);
+        if (!_flags.value(MCP356X_FLAG_VREF_DECLARED)) {
           // If we are scanning the AVDD channel, we use that instead of the
           //   assumed 3.3v.
           _vref_plus = nval / (8388608.0 * 0.33);
@@ -317,15 +317,15 @@ int8_t MCP356x::_normalize_data_register() {
       break;
     case MCP356xChannel::VCM:
       // Nothing done here yet. Value should always be near 1.2v.
-      if (!_mcp356x_flag(MCP356X_FLAG_SAMPLED_VCM)) {
-        _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_VCM);
+      if (!_flags.value(MCP356X_FLAG_SAMPLED_VCM)) {
+        _flags.set(MCP356X_FLAG_SAMPLED_VCM);
       }
       break;
     case MCP356xChannel::OFFSET:
-      if (!_mcp356x_flag(MCP356X_FLAG_SAMPLED_OFFSET)) {
-        _mcp356x_set_flag(MCP356X_FLAG_SAMPLED_OFFSET);
+      if (!_flags.value(MCP356X_FLAG_SAMPLED_OFFSET)) {
+        _flags.set(MCP356X_FLAG_SAMPLED_OFFSET);
       }
-      if (MCP356xState::CALIBRATION == _current_state ) {
+      if (MCP356xState::CALIBRATION == currentState()) {
         setOffsetCalibration(nval);
       }
       break;
@@ -463,11 +463,11 @@ int8_t MCP356x::_recalculate_settling_time() {
 */
 void MCP356x::_clear_registers() {
   uint32_t flg_mask = MCP356X_FLAG_RESET_MASK;
-  if (!(_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK))) {
+  if (!(_flags.value(MCP356X_FLAG_USE_INTRNL_CLK))) {
     // The only way the clock isn't running is if it is running internally.
     flg_mask |= MCP356X_FLAG_MCLK_RUNNING;
   }
-  _flags = _flags & flg_mask;  // Reset the flags.
+  _flags = (_flags.raw & flg_mask);  // Reset the flags.
   for (uint8_t i = 0; i < 16; i++) {
     // We decline to revert RESERVED2, since we need it for device identity.
     // RESERVED2 (0x000F for 3564, 0xD for 3562, 0xC for 3561)
@@ -479,7 +479,6 @@ void MCP356x::_clear_registers() {
   _profiler_result_read.reset();
   _settling_ms          = 0;
   read_accumulator      = 0;
-  reads_per_second      = 0;
   micros_last_read      = 0;
   micros_last_window    = 0;
 }
@@ -551,7 +550,7 @@ int8_t MCP356x::_write_register(MCP356xRegister r, uint32_t val) {
         safe_val = val & 0xFFFFFFFC;
         break;
       case MCP356xRegister::CONFIG2:
-        safe_val = val | (_mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF) ? 0x00000001 : 0x00000003);
+        safe_val = val | (_flags.value(MCP356X_FLAG_HAS_INTRNL_VREF) ? 0x00000001 : 0x00000003);
         break;
       case MCP356xRegister::SCAN:
         safe_val = val & 0xFFE0FFFF;
@@ -560,7 +559,7 @@ int8_t MCP356x::_write_register(MCP356xRegister r, uint32_t val) {
         safe_val = 0x00900000;
         break;
       case MCP356xRegister::RESERVED1:
-        safe_val = (_mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF) ? 0x00000030 : 0x00000050);
+        safe_val = (_flags.value(MCP356X_FLAG_HAS_INTRNL_VREF) ? 0x00000030 : 0x00000050);
         break;
       case MCP356xRegister::RESERVED2:
         safe_val = val & 0x0000000F;
@@ -641,7 +640,7 @@ int8_t MCP356x::_read_register(MCP356xRegister r) {
 int8_t MCP356x::_proc_irq_register() {
   int8_t ret = 0;
   uint8_t irq_reg_data = (uint8_t) _get_shadow_value(MCP356xRegister::IRQ);
-  _mcp356x_set_flag(MCP356X_FLAG_CRC_ERROR, (0 == (0x20 & irq_reg_data)));
+  _flags.set(MCP356X_FLAG_CRC_ERROR, (0 == (0x20 & irq_reg_data)));
   if (0 == (0x40 & irq_reg_data)) {   // Conversion is finished.
     //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register() conversion finsihed");
     if (_busop_dat_read.hasFault()) {
@@ -654,8 +653,8 @@ int8_t MCP356x::_proc_irq_register() {
         _profiler_result_read.markStart();
         _io_dispatched++;
         ret = 1;
-        if (!_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING)) {
-          _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);  // This must be reality.
+        if (!_flags.value(MCP356X_FLAG_MCLK_RUNNING)) {
+          _flags.set(MCP356X_FLAG_MCLK_RUNNING);  // This must be reality.
         }
       }
     }
@@ -678,7 +677,7 @@ int8_t MCP356x::_proc_irq_register() {
     // We don't configure the class this way, and don't observe the IRQ.
   //}
   // Check the state of the IRQ pin, JiC we took too long.
-  isr_fired = !readPin(_IRQ_PIN);
+  _isr_fired = !readPin(_IRQ_PIN);
   //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register(%u) returns %d", irq_reg_data, ret);
   _irqs_serviced++;
   return ret;
@@ -694,47 +693,30 @@ int8_t MCP356x::_proc_irq_register() {
 int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
   uint32_t reg_val = _get_shadow_value(r);
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  bool usr_conf_check = false;
-  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_proc_reg_write(%s)  %u --> 0x%06x", stateStr(_current_state), (uint8_t) r, reg_val);
+  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_proc_reg_write(%s)  %u --> 0x%06x", stateStr(currentState()), (uint8_t) r, reg_val);
 
   switch (r) {
     case MCP356xRegister::CONFIG0:
-      usr_conf_check = (MCP356xState::USR_CONF == _current_state);
-      if (_mcp356x_flag(MCP356X_FLAG_USE_INTERNAL_CLK)) {
-        _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);
-      }
-      if (MCP356xState::REGINIT == _current_state) {
-        if (MCP356xState::READING == _desired_state) {
-          uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0);
-          if (0 == (0x03 & c0_val)) {
-            _set_shadow_value(MCP356xRegister::CONFIG0, (0x03 | c0_val));
-            ret = BUSOP_CALLBACK_RECYCLE;
-          }
-        }
+      if (_flags.value(MCP356X_FLAG_USE_INTRNL_CLK)) {
+        _flags.set(MCP356X_FLAG_MCLK_RUNNING);
       }
       break;
     case MCP356xRegister::CONFIG1:
     case MCP356xRegister::CONFIG2:
-      usr_conf_check = (MCP356xState::USR_CONF == _current_state);
       break;
     case MCP356xRegister::CONFIG3:
-      usr_conf_check = (MCP356xState::USR_CONF == _current_state);
-      if (MCP356xState::REGINIT == _current_state) {
-        // We construe the first write to CONFIG3 as being the end of REGINIT.
-        _step_state_machine();
+      if (MCP356xState::POST_INIT == currentState()) {
+        // We construe the first write to CONFIG3 as being the end of POST_INIT.
+        _flags.clear(MCP356X_FLAG_STATE_HOLD);
       }
       break;
     case MCP356xRegister::SCAN:
-      usr_conf_check = (MCP356xState::USR_CONF == _current_state);
       _channel_flags = 0;  // Zero the channel flags.
       break;
 
     case MCP356xRegister::MUX:
       // When the MUX register changes, we reset the read count.
       resetReadCount();
-      if (MCP356xState::REGINIT == _current_state) {
-        _set_state(MCP356xState::CLK_MEASURE);
-      }
       break;
 
     case MCP356xRegister::IRQ:
@@ -744,10 +726,9 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
     case MCP356xRegister::TIMER:
       break;
     case MCP356xRegister::OFFSETCAL:
-      if (MCP356xState::CALIBRATION == _current_state) {
-        if (MCP356X_FLAG_ALL_CAL_MASK == (_mcp356x_flags() & MCP356X_FLAG_ALL_CAL_MASK)) {
-          _mark_calibrated();
-          _step_state_machine();
+      if (MCP356xState::CALIBRATION == currentState()) {
+        if (MCP356X_FLAG_ALL_CAL_MASK == (_flags.raw & MCP356X_FLAG_ALL_CAL_MASK)) {
+          _flags.set(MCP356X_FLAG_CALIBRATED);
         }
       }
       break;
@@ -759,13 +740,6 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
       break;
     default:   // Anything else is an illegal target for write.
       break;
-  }
-
-  if (usr_conf_check) {
-    if (0 == _apply_usr_config()) {
-      // If the user's config is fully written, punch the FSM.
-      _step_state_machine();
-    }
   }
   return ret;
 }
@@ -803,12 +777,12 @@ int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
           case 0x50:
             // If the chip has an internal Vref, it will start up running and
             //   connected.
-            _mcp356x_set_flag(MCP356X_FLAG_HAS_INTRNL_VREF, (res1_val == 0x30));
+            _flags.set(MCP356X_FLAG_HAS_INTRNL_VREF, (res1_val == 0x30));
             switch ((uint8_t) _get_shadow_value(MCP356xRegister::RESERVED2)) {
               case 0x0C:
               case 0x0D:
               case 0x0F:
-                _mcp356x_set_flag(MCP356X_FLAG_DEVICE_PRESENT);
+                _flags.set(MCP356X_FLAG_DEVICE_PRESENT);
                 ret = 0;
                 break;
               default:
@@ -879,7 +853,7 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
     // IRQ register read.
     _profiler_irq_timing.markStop();
     _proc_irq_register();
-    if (isr_fired) {   // If IRQ is still not disasserted, re-read the register.
+    if (_isr_fired) {   // If IRQ is still not disasserted, re-read the register.
       ret = BUSOP_CALLBACK_RECYCLE;
       _profiler_irq_timing.markStart();
     }
@@ -889,21 +863,15 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
     _profiler_result_read.markStop();
     micros_last_read = micros();
     uint32_t window_width_us = delta_assume_wrap(micros_last_read, micros_last_window);
-    read_count++;
     read_accumulator++;
     if (window_width_us >= 1000000) {
       micros_last_window = micros_last_read;
-      reads_per_second = read_accumulator;
-      read_accumulator = 0;
     }
-    switch (_current_state) {
+    switch (currentState()) {
       case MCP356xState::CLK_MEASURE:
         if (window_width_us >= 1000000) {
           _mclk_freq = _calculate_input_clock(window_width_us);
-          if (0 == _recalculate_clk_tree()) {
-            _step_state_machine();
-          }
-          else {
+          if (0 != _recalculate_clk_tree()) {
             _set_fault("Failed to measure MCLK");
           }
         }
@@ -925,7 +893,6 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
       case 0x28:   // Fast command for start/restart conversion.
         break;
       case 0x38:   // Fast command for reset.
-        _step_state_machine();
         break;
       default:
         {   // This was register access.
@@ -934,7 +901,7 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
             ret = _proc_reg_write((MCP356xRegister) reg_idx);
           }
           else {
-            if (_mcp356x_flag(MCP356X_FLAG_REFRESH_CYCLE)) {
+            if (_flags.value(MCP356X_FLAG_REFRESH_CYCLE)) {
               if (15 > reg_idx) {
                 reg_idx++;
                 op->setParams((uint8_t) _get_reg_addr((MCP356xRegister) reg_idx) | 0x01);
@@ -942,9 +909,8 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
                 ret = BUSOP_CALLBACK_RECYCLE;
               }
               else {   // This is the end of the refresh cycle.
-                _mcp356x_clear_flag(MCP356X_FLAG_REFRESH_CYCLE);
+                _flags.clear(MCP356X_FLAG_REFRESH_CYCLE);
                 ret = _proc_reg_read(MCP356xRegister::RESERVED2);
-                _step_state_machine();
               }
             }
             else {

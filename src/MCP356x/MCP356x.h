@@ -9,6 +9,11 @@
 #include "TimerTools/TimerTools.h"
 #include "FiniteStateMachine.h"
 #include "StringBuilder.h"
+#include "FlagContainer.h"
+
+/* A callback to be notified of new values. */
+typedef void (*ADCValueCallback)(uint8_t chan, double voltage);
+
 
 /* In this case, these enum values translate directly to register addresses. */
 enum class MCP356xRegister : uint8_t {
@@ -184,41 +189,44 @@ enum class MCP356xState : uint8_t {
 
 /*
 * Class flags.
-* NOTE: MCP356X_FLAG_USE_INTERNAL_CLK takes priority over
+* NOTE: MCP356X_FLAG_USE_INTRNL_CLK takes priority over
 *   MCP356X_FLAG_GENERATE_MCLK to avoid potential pin contention. If both flags
 *   are set, the MCLK pin (if given) will be configured as an input, and the
 *   flag directing the class to generate a clock on that pin will be ignored.
 */
+// These are tracking bits for volatile and transient conditions.
 #define MCP356X_FLAG_DEVICE_PRESENT   0x00000001  // Part is likely an MCP356x.
 #define MCP356X_FLAG_PINS_CONFIGURED  0x00000002  // Low-level pin setup is complete.
 #define MCP356X_FLAG_USER_CONFIG      0x00000004  // Registers are initialized with the user's values.
 #define MCP356X_FLAG_CALIBRATED       0x00000008  // ADC is calibrated.
 #define MCP356X_FLAG_VREF_DECLARED    0x00000010  // The application has given us Vref.
 #define MCP356X_FLAG_CRC_ERROR        0x00000020  // The chip has reported a CRC error.
-#define MCP356X_FLAG_USE_INTERNAL_CLK 0x00000040  // The chip should use its internal oscillator.
-#define MCP356X_FLAG_MCLK_RUNNING     0x00000080  // MCLK is running.
-#define MCP356X_FLAG_SAMPLED_AVDD     0x00000100  // This calibration-related channel was sampled.
-#define MCP356X_FLAG_SAMPLED_VCM      0x00000200  // This calibration-related channel was sampled.
-#define MCP356X_FLAG_SAMPLED_OFFSET   0x00000400  // This calibration-related channel was sampled.
-#define MCP356X_FLAG_3RD_ORDER_TEMP   0x00000800  // Spend CPU to make temperature conversion more accurate?
-#define MCP356X_FLAG_GENERATE_MCLK    0x00001000  // MCU is to generate the clock.
-#define MCP356X_FLAG_REFRESH_CYCLE    0x00002000  // We are undergoing a full register refresh.
-#define MCP356X_FLAG_HAS_INTRNL_VREF  0x00004000  // This part was found to support an internal Vref.
-#define MCP356X_FLAG_USE_INTRNL_VREF  0x00008000  // Internal Vref should be enabled.
-#define MCP356X_FLAG_SERVICING_IRQS   0x00010000  // The class will respond to IRQ signals.
-
-// Bits to preserve through reset.
-#define MCP356X_FLAG_RESET_MASK  (MCP356X_FLAG_DEVICE_PRESENT | MCP356X_FLAG_PINS_CONFIGURED | \
-                                  MCP356X_FLAG_VREF_DECLARED | MCP356X_FLAG_USE_INTERNAL_CLK | \
-                                  MCP356X_FLAG_3RD_ORDER_TEMP | MCP356X_FLAG_GENERATE_MCLK | \
-                                  MCP356X_FLAG_HAS_INTRNL_VREF | MCP356X_FLAG_USE_INTRNL_VREF)
+#define MCP356X_FLAG_MCLK_RUNNING     0x00000040  // MCLK is running.
+#define MCP356X_FLAG_SAMPLED_AVDD     0x00000080  // This calibration-related channel was sampled.
+#define MCP356X_FLAG_SAMPLED_VCM      0x00000100  // This calibration-related channel was sampled.
+#define MCP356X_FLAG_SAMPLED_OFFSET   0x00000200  // This calibration-related channel was sampled.
+#define MCP356X_FLAG_REFRESH_CYCLE    0x00000400  // We are undergoing a full register refresh.
+#define MCP356X_FLAG_HAS_INTRNL_VREF  0x00000800  // This part was found to support an internal Vref.
+#define MCP356X_FLAG_SERVICING_IRQS   0x00001000  // The class will respond to IRQ signals.
+#define MCP356X_FLAG_STATE_HOLD       0x00002000  // The present state is being held.
+// These are settable options.
+#define MCP356X_FLAG_USE_INTRNL_VREF  0x10000000  // Internal Vref should be enabled.
+#define MCP356X_FLAG_USE_INTRNL_CLK   0x20000000  // The chip should use its internal oscillator.
+#define MCP356X_FLAG_3RD_ORDER_TEMP   0x40000000  // Spend CPU to make temperature conversion more accurate?
+#define MCP356X_FLAG_GENERATE_MCLK    0x80000000  // MCU is to generate the clock.
 
 // Bits indicating calibration steps.
 #define MCP356X_FLAG_ALL_CAL_MASK     (MCP356X_FLAG_SAMPLED_AVDD | MCP356X_FLAG_SAMPLED_VCM | MCP356X_FLAG_SAMPLED_OFFSET)
 
+// Bits that track static configurations.
+#define MCP356X_FLAG_DRIVER_OPTS_MASK ( \
+  MCP356X_FLAG_USE_INTRNL_VREF | MCP356X_FLAG_USE_INTRNL_CLK | \
+  MCP356X_FLAG_3RD_ORDER_TEMP | MCP356X_FLAG_GENERATE_MCLK)
 
-/* A callback to be notified of new values. */
-typedef void (*ADCValueCallback)(uint8_t chan, double voltage);
+// Bits to preserve through reset.
+#define MCP356X_FLAG_RESET_MASK  (MCP356X_FLAG_DEVICE_PRESENT | MCP356X_FLAG_PINS_CONFIGURED | \
+                                  MCP356X_FLAG_VREF_DECLARED | MCP356X_FLAG_DRIVER_OPTS_MASK | \
+                                  MCP356X_FLAG_HAS_INTRNL_VREF)
 
 
 /* A class to hold enum'd config for the ADC. */
@@ -274,15 +282,16 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     int8_t  reset();
     int8_t  init(SPIAdapter* bus = nullptr);
     inline  void setAdapter(SPIAdapter* b) {  _BUS = b;     };
-    int8_t  read();
     int8_t  refresh();
     int8_t  poll();
-
+    bool    isIdle();
 
     double  valueAsVoltage(MCP356xChannel);
     int32_t value(MCP356xChannel);
 
     bool scanComplete();
+    inline void      scansRequested(int32_t x) {    _scans_req = x;     };
+    inline int32_t   scansRequested() {             return _scans_req;  };
     inline uint32_t  lastRead() {        return micros_last_read;  };
     inline uint32_t  readCount() {       return _profiler_result_read.executions();  };
     inline void      resetReadCount() {  _profiler_result_read.reset();              };
@@ -296,7 +305,6 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     int8_t  setAMCLKPrescaler(MCP356xAMCLKPrescaler);
     int8_t  setOversamplingRatio(MCP356xOversamplingRatio);
     int8_t  calibrate();
-    int8_t  _calibrate();
 
     MCP356xOversamplingRatio getOversamplingRatio();
     MCP356xGain getGain();
@@ -307,12 +315,12 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     int8_t  setReferenceRange(float plus, float minus);
     inline void    setMCLKFrequency(double x) {  _mclk_freq = x;  };
     inline uint8_t getIRQPin() {        return _IRQ_PIN;  };
-    inline bool    adcFound() {         return _mcp356x_flag(MCP356X_FLAG_DEVICE_PRESENT);    };
-    inline bool    adcConfigured() {    return _mcp356x_flag(MCP356X_FLAG_USER_CONFIG);       };
+    inline bool    adcFound() {         return _flags.value(MCP356X_FLAG_DEVICE_PRESENT);    };
+    inline bool    adcConfigured() {    return _flags.value(MCP356X_FLAG_USER_CONFIG);       };
     inline bool    adcCalibrating() {   return (currentState() == MCP356xState::CALIBRATION); };
-    inline bool    adcCalibrated() {    return _mcp356x_flag(MCP356X_FLAG_CALIBRATED);        };
-    inline bool    hasInternalVref() {  return _mcp356x_flag(MCP356X_FLAG_HAS_INTRNL_VREF);   };
-    bool usingInternalVref();
+    inline bool    adcCalibrated() {    return _flags.value(MCP356X_FLAG_CALIBRATED);        };
+    inline bool    hasInternalVref() {  return _flags.value(MCP356X_FLAG_HAS_INTRNL_VREF);   };
+    bool   usingInternalVref();
     int8_t useInternalVref(bool);
 
     inline void   isr_fxn();
@@ -358,19 +366,22 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     const uint8_t  _MCLK_PIN;
     const uint8_t  _DEV_ADDR;
     MCP356xConfig* _desired_conf;
+    // TODO: Delta between these things should precipitate a re-conf cycle.
+    //MCP356xConfig  _current_conf;
     ADCValueCallback _value_callback = nullptr;
     uint32_t  _io_dispatched   = 0;   // How many I/O operations were sent out?
     uint32_t  _io_called_back  = 0;   // How many I/O operations came back?
     uint32_t  _irqs_noted      = 0;   // How many IRQs hit the pin?
     uint32_t  _irqs_serviced   = 0;   // How many IRQs triggered read operations?
+    int32_t   _scans_req       = 0;   // How many full scan loops should we take?
 
-    StopWatch _profiler_irq_timing;
-    StopWatch _profiler_result_read;
-    MillisTimeout _discard_window;    // Enforces periods of result non-obsesrvance.
-    //uint32_t _discard_until_micros = 0;
+    FlagContainer32  _flags;                 // Aggregate boolean class state.
+    StopWatch        _profiler_irq_timing;   // Profiler for IRQ response.
+    StopWatch        _profiler_result_read;  // Profiler for sample readings.
+    StopWatch        _profiler_full_scan;    // Profiler for full scan results.
+    MillisTimeout    _discard_window;        // Enforces periods of result non-obsesrvance.
     uint32_t micros_last_read      = 0;
     uint32_t micros_last_window    = 0;
-    //uint16_t reads_per_second      = 0;
 
     SPIBusOp  _busop_irq_read;
     SPIBusOp  _busop_dat_read;
@@ -383,7 +394,6 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
 
     uint32_t _reg_shadows[16];     // Register shadows. NOTE: Values are the native MSB where multibyte.
     int32_t  channel_vals[16];    // Normalized channel values.
-    uint32_t _flags                = 0;
     uint32_t _channel_flags        = 0;
     uint32_t _circuit_settle_ms    = 0;  // A optional constant from the application.
     uint32_t _settling_ms          = 0;  // Settling time of the ADC alone.
@@ -401,16 +411,14 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     inline bool _measuring_clock() {  return (MCP356xState::CLK_MEASURE == currentState());  };
 
     /* Everything below this line is up for review */
+    int8_t  _ll_pin_init();
     int8_t  _reset_fxn();
     int8_t  _post_reset_fxn();
     int8_t  _proc_irq_register();
-    int8_t  _ll_pin_init();
-    uint8_t _get_reg_addr(MCP356xRegister);
-    int8_t _send_fast_command(uint8_t cmd);
+    int8_t  _calibrate();
 
     uint8_t _channel_count();
     int8_t  _set_scan_channels(uint32_t);
-    int8_t  _mark_calibrated();
     int8_t  _apply_usr_config();
 
     bool   _mclk_in_bounds();
@@ -420,35 +428,26 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     int8_t _recalculate_settling_time();
 
     void     _clear_registers();
+    uint8_t  _get_reg_addr(MCP356xRegister);
     int8_t   _set_shadow_value(MCP356xRegister, uint32_t val);
     uint32_t _get_shadow_value(MCP356xRegister);
     int8_t   _write_register(MCP356xRegister, uint32_t val);
     int8_t   _read_register(MCP356xRegister);
+    int8_t   _send_fast_command(uint8_t cmd);
+
     int8_t   _proc_reg_write(MCP356xRegister);
     int8_t   _proc_reg_read(MCP356xRegister);
+    int8_t   _normalize_data_register();
 
     uint8_t _output_coding_bytes();
-    int8_t  _normalize_data_register();
     float   _gain_value();
 
+    inline bool _servicing_irqs() {        return _flags.value(MCP356X_FLAG_SERVICING_IRQS);   };
+    inline void _servicing_irqs(bool x) {  _flags.set(MCP356X_FLAG_SERVICING_IRQS, x);   };
 
-    inline bool _servicing_irqs() {        return _mcp356x_flag(MCP356X_FLAG_SERVICING_IRQS);   };
-    inline void _servicing_irqs(bool x) {  _mcp356x_set_flag(MCP356X_FLAG_SERVICING_IRQS, x);   };
-
-    inline bool _vref_declared() {  return _mcp356x_flag(MCP356X_FLAG_VREF_DECLARED);  };
+    inline bool _vref_declared() {  return _flags.value(MCP356X_FLAG_VREF_DECLARED);  };
     inline bool _scan_covers_channel(MCP356xChannel c) {
       return (0x01 & (_reg_shadows[(uint8_t) MCP356xRegister::SCAN] >> ((uint8_t) c)));
-    };
-
-    /* Flag manipulation inlines */
-    inline uint32_t _mcp356x_flags() {                return _flags;           };
-    inline bool _mcp356x_flag(uint32_t _flag) {       return (_flags & _flag); };
-    inline void _mcp356x_flip_flag(uint32_t _flag) {  _flags ^= _flag;         };
-    inline void _mcp356x_clear_flag(uint32_t _flag) { _flags &= ~_flag;        };
-    inline void _mcp356x_set_flag(uint32_t _flag) {   _flags |= _flag;         };
-    inline void _mcp356x_set_flag(uint32_t _flag, bool nu) {
-      if (nu) _flags |= _flag;
-      else    _flags &= ~_flag;
     };
 
     /* Flag manipulation inlines for individual channels */

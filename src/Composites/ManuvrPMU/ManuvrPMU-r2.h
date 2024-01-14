@@ -25,11 +25,10 @@ LiPo is the assumed chemistry.
 #include <inttypes.h>
 #include <stdint.h>
 #include <StringBuilder.h>
-#include <ParsingConsole.h>
 #include <Battery.h>
 #include <FlagContainer.h>
 #include <AbstractPlatform.h>
-#include "BusQueue/I2CAdapter.h"
+#include <BusQueue/I2CAdapter.h>
 
 // Uses these two drivers from this same codebase
 #include "../../BQ24155/BQ24155.h"
@@ -90,13 +89,12 @@ class ManuvrPMU {
     ManuvrPMU(const BQ24155Opts*, const LTC294xOpts*, const ManuvrPMUOpts*);
     ~ManuvrPMU();
 
-    /* Console config */
-    int8_t configureConsole(ParsingConsole*);
-    inline uint8_t logVerbosity() {           return _verbosity;    };
-    inline void    logVerbosity(uint8_t x) {     _verbosity = x;    };
-
     void printDebug(StringBuilder*);
     void printBattery(StringBuilder*);
+    int console_handler(StringBuilder* text_return, StringBuilder* args);
+
+    inline uint8_t logVerbosity() {           return _verbosity;    };
+    inline void    logVerbosity(uint8_t x) {     _verbosity = x;    };
 
     int8_t init(I2CAdapter* bus = nullptr);
     int8_t poll();

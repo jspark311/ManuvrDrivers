@@ -37,152 +37,6 @@ limitations under the License.
 // volatile static unsigned int  _stat1_prior_delta = 0;
 // volatile static unsigned int  _stat2_prior_delta = 0;
 
-static ManuvrPMU* INSTANCE = nullptr;
-
-
-/*
-* Console breakouts for driver functions.
-*/
-int callback_pmu_tools(StringBuilder* text_return, StringBuilder* args) {
-  int ret = 0;
-  char* cmd  = args->position_trimmed(0);
-  int   arg1 = args->position_as_int(1);
-
-  if (0 == StringBuilder::strcasecmp(cmd, "verbosity")) {
-    switch (args->count()) {
-      case 2:
-        INSTANCE->logVerbosity(0x07 & (uint8_t) arg1);
-        // NOTE: No break;
-      case 1:
-        text_return->concatf("PMU log verbosity is %u\n", INSTANCE->logVerbosity());
-        break;
-      default:
-        text_return->concat("Usage:  verbosity [new_value]\n");
-        break;
-    }
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "reset")) {
-    text_return->concatf("Resetting charger parameters returns %d\n", INSTANCE->bq24155.reset_charger_fsm());
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
-    switch (arg1) {
-      case 1:
-        text_return->concatf("ltc294x.poll() returns %d.\n", INSTANCE->ltc294x.poll());
-        break;
-      case 2:
-        text_return->concatf("bq24155.refresh() returns %d.\n", INSTANCE->bq24155.refresh());
-        break;
-      default:
-        text_return->concat("Usage:  pmu refresh [1|2]\n");
-        break;
-    }
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "regulation")) {
-    if (2 == args->count()) {
-      INSTANCE->bq24155.batt_reg_voltage(args->position_as_double(1));
-    }
-    text_return->concatf("bq24155 battery regulation voltage is %.2f.\n", INSTANCE->bq24155.batt_reg_voltage());
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "weakness")) {
-    if (2 == args->count()) {
-      INSTANCE->bq24155.batt_weak_voltage(args->position_as_double(1));
-    }
-    text_return->concatf("bq24155 battery weakness voltage is %.2f.\n", INSTANCE->bq24155.batt_weak_voltage());
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "punch")) {
-    text_return->concatf("bq24155.punch_safety_timer() returns %d\n", INSTANCE->bq24155.punch_safety_timer());
-  }
-
-  else if (0 == StringBuilder::strcasecmp(cmd, "usb")) {
-    if (2 == args->count()) {
-      text_return->concatf("usb_current_limit(%u) returns %d\n", arg1, INSTANCE->bq24155.usb_current_limit((int16_t) arg1));
-    }
-    text_return->concatf("usb_current_limit = %d\n", INSTANCE->bq24155.usb_current_limit());
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "termination")) {
-    if (2 == args->count()) {
-      INSTANCE->bq24155.charge_current_termination_enabled(1 == arg1);
-    }
-    text_return->concatf("termination is %sabled.\n", INSTANCE->bq24155.charge_current_termination_enabled() ? "en" : "dis");
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "hiz")) {
-    if (2 == args->count()) {
-      INSTANCE->bq24155.hi_z_mode(1 == arg1);
-    }
-    text_return->concatf("hi_z_mode is %sabled.\n", INSTANCE->bq24155.hi_z_mode() ? "en" : "dis");
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "charger")) {
-    if (2 == args->count()) {
-      INSTANCE->bq24155.charger_enabled(1 == arg1);
-    }
-    text_return->concatf("bq24155 is %sabled.\n", INSTANCE->bq24155.charger_enabled() ? "en" : "dis");
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "termination")) {
-    if (2 == args->count()) {
-      INSTANCE->bq24155.charge_current_termination_enabled((1 == arg1), false);
-    }
-    text_return->concatf("bq24155 charge termination is %sabled.\n", INSTANCE->bq24155.charge_current_termination_enabled() ? "en" : "dis");
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "sleep")) {
-    if (2 == args->count()) {
-      INSTANCE->ltc294x.sleep(1 == arg1);
-    }
-    text_return->concatf("ltc294x is %s.\n", INSTANCE->ltc294x.asleep() ? "asleep" : "awake");
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "aux")) {
-    if (2 == args->count()) {
-      INSTANCE->auxRegEnabled(1 == arg1);
-    }
-    text_return->concatf("AUX regulator is %sabled.\n", INSTANCE->auxRegEnabled() ? "en" : "dis");
-  }
-
-  else if (0 == StringBuilder::strcasecmp(cmd, "info")) {
-    switch (arg1) {
-      default:
-      case 0:
-        INSTANCE->printDebug(text_return);
-        INSTANCE->printBattery(text_return);
-        break;
-      case 1:
-        INSTANCE->ltc294x.printDebug(text_return);
-        break;
-      case 2:
-        INSTANCE->bq24155.printDebug(text_return);
-        break;
-      case 3:
-        INSTANCE->ltc294x.printRegisters(text_return);
-        break;
-      case 4:
-        INSTANCE->bq24155.printRegisters(text_return);
-        break;
-    }
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "init")) {
-    switch (arg1) {
-      default:
-      case 0:
-        text_return->concatf("PMU init() returns %d\n", INSTANCE->init());
-        break;
-      case 1:
-        text_return->concatf("ltc294x.init() returns %d\n", INSTANCE->ltc294x.init());
-        break;
-      case 2:
-        text_return->concatf("bq24155.init() returns %d\n", INSTANCE->bq24155.init());
-        break;
-    }
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
-    text_return->concatf("bq24155.refresh() returns %d\n", INSTANCE->bq24155.refresh());
-  }
-  else {
-    ret = -1;
-  }
-  return ret;
-}
-
-const ConsoleCommand cmd00 = ConsoleCommand("pmu", 'p', "PMU tools", "[info|punch|charging|aux|reset|init|refresh|verbosity]", 1, callback_pmu_tools);
-
-
 /*******************************************************************************
 *   ___ _              ___      _ _              _      _
 *  / __| |__ _ ______ | _ ) ___(_) |___ _ _ _ __| |__ _| |_ ___
@@ -199,7 +53,6 @@ ManuvrPMU::ManuvrPMU(const BQ24155Opts* charger_opts, const LTC294xOpts* fuel_ga
   bq24155(charger_opts), ltc294x(fuel_gauge_opts, charger_opts->battery.capacity),
   _opts(o), _battery(&charger_opts->battery),
   _flags(_opts.flags) {
-    INSTANCE = this;
 }
 
 
@@ -397,13 +250,139 @@ int8_t ManuvrPMU::_invoke_batt_callback(ChargeState e) {
 * Console
 *******************************************************************************/
 
-/**
-* Insert our console commands into the given console.
-*
-* @param console
-* @return 0 always
-*/
-int8_t ManuvrPMU::configureConsole(ParsingConsole* console) {
-  console->defineCommand(&cmd00);
-  return 0;
+int ManuvrPMU::console_handler(StringBuilder* text_return, StringBuilder* args) {
+  int ret = 0;
+  char* cmd  = args->position_trimmed(0);
+  int   arg1 = args->position_as_int(1);
+
+  if (0 == StringBuilder::strcasecmp(cmd, "verbosity")) {
+    switch (args->count()) {
+      case 2:
+        logVerbosity(0x07 & (uint8_t) arg1);
+        // NOTE: No break;
+      case 1:
+        text_return->concatf("PMU log verbosity is %u\n", logVerbosity());
+        break;
+      default:
+        text_return->concat("Usage:  verbosity [new_value]\n");
+        break;
+    }
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "reset")) {
+    text_return->concatf("Resetting charger parameters returns %d\n", bq24155.reset_charger_fsm());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
+    switch (arg1) {
+      case 1:
+        text_return->concatf("ltc294x.poll() returns %d.\n", ltc294x.poll());
+        break;
+      case 2:
+        text_return->concatf("bq24155.refresh() returns %d.\n", bq24155.refresh());
+        break;
+      default:
+        text_return->concat("Usage:  pmu refresh [1|2]\n");
+        break;
+    }
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "regulation")) {
+    if (2 == args->count()) {
+      bq24155.batt_reg_voltage(args->position_as_double(1));
+    }
+    text_return->concatf("bq24155 battery regulation voltage is %.2f.\n", bq24155.batt_reg_voltage());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "weakness")) {
+    if (2 == args->count()) {
+      bq24155.batt_weak_voltage(args->position_as_double(1));
+    }
+    text_return->concatf("bq24155 battery weakness voltage is %.2f.\n", bq24155.batt_weak_voltage());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "punch")) {
+    text_return->concatf("bq24155.punch_safety_timer() returns %d\n", bq24155.punch_safety_timer());
+  }
+
+  else if (0 == StringBuilder::strcasecmp(cmd, "usb")) {
+    if (2 == args->count()) {
+      text_return->concatf("usb_current_limit(%u) returns %d\n", arg1, bq24155.usb_current_limit((int16_t) arg1));
+    }
+    text_return->concatf("usb_current_limit = %d\n", bq24155.usb_current_limit());
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "termination")) {
+    if (2 == args->count()) {
+      bq24155.charge_current_termination_enabled(1 == arg1);
+    }
+    text_return->concatf("termination is %sabled.\n", bq24155.charge_current_termination_enabled() ? "en" : "dis");
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "hiz")) {
+    if (2 == args->count()) {
+      bq24155.hi_z_mode(1 == arg1);
+    }
+    text_return->concatf("hi_z_mode is %sabled.\n", bq24155.hi_z_mode() ? "en" : "dis");
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "charger")) {
+    if (2 == args->count()) {
+      bq24155.charger_enabled(1 == arg1);
+    }
+    text_return->concatf("bq24155 is %sabled.\n", bq24155.charger_enabled() ? "en" : "dis");
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "termination")) {
+    if (2 == args->count()) {
+      bq24155.charge_current_termination_enabled((1 == arg1), false);
+    }
+    text_return->concatf("bq24155 charge termination is %sabled.\n", bq24155.charge_current_termination_enabled() ? "en" : "dis");
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "sleep")) {
+    if (2 == args->count()) {
+      ltc294x.sleep(1 == arg1);
+    }
+    text_return->concatf("ltc294x is %s.\n", ltc294x.asleep() ? "asleep" : "awake");
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "aux")) {
+    if (2 == args->count()) {
+      auxRegEnabled(1 == arg1);
+    }
+    text_return->concatf("AUX regulator is %sabled.\n", auxRegEnabled() ? "en" : "dis");
+  }
+
+  else if (0 == StringBuilder::strcasecmp(cmd, "info")) {
+    switch (arg1) {
+      default:
+      case 0:
+        printDebug(text_return);
+        printBattery(text_return);
+        break;
+      case 1:
+        ltc294x.printDebug(text_return);
+        break;
+      case 2:
+        bq24155.printDebug(text_return);
+        break;
+      case 3:
+        ltc294x.printRegisters(text_return);
+        break;
+      case 4:
+        bq24155.printRegisters(text_return);
+        break;
+    }
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "init")) {
+    switch (arg1) {
+      default:
+      case 0:
+        text_return->concatf("PMU init() returns %d\n", init());
+        break;
+      case 1:
+        text_return->concatf("ltc294x.init() returns %d\n", ltc294x.init());
+        break;
+      case 2:
+        text_return->concatf("bq24155.init() returns %d\n", bq24155.init());
+        break;
+    }
+  }
+  else if (0 == StringBuilder::strcasecmp(cmd, "refresh")) {
+    text_return->concatf("bq24155.refresh() returns %d\n", bq24155.refresh());
+  }
+  else {
+    ret = -1;
+  }
+  return ret;
 }

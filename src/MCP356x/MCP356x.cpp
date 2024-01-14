@@ -298,6 +298,9 @@ int8_t MCP356x::read() {
     }
     if (_busop_irq_read.isIdle()) {
       ret = _BUS->queue_io_job(&_busop_irq_read, _bus_priority);
+      if (0 == ret) {
+        _io_dispatched++;
+      }
       isr_fired = false;
     }
   }
@@ -451,7 +454,7 @@ int8_t MCP356x::refresh() {
 *   reports of fully-settled values.
 */
 void MCP356x::discardUnsettledSamples() {
-  _discard_until_micros = (getSettlingTime() + _circuit_settle_ms) * 1000 + micros();
+  _discard_window.period((_circuit_settle_ms + getSettlingTime()) * 1000);
 }
 
 
@@ -572,6 +575,14 @@ float MCP356x::getTemperature() {
 }
 
 
+uint16_t MCP356x::getSampleRate() {
+  if (0 < _profiler_result_read.executions()) {
+    return (uint16_t) (1000000UL / _profiler_result_read.meanTime());
+  }
+  return 0;
+}
+
+
 /**
 * Sets up the driver to read the ADC channels that assist us with calibration.
 * Clears the existing calibration-related flags.
@@ -581,6 +592,12 @@ float MCP356x::getTemperature() {
 *   0 on success.
 */
 int8_t MCP356x::calibrate() {
+  int8_t ret = -1;
+  return ret;
+}
+
+
+int8_t MCP356x::_calibrate() {
   int8_t ret = _set_scan_channels(0x0000E000);
   _mcp356x_clear_flag(MCP356X_FLAG_CALIBRATED | MCP356X_FLAG_ALL_CAL_MASK | MCP356X_FLAG_USER_CONFIG);
   if (0 == ret) {
@@ -595,6 +612,7 @@ int8_t MCP356x::calibrate() {
 
 void MCP356x::isr_fxn() {
   _irqs_noted++;
+  _profiler_irq_timing.markStart();
   _isr_fired = true;
 }
 
@@ -744,7 +762,8 @@ int8_t MCP356x::_apply_usr_config() {
 int8_t MCP356x::poll() {
   if ((!force & !automatedFSM()) | io_in_flight()) {  return 0;  }  // Bailout clauses
 
-  if (adcFound() & _isr_fired) {
+  // The driver handles IRQs first. And that is contingent on mode.
+  if (_isr_fired && _servicing_irqs()) {
     // If the driver knows the hardware is present, and the IRQ pin demands
     //   service, read the status registers.
     if (0 == _read_isr_registers()) {
@@ -752,7 +771,7 @@ int8_t MCP356x::poll() {
     }
   }
 
-  return _fsm_poll();
+  return _fsm_poll();   // Always poll the FSM.
 }
 
 
@@ -799,11 +818,14 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
 
     // Exit conditions: Configuration for calibration has been imparted.
     case MCP356xState::POST_INIT:
+      fsm_advance =
       break;
 
     // Exit conditions: Input clock has been measured, and timing calibrated.
     case MCP356xState::CLK_MEASURE:
       fsm_advance = _mclk_in_bounds();
+      if (!fsm_advance) {
+      }
       break;
 
     // Exit conditions: The driver and the hardware are both calibrated.
@@ -921,8 +943,21 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
       break;
 
     case MCP356xState::CLK_MEASURE:
-      if (fsm_advance) {
-        c3p_log(LOG_LEV_NOTICE, LOCAL_LOG_TAG, "MCP356x initialized.");
+      // If we don't think we have a valid clock, try to measure it.
+      // The timing parameters of the ADC must be known to arrive at a linear
+      //   model of the interrupt rate with respect to input clock. Then, we
+      //   use the model to determine clock rate by watching the IRQ rate.
+      // Since a non-zero value in the SCAN register adds padding to
+      //   timing, we disable this ability, and use the MUX register to
+      //   dwell on the temperature diode.
+      if (0 == _write_register(MCP356xRegister::SCAN, 0)) {
+        if (0 == _write_register(MCP356xRegister::MUX, 0xDE)) {
+          fsm_advance = true;
+        }
+      }
+      if (!fsm_advance) {
+        _set_fault("Failed to start clock measurement");
+        ret = -1;
       }
       break;
 
@@ -976,76 +1011,6 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
   if (state_entry_success) {
     c3p_log(LOG_LEV_NOTICE, LOCAL_LOG_TAG, "MCP356x State %s ---> %s", _FSM_STATES.enumStr(currentState()), _FSM_STATES.enumStr(new_state));
     ret = 0;
-  }
-  return ret;
-}
-
-
-
-
-
-
-
-/**
-* This is NOT a polling loop. It doesn't check for valid conditions for
-*   advancing to a given state. It only chooses and imparts the next state.
-*
-* @return
-*   -1 on error
-*   0 on nominal polling with stable state achieved
-*   1 on unstable state with no advancement on this call
-*   2 on advancement of current state toward desired state
-*/
-int8_t MCP356x::_step_state_machine() {
-  int8_t ret = 0;
-  if (!stateStable()) {
-    // Check for globally-accessible desired states early so we don't repeat
-    //   ourselves in several case blocks later on.
-    bool continue_looping = true;
-
-    while (continue_looping) {
-      continue_looping = false;   // Abort the loop by default.
-
-      switch (_current_state) {
-        case MCP356xState::REGINIT:
-          ret = 1;
-          if (!_mclk_in_bounds()) {
-            // If register init completed, and we don't think we have a
-            //   valid clock, try to measure it.
-            // The timing parameters of the ADC must be known to arrive at a linear model of
-            //   the interrupt rate with respect to input clock. Then, we use the model to determine
-            //   clock rate by watching the IRQ rate.
-            // Since a non-zero value in the SCAN register adds padding to
-            //   timing, we disable this ability, and use the MUX register to
-            //   dwell on the temperature diode.
-            if (0 == _write_register(MCP356xRegister::SCAN, 0)) {
-              if (0 == _write_register(MCP356xRegister::MUX, 0xDE)) {
-                ret = 2;
-              }
-            }
-            if (2 != ret) {
-              _set_fault("Failed to start clock measurement");
-              ret = -1;
-            }
-          }
-          else if (!adcCalibrated()) {
-            // If the clock is good, but the driver isn't calibrated, do that.
-            ret = (0 == calibrate()) ? 2 : -1;
-          }
-          else {
-            // If a re-init cycle happened after the clock and cal steps, jump
-            //   right to reading.
-            switch (_desired_state) {
-              case MCP356xState::IDLE:     _set_state(MCP356xState::IDLE);     break;
-              case MCP356xState::READING:  _set_state(MCP356xState::READING);  break;
-              default:                     _set_state(MCP356xState::IDLE);     break;
-            }
-            continue_looping = true;
-            ret = 2;
-          }
-          break;
-      }
-    }
   }
   return ret;
 }

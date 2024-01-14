@@ -55,6 +55,9 @@ void MCP356x::printTimings(StringBuilder* output) {
   output->concatf("\tADC settling time   = %u\n", getSettlingTime());
   output->concatf("\tTotal settling time = %u\n", _circuit_settle_ms);
   output->concatf("\tLast read (micros)  = %u\n", micros_last_read);
+  StopWatch::printDebugHeader(output);
+  _profiler_irq_timing.printDebug("IRQ cycle", output);
+  _profiler_result_read.printDebug("Result read", output);
 }
 
 
@@ -67,14 +70,13 @@ void MCP356x::printDebug(StringBuilder* output) {
   else prod_str.concat("x (not found)");
 
   StringBuilder::styleHeader2(output, (const char*) prod_str.string());
-  if (stateStable()) {
-    output->concatf("\tState stable:   %s\n", stateStr(_current_state));
-  }
-  else {
-    output->concatf("\tCurrent State:\t%s\n", stateStr(_current_state));
-    output->concatf("\tPrior State:  \t%s\n", stateStr(_prior_state));
-    output->concatf("\tDesired State:\t%s\n", stateStr(_desired_state));
-  }
+
+  output->concatf("\tI/O in-flight:    %c\n",   io_in_flight() ? 'y':'n');
+  output->concatf("\t  Dispatched:     %u\n",   _io_dispatched);
+  output->concatf("\t  Called back:    %u\n",   _io_called_back);
+  output->concatf("\tISR Fired (noted / srvcd):    %c (%u / %u)\n", (_isr_fired ? 'y':'n'), _irqs_noted, _irqs_serviced);
+  printFSM(output);
+
   if (adcFound()) {
     output->concatf("\tChannels:       %u\n", _channel_count());
     output->concatf("\tClock running:  %c\n", (_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING) ? 'y' : 'n'));
@@ -86,8 +88,7 @@ void MCP356x::printDebug(StringBuilder* output) {
       output->concatf("\t  SAMPLED_AVDD:   %c\n", (_mcp356x_flag(MCP356X_FLAG_SAMPLED_AVDD) ? 'y' : 'n'));
     }
     output->concatf("\tCRC Error:      %c\n", (_mcp356x_flag(MCP356X_FLAG_CRC_ERROR) ? 'y' : 'n'));
-    output->concatf("\tisr_fired:      %c\n", (isr_fired ? 'y' : 'n'));
-    output->concatf("\tRead count:     %u\n", read_count);
+    output->concatf("\tRead count:     %u\n", _profiler_result_read.executions());
     output->concatf("\tGain:           x%.2f\n", _gain_value());
     uint8_t _osr_idx = (uint8_t) getOversamplingRatio();
     output->concatf("\tOversampling:   x%u\n", OSR1_VALUES[_osr_idx] * OSR3_VALUES[_osr_idx]);
@@ -241,22 +242,12 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
       }
 
       if (print_state_map) {
-        for (uint8_t i = 0; i < 11; i++) {
-          MCP356xState ste = (MCP356xState) i;
-          text_return->concatf("%u:\t%s", i, MCP356x::stateStr(ste));
-          if (ste == _current_state) {
-            text_return->concat("  <--- Current\n");
-          }
-          else if (ste == _prior_state) {
-            text_return->concat("  <--- Prior\n");
-          }
-          else if (ste == _desired_state) {
-            text_return->concat("  <--- Desired\n");
-          }
-          else {
-            text_return->concat("\n");
-          }
-        }
+        printFSM(text_return);
+        text_return.concat("\nStates: ");
+        StringBuilder tmp;
+        _FSM_STATES.exportKeys(&tmp);
+        tmp.implode(", ");
+        text_return.concatHandoff(&tmp);
       }
     }
   }

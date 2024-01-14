@@ -4,10 +4,11 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdarg.h>
-#include <CppPotpourri.h>
+#include "CppPotpourri.h"
 #include "BusQueue/SPIAdapter.h"
-#include "TimerTools.h"
-#include <StringBuilder.h>
+#include "TimerTools/TimerTools.h"
+#include "FiniteStateMachine.h"
+#include "StringBuilder.h"
 
 /* In this case, these enum values translate directly to register addresses. */
 enum class MCP356xRegister : uint8_t {
@@ -166,18 +167,18 @@ enum class MCP356xAMCLKPrescaler : uint8_t {
 *  \enddot
 */
 enum class MCP356xState : uint8_t {
-  UNINIT      = 0,   // init() has never been called.
-  PRE_INIT    = 1,   // Pin control is being established.
-  RESETTING   = 2,   // Driver is resetting the ADC.
-  DISCOVERY   = 3,   // Driver is probing for the ADC.
-  POST_INIT   = 4,   // The initial ADC configuration is being written.
-  CLK_MEASURE = 5,   // Driver is measuring the clock.
-  CALIBRATION = 6,   // The ADC is self-calibrating.
-  USR_CONF    = 7,   // User config is being written.
-  IDLE        = 8,   // Powered up and calibrated, but not reading.
-  READING     = 9,   // Everything running, data collection proceeding.
-  FAULT       = 10   // State machine encountered something it couldn't cope with.
-  INVALID     = 255  // FSM hygiene.
+  UNINIT = 0,     // init() has never been called.
+  PRE_INIT,       // Pin control is being established.
+  RESETTING,      // Driver is resetting the ADC.
+  DISCOVERY,      // Driver is probing for the ADC.
+  POST_INIT,      // The initial ADC configuration is being written.
+  CLK_MEASURE,    // Driver is measuring the clock.
+  CALIBRATION,    // The ADC is self-calibrating.
+  USR_CONF,       // User config is being written.
+  IDLE,           // Powered up and calibrated, but not reading.
+  READING,        // Everything running, data collection proceeding.
+  FAULT,          // State machine encountered something it couldn't cope with.
+  INVALID = 255   // FSM hygiene.
 };
 
 
@@ -283,8 +284,8 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
 
     bool scanComplete();
     inline uint32_t  lastRead() {        return micros_last_read;  };
-    inline uint32_t  readCount() {       return read_count;        };
-    inline void      resetReadCount() {  read_count = 0;           };
+    inline uint32_t  readCount() {       return _profiler_result_read.executions();  };
+    inline void      resetReadCount() {  _profiler_result_read.reset();              };
 
     int8_t  setOption(uint32_t);   // Set flag-based options for the ADC.
 
@@ -295,6 +296,8 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     int8_t  setAMCLKPrescaler(MCP356xAMCLKPrescaler);
     int8_t  setOversamplingRatio(MCP356xOversamplingRatio);
     int8_t  calibrate();
+    int8_t  _calibrate();
+
     MCP356xOversamplingRatio getOversamplingRatio();
     MCP356xGain getGain();
     MCP356xBiasCurrent getBiasCurrent();
@@ -319,7 +322,8 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
 
     void   discardUnsettledSamples();
     float  getTemperature();
-    inline uint16_t getSampleRate() {               return reads_per_second;   };
+    uint16_t getSampleRate();
+
     inline double   getMCLKFrequency() {            return _mclk_freq;         };
     inline uint32_t getSettlingTime() {             return _settling_ms;       };
     inline uint32_t getCircuitSettleTime() {        return _circuit_settle_ms; };
@@ -364,9 +368,8 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     StopWatch _profiler_result_read;
     MillisTimeout _discard_window;    // Enforces periods of result non-obsesrvance.
     //uint32_t _discard_until_micros = 0;
-    //uint32_t micros_last_read      = 0;
-    //uint32_t micros_last_window    = 0;
-    //uint32_t read_count            = 0;
+    uint32_t micros_last_read      = 0;
+    uint32_t micros_last_window    = 0;
     //uint16_t reads_per_second      = 0;
 
     SPIBusOp  _busop_irq_read;
@@ -394,10 +397,8 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     int8_t   _fsm_set_position(MCP356xState);    // Attempt a state entry.
 
     /* State machine functions */
-    //int8_t _step_state_machine();
-    //void   _set_state(MCP356xState);
     void   _set_fault(const char*);
-    inline bool _measuring_clock() {  return (MCP356xState::CLK_MEASURE == _current_state);  };
+    inline bool _measuring_clock() {  return (MCP356xState::CLK_MEASURE == currentState());  };
 
     /* Everything below this line is up for review */
     int8_t  _reset_fxn();
@@ -429,6 +430,7 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     uint8_t _output_coding_bytes();
     int8_t  _normalize_data_register();
     float   _gain_value();
+
 
     inline bool _servicing_irqs() {        return _mcp356x_flag(MCP356X_FLAG_SERVICING_IRQS);   };
     inline void _servicing_irqs(bool x) {  _mcp356x_set_flag(MCP356X_FLAG_SERVICING_IRQS, x);   };

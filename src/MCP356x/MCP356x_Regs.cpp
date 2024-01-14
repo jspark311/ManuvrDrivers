@@ -415,7 +415,7 @@ double MCP356x::_calculate_input_clock(unsigned long elapsed_us) {
   uint16_t osr1 = OSR1_VALUES[osr_idx];
   uint16_t osr3 = OSR3_VALUES[osr_idx];
   uint32_t pre_val = (c_val & 0x000000C0) >> 6;
-  double  _drclk = ((double) read_count) / ((double) elapsed_us) * 1000000.0;
+  double  _drclk = ((double) _profiler_result_read.executions()) / ((double) elapsed_us) * 1000000.0;
   return (4 * (osr3 * osr1) * (1 << pre_val) * _drclk);
 }
 
@@ -475,9 +475,9 @@ void MCP356x::_clear_registers() {
     channel_vals[i]  = 0;
   }
   _channel_flags        = 0;
-  _discard_until_micros = 0;
+  _discard_window.period(0);
+  _profiler_result_read.reset();
   _settling_ms          = 0;
-  read_count            = 0;
   read_accumulator      = 0;
   reads_per_second      = 0;
   micros_last_read      = 0;
@@ -651,6 +651,8 @@ int8_t MCP356x::_proc_irq_register() {
     }
     if (_busop_dat_read.isIdle()) {
       if (0 == _BUS->queue_io_job(&_busop_dat_read, _bus_priority)) {
+        _profiler_result_read.markStart();
+        _io_dispatched++;
         ret = 1;
         if (!_mcp356x_flag(MCP356X_FLAG_MCLK_RUNNING)) {
           _mcp356x_set_flag(MCP356X_FLAG_MCLK_RUNNING);  // This must be reality.
@@ -678,6 +680,7 @@ int8_t MCP356x::_proc_irq_register() {
   // Check the state of the IRQ pin, JiC we took too long.
   isr_fired = !readPin(_IRQ_PIN);
   //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register(%u) returns %d", irq_reg_data, ret);
+  _irqs_serviced++;
   return ret;
 }
 
@@ -868,18 +871,22 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
 
   // There is zero chance this object will be a null pointer unless it was done on purpose.
   if (op->hasFault()) {
+    _io_called_back++;
     return BUSOP_CALLBACK_ERROR;
   }
 
   if (op == &_busop_irq_read) {
     // IRQ register read.
+    _profiler_irq_timing.markStop();
     _proc_irq_register();
     if (isr_fired) {   // If IRQ is still not disasserted, re-read the register.
       ret = BUSOP_CALLBACK_RECYCLE;
+      _profiler_irq_timing.markStart();
     }
   }
   else if (op == &_busop_dat_read) {
     // DATA register read.
+    _profiler_result_read.markStop();
     micros_last_read = micros();
     uint32_t window_width_us = delta_assume_wrap(micros_last_read, micros_last_window);
     read_count++;
@@ -903,7 +910,8 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
         break;
       case MCP356xState::CALIBRATION:
       case MCP356xState::READING:
-        if (_discard_until_micros <= micros_last_read) {
+        if (_discard_window.expired()) {
+          _discard_window.period(0);
           // If we aren't in the settling period, we observe the data that was read.
           _normalize_data_register();
         }
@@ -947,6 +955,10 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
         break;
     }
   }
+
+  if (BUSOP_CALLBACK_RECYCLE == ret) {
+    _io_called_back++;
+  }
   return ret;
 }
 
@@ -970,5 +982,10 @@ int8_t MCP356x::queue_io_job(BusOp* _op) {
   op->maxFreq(19000000);
   op->cpol(false);
   op->cpha(false);
-  return _BUS->queue_io_job(op, _bus_priority);
+
+  int8_t ret = _BUS->queue_io_job(op, _bus_priority);
+  if (0 == ret) {
+    _io_dispatched++;
+  }
+  return ret;
 }

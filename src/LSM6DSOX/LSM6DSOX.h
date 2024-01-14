@@ -13,6 +13,10 @@
 *    Yes Yes | FIFO high-water mark on INT1. Activity on INT2.
 */
 
+
+#ifndef __DRIVER_LSM6DSOX_H__
+#define __DRIVER_LSM6DSOX_H__
+
 #include "AbstractPlatform.h"
 #include "BusQueue/SPIAdapter.h"
 #include "Vector3.h"
@@ -269,3 +273,6 @@ class LSM6DSOX : public BusOpCallback {
       else    _flags &= ~_flag;
     };
 };
+
+
+#endif  // __DRIVER_LSM6DSOX_H__

@@ -134,7 +134,7 @@ class GridEYE : public I2CDevice {
     int8_t io_op_callahead(BusOp*);
     int8_t io_op_callback(BusOp*);
 
-    int8_t init(I2CAdapter* bus);
+    int8_t init(I2CAdapter* bus = nullptr);
     int8_t poll();
     int8_t reset();
     int8_t refresh();

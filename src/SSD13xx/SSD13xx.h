@@ -152,8 +152,7 @@ class SSD1331 : public SSD13xx, public BusOpCallback {
     ~SSD1331();
 
     inline void setBus(SPIAdapter* b) {  _BUS = b;  };
-    int8_t init(SPIAdapter*);
-    inline int8_t init() {        return init(_BUS);   };
+    int8_t init(SPIAdapter* bus = nullptr);
     int8_t reset();
 
     void setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h);

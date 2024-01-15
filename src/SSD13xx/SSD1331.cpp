@@ -440,6 +440,7 @@ int8_t SSD1331::_send_command(uint8_t commandByte, uint8_t* buf, uint8_t buf_len
       ret = queue_io_job(op);
     }
   }
+  if (0 != ret) c3p_log(LOG_LEV_ERROR, "SSD1331", "_send_command() returned %d", ret);
   return ret;
 }
 

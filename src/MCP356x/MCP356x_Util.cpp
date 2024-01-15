@@ -40,14 +40,15 @@ void MCP356x::printRegs(StringBuilder* output) {
 
 
 void MCP356x::printPins(StringBuilder* output) {
-  output->concatf("IRQ:   %u\n", _IRQ_PIN);
+  output->concatf("IRQ:   %u  (State: %c)\n", _IRQ_PIN, (readPin(_IRQ_PIN) ? '1':'0'));
   output->concatf("CS:    %u\n", _CS_PIN);
   output->concatf("MCLK:  %u\n", _MCLK_PIN);
 }
 
 
 void MCP356x::printTimings(StringBuilder* output) {
-  output->concatf("\tMeasuring MCLK: %c\n", (_measuring_clock() ? 'y' : 'n'));
+  output->concatf("\tDiscard window:     %s\n", (_discard_window.expired() ? "expired" : "pending"));
+  output->concatf("\tMeasuring MCLK:     %c\n", (_measuring_clock() ? 'y' : 'n'));
   output->concatf("\tMCLK                = %.4f MHz\n", _mclk_freq / 1000000.0);
   output->concatf("\tDMCLK               = %.4f MHz\n", _dmclk_freq / 1000000.0);
   output->concatf("\tData rate           = %.4f KHz\n", _drclk_freq / 1000.0);
@@ -71,6 +72,7 @@ void MCP356x::printDebug(StringBuilder* output) {
 
   StringBuilder::styleHeader2(output, (const char*) prod_str.string());
 
+  output->concatf("\tPins conf'd:      %c\n",   (_flags.value(MCP356X_FLAG_PINS_CONFIGURED) ? 'y' : 'n'));
   output->concatf("\tI/O in-flight:    %c\n",   io_in_flight() ? 'y':'n');
   output->concatf("\t  Dispatched:     %u\n",   _io_dispatched);
   output->concatf("\t  Called back:    %u\n",   _io_called_back);
@@ -212,7 +214,16 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
       text_return->concatf("MCP356x poll() returns %d\n", poll());
     }
     else if (0 == StringBuilder::strcasecmp(cmd, "irq")) {
-      _isr_fired = true;
+      if (_busop_irq_read.isIdle()) {
+        if (0 == _BUS->queue_io_job(&_busop_irq_read, _bus_priority)) {
+          _io_dispatched++;
+          text_return->concat("IRQ read dispatched.\n");
+        }
+      }
+    }
+    else if (0 == StringBuilder::strcasecmp(cmd, "irqsim")) {
+      text_return->concat("Simulated IRQ triggered.\n");
+      isr_fxn();
     }
     else if (0 == StringBuilder::strcasecmp(cmd, "fsm")) {
       char* sub_cmd = args->position_trimmed(1);

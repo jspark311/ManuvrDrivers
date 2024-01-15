@@ -109,7 +109,7 @@ SX1503::SX1503(const uint8_t irq_pin, const uint8_t reset_pin) :
 * Constructor.
 */
 SX1503::SX1503(const uint8_t* buf, const unsigned int len) : SX1503(*(buf + 1), *(buf + 2)) {
-  //unserialize(buf, len);
+  unserialize(buf, len);
 }
 
 /**

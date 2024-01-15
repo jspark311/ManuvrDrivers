@@ -323,7 +323,7 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     bool   usingInternalVref();
     int8_t useInternalVref(bool);
 
-    inline void   isr_fxn();
+    void   isr_fxn();
     inline int8_t busPriority() {          return _bus_priority;  };
     inline void   busPriority(int8_t p) {  _bus_priority = p;     };
     inline bool io_in_flight() {   return (_io_dispatched > _io_called_back);  };
@@ -365,9 +365,8 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     const uint8_t  _CS_PIN;
     const uint8_t  _MCLK_PIN;
     const uint8_t  _DEV_ADDR;
-    MCP356xConfig* _desired_conf;
-    // TODO: Delta between these things should precipitate a re-conf cycle.
-    //MCP356xConfig  _current_conf;
+    MCP356xConfig* _desired_conf;   // TODO: Delta between these things should precipitate a re-conf cycle.
+    MCP356xConfig  _current_conf;
     ADCValueCallback _value_callback = nullptr;
     uint32_t  _io_dispatched   = 0;   // How many I/O operations were sent out?
     uint32_t  _io_called_back  = 0;   // How many I/O operations came back?
@@ -420,6 +419,7 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     uint8_t _channel_count();
     int8_t  _set_scan_channels(uint32_t);
     int8_t  _apply_usr_config();
+    bool    _config_is_written();
 
     bool   _mclk_in_bounds();
     int8_t _detect_adc_clock();

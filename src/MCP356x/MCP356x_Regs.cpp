@@ -6,6 +6,7 @@ This source file is meant to contain the low-level I/O and register access.
 */
 
 #include "MCP356x.h"
+const char* const LOCAL_LOG_TAG = "MCP356x-Regs";
 
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
@@ -415,7 +416,7 @@ double MCP356x::_calculate_input_clock(unsigned long elapsed_us) {
   uint16_t osr1 = OSR1_VALUES[osr_idx];
   uint16_t osr3 = OSR3_VALUES[osr_idx];
   uint32_t pre_val = (c_val & 0x000000C0) >> 6;
-  double  _drclk = ((double) _profiler_result_read.executions()) / ((double) elapsed_us) * 1000000.0;
+  double  _drclk = ((double) _irqs_noted) / ((double) elapsed_us) * 1000000.0;
   return (4 * (osr3 * osr1) * (1 << pre_val) * _drclk);
 }
 
@@ -588,7 +589,7 @@ int8_t MCP356x::_write_register(MCP356xRegister r, uint32_t val) {
     ret++;
     if (nullptr != op) {
       _set_shadow_value(r, safe_val);
-      c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_write_register(%u) --> 0x%08x", (uint8_t) r, safe_val);
+      c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_write_register(%u) --> 0x%08x", (uint8_t) r, safe_val);
       op->setParams((uint8_t) _get_reg_addr(r));
       op->setBuffer((uint8_t*) &_reg_shadows[(uint8_t) r], MCP356x_reg_width[(uint8_t) r]);
       if (0 == queue_io_job(op)) {
@@ -642,7 +643,7 @@ int8_t MCP356x::_proc_irq_register() {
   uint8_t irq_reg_data = (uint8_t) _get_shadow_value(MCP356xRegister::IRQ);
   _flags.set(MCP356X_FLAG_CRC_ERROR, (0 == (0x20 & irq_reg_data)));
   if (0 == (0x40 & irq_reg_data)) {   // Conversion is finished.
-    //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register() conversion finsihed");
+    //c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_proc_irq_register() conversion finsihed");
     if (_busop_dat_read.hasFault()) {
       // If there was a bus fault, the BusOp might be left in an unqueuable state.
       // Try to reset the BusOp to satisfy the caller.
@@ -665,7 +666,7 @@ int8_t MCP356x::_proc_irq_register() {
     setPin(_CS_PIN, 1);
     setPin(_CS_PIN, 0);
     setPin(_CS_PIN, 1);
-    c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register() found a PoR event");
+    c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_proc_irq_register() found a PoR event");
   }
   if (0 == (0x20 & irq_reg_data)) { // CRC config error.
     // Something is sideways in the configuration.
@@ -678,7 +679,7 @@ int8_t MCP356x::_proc_irq_register() {
   //}
   // Check the state of the IRQ pin, JiC we took too long.
   _isr_fired = !readPin(_IRQ_PIN);
-  //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "_proc_irq_register(%u) returns %d", irq_reg_data, ret);
+  //c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_proc_irq_register(%u) returns %d", irq_reg_data, ret);
   _irqs_serviced++;
   return ret;
 }
@@ -693,7 +694,7 @@ int8_t MCP356x::_proc_irq_register() {
 int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
   uint32_t reg_val = _get_shadow_value(r);
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_proc_reg_write(%s)  %u --> 0x%06x", stateStr(currentState()), (uint8_t) r, reg_val);
+  c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_proc_reg_write(%s)  %u --> 0x%06x", stateStr(currentState()), (uint8_t) r, reg_val);
 
   switch (r) {
     case MCP356xRegister::CONFIG0:
@@ -722,6 +723,7 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
     case MCP356xRegister::IRQ:
       // A write to this register implies we are ready to service IRQs.
       _servicing_irqs(true);
+      _isr_fired = !readPin(_IRQ_PIN);
       break;
     case MCP356xRegister::TIMER:
       break;
@@ -755,7 +757,7 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
 */
 int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  //c3p_log(LOG_LEV_DEBUG, __PRETTY_FUNCTION__, "MCP356x::_proc_reg_read(%s)  %u --> 0x%02x", stateStr(_current_state), (uint8_t) r, reg_val);
+  //c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "MCP356x::_proc_reg_read(%s)  %u --> 0x%02x", stateStr(_current_state), (uint8_t) r, reg_val);
 
   switch (r) {
     case MCP356xRegister::CONFIG0:
@@ -786,16 +788,16 @@ int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
                 ret = 0;
                 break;
               default:
-                c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "bad RESERVED2 value");
+                c3p_log(LOG_LEV_ERROR, LOCAL_LOG_TAG, "bad RESERVED2 value");
                 break;
             }
             break;
           default:
-            c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "bad RESERVED1 value");
+            c3p_log(LOG_LEV_ERROR, LOCAL_LOG_TAG, "bad RESERVED1 value");
             break;
         }
       }
-      else c3p_log(LOG_LEV_ERROR, __PRETTY_FUNCTION__, "bad RESERVED0 value");
+      else c3p_log(LOG_LEV_ERROR, LOCAL_LOG_TAG, "bad RESERVED0 value");
       break;
     case MCP356xRegister::CRCCFG:
       break;
@@ -862,24 +864,12 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
     // DATA register read.
     _profiler_result_read.markStop();
     micros_last_read = micros();
-    uint32_t window_width_us = delta_assume_wrap(micros_last_read, micros_last_window);
     read_accumulator++;
-    if (window_width_us >= 1000000) {
-      micros_last_window = micros_last_read;
-    }
     switch (currentState()) {
-      case MCP356xState::CLK_MEASURE:
-        if (window_width_us >= 1000000) {
-          _mclk_freq = _calculate_input_clock(window_width_us);
-          if (0 != _recalculate_clk_tree()) {
-            _set_fault("Failed to measure MCLK");
-          }
-        }
-        break;
       case MCP356xState::CALIBRATION:
       case MCP356xState::READING:
         if (_discard_window.expired()) {
-          _discard_window.period(0);
+          _discard_window.reset(0);
           // If we aren't in the settling period, we observe the data that was read.
           _normalize_data_register();
         }
@@ -922,7 +912,7 @@ int8_t MCP356x::io_op_callback(BusOp* _op) {
     }
   }
 
-  if (BUSOP_CALLBACK_RECYCLE == ret) {
+  if (BUSOP_CALLBACK_RECYCLE != ret) {
     _io_called_back++;
   }
   return ret;

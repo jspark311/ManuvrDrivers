@@ -167,7 +167,6 @@ int8_t MCP356x::init(SPIAdapter* b) {
   _clear_registers();
   setOption(_desired_conf->flags);
 
-
   if (0 == _fsm_set_route(8, MCP356xState::PRE_INIT, MCP356xState::RESETTING, MCP356xState::DISCOVERY,  MCP356xState::POST_INIT, MCP356xState::CLK_MEASURE, MCP356xState::CALIBRATION, MCP356xState::USR_CONF, MCP356xState::IDLE)) {
     if (_flags.value(MCP356X_FLAG_GENERATE_MCLK)) {
       // TODO: Isolate CLK measurement selection.
@@ -448,7 +447,7 @@ int8_t MCP356x::refresh() {
 *   reports of fully-settled values.
 */
 void MCP356x::discardUnsettledSamples() {
-  _discard_window.period((_circuit_settle_ms + getSettlingTime()) * 1000);
+  _discard_window.reset((_circuit_settle_ms + getSettlingTime()) * 1000);
 }
 
 
@@ -507,7 +506,7 @@ int8_t MCP356x::setScanChannels(int count, ...) {
   va_end(args);
   if (0 == ret) {   // If there were no foul ups, we can write the registers.
     chans = chans | (existing_scan & 0xFFFF0000);
-    _desired_conf->scan = chans;
+    _current_conf.scan = chans;
     if (adcCalibrated()) {
       ret = _set_scan_channels(chans);
     }
@@ -622,7 +621,7 @@ int8_t MCP356x::_calibrate() {
   _flags.clear(MCP356X_FLAG_CALIBRATED | MCP356X_FLAG_ALL_CAL_MASK | MCP356X_FLAG_USER_CONFIG);
   if (0 == ret) {
     // Give the circuit time to settle, JiC the supply isn't yet stable.
-    _discard_window.period(_circuit_settle_ms);
+    _discard_window.reset(_circuit_settle_ms);
   }
   return ret;
 }
@@ -699,7 +698,7 @@ int8_t MCP356x::_detect_adc_clock() {
         if (micros_passed < SAMPLE_TIME_MAX) {
           ret = 1;
           _flags.set(MCP356X_FLAG_MCLK_RUNNING);  // This must be reality.
-          c3p_log(LOG_LEV_INFO, __PRETTY_FUNCTION__, "Took %u samples in %luus.", rcount, micros_passed);
+          c3p_log(LOG_LEV_INFO, LOCAL_LOG_TAG, "Took %u samples in %luus.", rcount, micros_passed);
           _mclk_freq = _calculate_input_clock(micros_passed);
           if (_mclk_in_bounds()) {
             _recalculate_clk_tree();
@@ -724,27 +723,30 @@ int8_t MCP356x::_detect_adc_clock() {
 *        -1 on failure.
 */
 int8_t MCP356x::_apply_usr_config() {
-  int8_t ret = 0;
-  if (getGain() != _desired_conf->gain) {
-    ret = (0 == setGain(_desired_conf->gain)) ? 1 : -1;
+  _current_conf = MCP356xConfig(_desired_conf);
+  int8_t ret = -1;
+  if (0 == setGain(_current_conf.gain)) {
+    if (0 == setBiasCurrent(_current_conf.bias)) {
+      if (0 == setAMCLKPrescaler(_current_conf.prescaler)) {
+        if (0 == setOversamplingRatio(_current_conf.over)) {
+          if (0 == _set_scan_channels(_current_conf.scan)) {
+            ret = 0;
+          }
+        }
+      }
+    }
   }
-  else if (getBiasCurrent() != _desired_conf->bias) {
-    ret = (0 == setBiasCurrent(_desired_conf->bias)) ? 1 : -1;
-  }
-  else if (getAMCLKPrescaler() != _desired_conf->prescaler) {
-    ret = (0 == setAMCLKPrescaler(_desired_conf->prescaler)) ? 1 : -1;
-  }
-  else if (getOversamplingRatio() != _desired_conf->over) {
-    ret = (0 == setOversamplingRatio(_desired_conf->over)) ? 1 : -1;
-  }
-  else if (_get_shadow_value(MCP356xRegister::SCAN) != _desired_conf->scan) {
-    ret = (0 == _set_scan_channels(_desired_conf->scan)) ? 1 : -1;
-  }
+  return ret;
+}
 
-  switch (ret) {
-    case 0:    _flags.set(MCP356X_FLAG_USER_CONFIG);  break;
-    default:   break;
-  }
+
+bool MCP356x::_config_is_written() {
+  bool ret = !io_in_flight();
+  ret &= (getGain() == _current_conf.gain);
+  ret &= (getBiasCurrent() == _current_conf.bias);
+  ret &= (getAMCLKPrescaler() == _current_conf.prescaler);
+  ret &= (getOversamplingRatio() == _current_conf.over);
+  ret &= (_get_shadow_value(MCP356xRegister::SCAN) == _current_conf.scan);
   return ret;
 }
 
@@ -778,7 +780,6 @@ int8_t MCP356x::poll() {
       if (0 == _BUS->queue_io_job(&_busop_irq_read, _bus_priority)) {
         _io_dispatched++;
       }
-      _isr_fired = false;
     }
   }
 
@@ -816,6 +817,7 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
     //   reset cycle (if we were given one). Otherwise, we blindly advance.
     case MCP356xState::RESETTING:
       fsm_advance = ((255 == _IRQ_PIN) | (0 < _irqs_noted));
+      //fsm_advance = true;  // TODO: For some reason, we miss the IRQ...
       break;
 
     // Exit conditions: A compatible device was found by register refresh.
@@ -834,8 +836,10 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
 
     // Exit conditions: Input clock has been measured, and timing calibrated.
     case MCP356xState::CLK_MEASURE:
-      fsm_advance = _mclk_in_bounds();
-      if (!fsm_advance) {
+      if (1000 < _irqs_noted) {
+        const uint32_t MEASURE_TIME_MICROS = (uint32_t) micros_since(micros_last_window);
+        _mclk_freq = _calculate_input_clock(MEASURE_TIME_MICROS);
+        fsm_advance = (0 == _recalculate_clk_tree());
       }
       break;
 
@@ -846,8 +850,9 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
 
     // Exit conditions: The intended operating configuration has been imparted.
     case MCP356xState::USR_CONF:
-      fsm_advance = adcConfigured();
+      fsm_advance = _config_is_written();
       if (fsm_advance) {
+        _flags.set(MCP356X_FLAG_USER_CONFIG);
         c3p_log(LOG_LEV_NOTICE, LOCAL_LOG_TAG, "MCP356x initialized.");
       }
       break;
@@ -887,6 +892,7 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
 */
 FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
   int8_t ret = -1;
+  if (_fsm_is_waiting()) return ret;
   bool state_entry_success = false;   // Succeed by default.
   switch (new_state) {
     // We can't step our way into this mess. We need to call init().
@@ -914,6 +920,8 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
         _busop_dat_read.cpol(false);
         _busop_dat_read.cpha(false);
         state_entry_success = (0 == _ll_pin_init());
+        _io_dispatched  = 0;
+        _io_called_back = 0;
         if (!state_entry_success) {
           _set_fault("_ll_pin_init() failed");
         }
@@ -963,7 +971,15 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
       //   dwell on the temperature diode.
       if (0 == _write_register(MCP356xRegister::SCAN, 0)) {
         if (0 == _write_register(MCP356xRegister::MUX, 0xDE)) {
-          state_entry_success = true;
+          if (0 == setOversamplingRatio(MCP356xOversamplingRatio::OSR_8192)) {
+            uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0);
+            if (0 == _write_register(MCP356xRegister::CONFIG0, (0x03 | c0_val))) {
+              _mclk_freq = 0.0d;
+              _irqs_noted = 0;
+              micros_last_window = micros();
+              state_entry_success = true;
+            }
+          }
         }
       }
       if (!state_entry_success) {
@@ -973,7 +989,7 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
       break;
 
     case MCP356xState::CALIBRATION:
-      state_entry_success = _calibrate();
+      state_entry_success = (0 == _calibrate());
       if (!state_entry_success) {
         _set_fault("_calibrate() failed");
         ret = -1;
@@ -985,9 +1001,6 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
       if (!state_entry_success) {
         _set_fault("_apply_usr_config() failed");
         ret = -1;
-      }
-      else {
-        _flags.set(MCP356X_FLAG_STATE_HOLD);
       }
       break;
 
@@ -1010,6 +1023,7 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
     // We allow fault entry to be done this way.
     case MCP356xState::FAULT:
       state_entry_success = true;
+      _fsm_mark_current_state(MCP356xState::FAULT);
       break;
 
     default:
@@ -1032,8 +1046,8 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
 * @param msg is a debug string to be added to the log.
 */
 void MCP356x::_set_fault(const char* msg) {
-  c3p_log(LOG_LEV_WARN, __PRETTY_FUNCTION__, "MCP356x fault: %s", msg);
-  _fsm_set_position(MCP356xState::FAULT);
+  c3p_log(LOG_LEV_WARN, LOCAL_LOG_TAG, "MCP356x fault: %s", msg);
+  _fsm_mark_current_state(MCP356xState::FAULT);
 }
 
 

@@ -62,7 +62,7 @@ void mcp356x_isr1() {  ((MCP356x*) INSTANCES[1])->isr_fxn();  }
 /*
 * Constructor specifying every setting.
 */
-MCP356x::MCP356x(const uint8_t irq_pin, const uint8_t cs_pin, const uint8_t mclk_pin, const uint8_t addr, const MCP356xConfig* CONF) :
+MCP356x::MCP356x(const uint8_t irq_pin, const uint8_t cs_pin, const uint8_t mclk_pin, const uint8_t addr, MCP356xConfig* CONF) :
   StateMachine<MCP356xState>("MCP356x-FSM", &MCP356x::_FSM_STATES, MCP356xState::UNINIT, MCP356X_FSM_WAYPOINT_DEPTH),
   _IRQ_PIN(irq_pin), _CS_PIN(cs_pin), _MCLK_PIN(mclk_pin), _DEV_ADDR(addr),
   _desired_conf((MCP356xConfig*) CONF),
@@ -101,23 +101,6 @@ MCP356x::~MCP356x() {
 /*******************************************************************************
 * High-level API functions
 *******************************************************************************/
-
-/**
-* Send the fastcommand to bounce the ADC.
-*
-* @return
-*    -1 if there was a problem writing the reset command.
-*    0 if reset command was sent successfully.
-*/
-int8_t MCP356x::_reset_fxn() {
-  _clear_registers();
-  _isr_fired = false;
-  _irqs_noted = 0;
-  _irqs_serviced = 0;
-  int8_t ret = _send_fast_command(0x38);
-  return ((0 == ret) ? 0 : -1);
-}
-
 
 /**
 * Plan the state route to reset the ADC.
@@ -165,12 +148,14 @@ int8_t MCP356x::init(SPIAdapter* b) {
   if (nullptr != b) {  _BUS = b;  }
 
   _clear_registers();
-  setOption(_desired_conf->flags);
+  setOption(MCP356X_FLAG_DRIVER_OPTS_MASK & _desired_conf->flags);
 
-  if (0 == _fsm_set_route(8, MCP356xState::PRE_INIT, MCP356xState::RESETTING, MCP356xState::DISCOVERY,  MCP356xState::POST_INIT, MCP356xState::CLK_MEASURE, MCP356xState::CALIBRATION, MCP356xState::USR_CONF, MCP356xState::IDLE)) {
+  if (0 == _fsm_set_route(7, MCP356xState::PRE_INIT, MCP356xState::RESETTING, MCP356xState::DISCOVERY,  MCP356xState::POST_INIT, MCP356xState::CLK_MEASURE, MCP356xState::CALIBRATION, MCP356xState::USR_CONF)) {
     if (_flags.value(MCP356X_FLAG_GENERATE_MCLK)) {
       // TODO: Isolate CLK measurement selection.
     }
+    MCP356xState next_state = (MCP356xMode::STANDBY == _desired_conf->mode) ? MCP356xState::IDLE : MCP356xState::READING;
+    _fsm_append_state(next_state);
     ret = 0;
   }
   return ret;
@@ -223,96 +208,12 @@ int8_t MCP356x::setOption(uint32_t flgs) {
 
 
 /**
-* Handles our configuration after reset.
-* Unlocks the registers ahead of any other operation.
-* NOTE: Presently sets IRQ pin to be push-pull. So multiple instances of this
-*   driver will require independant IRQ pins.
-*
-* @return
-*   -1 on failure to write a register.
-*   0  on success.
-*/
-int8_t MCP356x::_post_reset_fxn() {
-  int8_t ret = -1;
-  uint32_t c0_val = 0x00000080;
-
-  // Enable register write.
-  ret = _write_register(MCP356xRegister::LOCK, 0x000000A5);
-  if (0 == ret) {
-    // Enable fast command, disable IRQ on conversion start, IRQ pin is push-pull.
-    ret = _write_register(MCP356xRegister::IRQ, 0x00000006);
-    if (0 == ret) {
-      if (_flags.value(MCP356X_FLAG_USE_INTRNL_CLK)) {
-        c0_val &= 0xFFFFFFCF;   // Set CLK_SEL to use internal clock with no pin output.
-        c0_val |= 0x00000020;
-      }
-      if (_flags.value(MCP356X_FLAG_USE_INTRNL_VREF)) {
-        if (!_flags.value(MCP356X_FLAG_HAS_INTRNL_VREF)) {
-          _set_fault("Failed to use internal Vref (unsupported)");
-        }
-        else {
-          c0_val &= 0xFFFFFFBF;   // Set VREF_SEL to use internal VREF with buffered pin output.
-          c0_val |= 0x00000040;
-          _vref_plus  = 2.4;
-          _vref_minus = 0;
-        }
-      }
-      ret = _write_register(MCP356xRegister::CONFIG0, c0_val);
-      if (0 == ret) {
-        // For simplicity, we select a 32-bit sign-extended data representation with
-        //   channel identifiers.
-        ret = _write_register(MCP356xRegister::CONFIG3, 0x000000F0);
-      }
-    }
-  }
-  return ret;
-}
-
-
-/**
-* Reads the part's output register and performs the needed manipulation on the
-*   data, according to the current configuration.
-* NOTE: If the application recently called discardUnsettledSamples(), the register
-*   shadow will not be updated unless the timeout has expired. But no matter what,
-*   the true value of the register will be returned from this function. So if
-*   the application wants to know if _valid_ data was read, it should call
-*   newValue() or scanComplete() ahead of using it.
-*
-* @return
-*   -1 on error reading from registers.
-*   0  on successful read, but nothing to do.
-*   1  if data was ready and read, but discarded due to being within the
-*        declared settling time.
-*   2  if the read resulted in a full set of data for all channels being scanned.
-*/
-// int8_t MCP356x::read() {
-//   int8_t ret = 0;
-//   if (_isr_fired & _servicing_irqs()) {
-//     if (_busop_irq_read.hasFault()) {
-//       // If there was a bus fault, the BusOp might be left in an unqueuable state.
-//       // Try to reset the BusOp to satisfy the caller.
-//       _busop_irq_read.markForRequeue();
-//     }
-//     if (_busop_irq_read.isIdle()) {
-//       ret = _BUS->queue_io_job(&_busop_irq_read, _bus_priority);
-//       if (0 == ret) {
-//         _io_dispatched++;
-//       }
-//       _isr_fired = false;
-//     }
-//   }
-//   if (scanComplete()) {
-//     ret = 2;
-//   }
-//   return ret;
-// }
-
-
-/**
 * Given the ADC channel, walks the value backward through the ADC transfer
 *   function to arrive at the voltage on that channel.
 * If the application didn't set a reference voltage, we assume it is equal to
 *   AVdd. If that channel has never been read, the value will default to 3.3v.
+* NOTE: If the application wants to know if _valid_ data was read, it should
+*   call newValue() or scanComplete() ahead of using it.
 *
 * @param chan The ADC channel in question.
 * @return The channel's voltage.
@@ -353,6 +254,8 @@ double MCP356x::valueAsVoltage(MCP356xChannel chan) {
 
 /**
 * Given a channel, return the last value.
+* NOTE: If the application wants to know if _valid_ data was read, it should
+*   call newValue() or scanComplete() ahead of using it.
 *
 * @param chan The ADC channel in question.
 * @return The channel's raw value.
@@ -360,84 +263,6 @@ double MCP356x::valueAsVoltage(MCP356xChannel chan) {
 int32_t MCP356x::value(MCP356xChannel chan) {
   _channel_clear_new_flag(chan);
   return channel_vals[(uint8_t) chan & 0x0F];
-}
-
-
-/**
-* Setup the low-level pin details. Execution is idempotent.
-*
-* @return
-*   -1 if the pin setup is wrong. Class must halt.
-*   0  if the pin setup is complete.
-*/
-int8_t MCP356x::_ll_pin_init() {
-  int8_t ret = -1;
-  if (_flags.value(MCP356X_FLAG_PINS_CONFIGURED)) {
-    ret = 0;
-  }
-  else if ((255 != _CS_PIN) & (255 != _IRQ_PIN)) {
-    ret = 0;
-    pinMode(_CS_PIN, GPIOMode::OUTPUT);
-    setPin(_CS_PIN, 1);
-    pinMode(_IRQ_PIN, GPIOMode::INPUT);
-    switch (_slot_number) {  // TODO: This is terrible. You know better.
-      case 0:
-        setPinFxn(_IRQ_PIN, IRQCondition::FALLING, mcp356x_isr0);
-        break;
-      case 1:
-        setPinFxn(_IRQ_PIN, IRQCondition::FALLING, mcp356x_isr1);
-        break;
-    }
-    if (255 != _MCLK_PIN) {
-      // If we have MCLK, we need to generate a squarewave on that pin.
-      // Otherwise, we hope that the board has an XTAL attached.
-      if (_flags.value(MCP356X_FLAG_USE_INTRNL_CLK)) {
-        // TODO: We presently do nothing with this signal. But we might tap it
-        //   for frequency measurement of the internal OSC.
-        pinMode(_MCLK_PIN, GPIOMode::INPUT);
-      }
-      else {
-        if (_flags.value(MCP356X_FLAG_GENERATE_MCLK)) {
-          // NOTE: Not all pin support this. Works for some pins on some MCUs.
-          //pinMode(_MCLK_PIN, GPIOMode::ANALOG_OUT);
-          //analogWriteFrequency(_MCLK_PIN, 4915200);
-          //analogWrite(_MCLK_PIN, 128);
-          //_mclk_freq = 4915200.0;
-          _flags.set(MCP356X_FLAG_MCLK_RUNNING);
-          _recalculate_clk_tree();
-        }
-        else {
-          // There is a hardware oscillator whose enable pin we control with
-          //   the MCLK pin. Set the pin high (enabled) and measure the clock.
-          pinMode(_MCLK_PIN, GPIOMode::OUTPUT);
-          _flags.set(MCP356X_FLAG_MCLK_RUNNING);
-          setPin(_MCLK_PIN, 1);
-        }
-      }
-    }
-    _flags.set(MCP356X_FLAG_PINS_CONFIGURED);
-  }
-  if (-1 == ret) {
-    _set_fault("_ll_pin_init() failed");
-  }
-  return ret;
-}
-
-
-/**
-* Causes a full refresh. Update our shadows with the state of the hardware
-*   registers. Class state will be updated on async I/O completion.
-*
-* @return
-*    -2 on no bus adapter.
-*    -1 on failure to read register.
-*    0  on success.
-*/
-int8_t MCP356x::refresh() {
-  int8_t  ret = 0;
-  _flags.set(MCP356X_FLAG_REFRESH_CYCLE);
-  ret = _read_register(MCP356xRegister::ADCDATA);
-  return ret;
 }
 
 
@@ -506,13 +331,8 @@ int8_t MCP356x::setScanChannels(int count, ...) {
   va_end(args);
   if (0 == ret) {   // If there were no foul ups, we can write the registers.
     chans = chans | (existing_scan & 0xFFFF0000);
-    _current_conf.scan = chans;
-    if (adcCalibrated()) {
-      ret = _set_scan_channels(chans);
-    }
-    else {
-      ret = 0;
-    }
+    _desired_conf->scan = chans;
+    ret = 0;
   }
   return ret;
 }
@@ -545,29 +365,6 @@ int8_t MCP356x::setReferenceRange(float plus, float minus) {
 }
 
 
-/**
-* Runs the current temperature value through the temperature transfer function
-*   to arrive at the die temperature.
-*
-* @return The calculated temperature in degrees C.
-*/
-float MCP356x::getTemperature() {
-  int32_t t_lsb = value(MCP356xChannel::TEMP);
-  float ret = 0.0;
-  if (_flags.value(MCP356X_FLAG_3RD_ORDER_TEMP)) {
-    const double k1 = 0.0000000000000271 * (t_lsb * t_lsb * t_lsb);
-    const double k2 = -0.000000018 * (t_lsb * t_lsb);
-    const double k3 = 0.0055 * t_lsb;
-    const double k4 = -604.22;
-    ret = k1 + k2 + k3 + k4;
-  }
-  else {
-    ret = 0.001581 * t_lsb - 324.27;
-  }
-  return ret;
-}
-
-
 uint16_t MCP356x::getSampleRate() {
   if (0 < _profiler_result_read.executions()) {
     return (uint16_t) (1000000UL / _profiler_result_read.meanTime());
@@ -594,9 +391,7 @@ int8_t MCP356x::calibrate() {
       case MCP356xState::READING:
         // This is a request to dip into a recalibration tangent in the FSM. Value
         //   collection will stall, but should pick up where it left off.
-        _fsm_prepend_state(MCP356xState::USR_CONF);
-        _fsm_prepend_state(MCP356xState::CALIBRATION);
-        _fsm_prepend_state(MCP356xState::POST_INIT);
+        _flags.clear(MCP356X_FLAG_ALL_CAL_MASK);
         ret = 0;
         break;
       default:
@@ -608,20 +403,25 @@ int8_t MCP356x::calibrate() {
 }
 
 
-/**
-* Sets up the driver to read the ADC channels that assist us with calibration.
-* Clears the existing calibration-related flags.
-*
-* @return
-*   -1 if switching to the calibration channels failed
-*   0 on success.
-*/
-int8_t MCP356x::_calibrate() {
-  int8_t ret = _set_scan_channels(0x0000E000);
-  _flags.clear(MCP356X_FLAG_CALIBRATED | MCP356X_FLAG_ALL_CAL_MASK | MCP356X_FLAG_USER_CONFIG);
+int8_t MCP356x::readSamples(int32_t scan_count) {
+  int8_t ret = -1;
+  if (_fsm_is_stable()) {
+    ret--;
+    switch (currentState()) {
+      case MCP356xState::IDLE:
+        _fsm_append_state(MCP356xState::READING);
+        break;
+      case MCP356xState::READING:
+        _fsm_append_state(MCP356xState::READING);
+        ret = 0;
+        break;
+      default:
+        ret--;
+        break;
+    }
+  }
   if (0 == ret) {
-    // Give the circuit time to settle, JiC the supply isn't yet stable.
-    _discard_window.reset(_circuit_settle_ms);
+    _scans_req = scan_count;
   }
   return ret;
 }
@@ -634,83 +434,93 @@ void MCP356x::isr_fxn() {
 }
 
 
+
 /*******************************************************************************
-* Hardware discovery functions
+* Configuration handling
 *******************************************************************************/
 
-/**
-* The valid ADC input clock is between 0.1 and 20 MHz.
-* Technically, there is no lower bound on MCLK given in the datasheet. But our
-*   temporal resolution in the calibration phase of the FSM takes too long for
-*   a decent reading without some lower-bound.
-*
-* @return true if MCLK (as measured) if within operational boundaries.
-*/
-bool MCP356x::_mclk_in_bounds() {
-  return ((_mclk_freq >= 100000.0) && (_mclk_freq <= 20000000.0));
-}
-
-
-/**
-* Some designs drive the ADC from an on-board high-Q oscillator. But there is
-*   no direct firmware means to discover the setting.
-* This function discovers the frequency by timing ADC reads with known clocking parameters
-*   and reports the result; storing the answer in the class variable _mclk_freq.
-*
-* @return
-*   -3 if the class isn't ready for this measurement.
-*   -2 if measurement timed out.
-*   -1 if there was some mechanical problem communicating with the ADC
-*   0  if a clock signal within expected range was determined
-*   1  if we got a clock rate that was out of bounds or appears nonsensical
-*/
-int8_t MCP356x::_detect_adc_clock() {
-  const uint32_t SAMPLE_TIME_MAX = 200000;
-  const uint32_t SAMPLE_TIME_MIN = 50000;
-  int8_t ret = -3;
-  if (_flags.value(MCP356X_FLAG_PINS_CONFIGURED)) {
-    // The timing parameters of the ADC must be known to arrive at a linear model of
-    //   the interrupt rate with respect to input clock. Then, we use the model to determine
-    //   clock rate by watching the IRQ rate.
-    ret = -1;
-    if (0 == _write_register(MCP356xRegister::SCAN, 0)) {
-      if (0 == _write_register(MCP356xRegister::MUX, 0xDE)) {
-        unsigned long micros_passed     = 0;
-        unsigned long micros_adc_time_0 = micros();
-        uint16_t rcount = 0;
-        while (((1000 > rcount) | (micros_passed < SAMPLE_TIME_MIN)) && (micros_passed < SAMPLE_TIME_MAX)) {
-          // We sample for at least 50ms, but no more than 200ms.
-          if (_isr_fired) {
-            // If data is ready...
-            //if (0 < read()) {
-            if (true) {
-              if (0 == rcount) {
-                // The first time through, we reset the read count so that we don't
-                //   bake the ADC startup time into our clock calculation.
-                resetReadCount();
-              }
-              rcount++;
-            }
-          }
-          micros_passed = micros() - micros_adc_time_0;
-        }
-        ret = -2;
-        if (micros_passed < SAMPLE_TIME_MAX) {
-          ret = 1;
-          _flags.set(MCP356X_FLAG_MCLK_RUNNING);  // This must be reality.
-          c3p_log(LOG_LEV_INFO, LOCAL_LOG_TAG, "Took %u samples in %luus.", rcount, micros_passed);
-          _mclk_freq = _calculate_input_clock(micros_passed);
-          if (_mclk_in_bounds()) {
-            _recalculate_clk_tree();
-            ret = 0;
-          }
-        }
-      }
-    }
+int8_t MCP356x::setGain(MCP356xGain x) {
+  switch (x) {
+    case MCP356xGain::GAIN_ONETHIRD:
+    case MCP356xGain::GAIN_1:
+    case MCP356xGain::GAIN_2:
+    case MCP356xGain::GAIN_4:
+    case MCP356xGain::GAIN_8:
+    case MCP356xGain::GAIN_16:
+    case MCP356xGain::GAIN_32:
+    case MCP356xGain::GAIN_64:
+      _desired_conf->gain = x;
+      return 0;
+    default:  break;
   }
-  return ret;
+  return -1;
 }
 
+int8_t MCP356x::setBiasCurrent(MCP356xBiasCurrent x) {
+  switch (x) {
+    case MCP356xBiasCurrent::NONE:
+    case MCP356xBiasCurrent::NANOAMPS_900:
+    case MCP356xBiasCurrent::NANOAMPS_3700:
+    case MCP356xBiasCurrent::NANOAMPS_15000:
+      _desired_conf->bias = x;
+      return 0;
+    default:  break;
+  }
+  return -1;
+}
+
+int8_t MCP356x::setOversamplingRatio(MCP356xOversamplingRatio x) {
+  switch (x) {
+    case MCP356xOversamplingRatio::OSR_32:
+    case MCP356xOversamplingRatio::OSR_64:
+    case MCP356xOversamplingRatio::OSR_128:
+    case MCP356xOversamplingRatio::OSR_256:
+    case MCP356xOversamplingRatio::OSR_512:
+    case MCP356xOversamplingRatio::OSR_1024:
+    case MCP356xOversamplingRatio::OSR_2048:
+    case MCP356xOversamplingRatio::OSR_4096:
+    case MCP356xOversamplingRatio::OSR_8192:
+    case MCP356xOversamplingRatio::OSR_16384:
+    case MCP356xOversamplingRatio::OSR_20480:
+    case MCP356xOversamplingRatio::OSR_24576:
+    case MCP356xOversamplingRatio::OSR_40960:
+    case MCP356xOversamplingRatio::OSR_49152:
+    case MCP356xOversamplingRatio::OSR_81920:
+    case MCP356xOversamplingRatio::OSR_98304:
+      _desired_conf->over = x;
+      return 0;
+    default:  break;
+  }
+  return -1;
+}
+
+
+int8_t MCP356x::setAMCLKPrescaler(MCP356xAMCLKPrescaler x) {
+  switch (x) {
+    case MCP356xAMCLKPrescaler::OVER_1:
+    case MCP356xAMCLKPrescaler::OVER_2:
+    case MCP356xAMCLKPrescaler::OVER_4:
+    case MCP356xAMCLKPrescaler::OVER_8:
+      _desired_conf->prescaler = x;
+      return 0;
+    default:  break;
+  }
+  return -1;
+}
+
+
+int8_t MCP356x::readMode(MCP356xMode x) {
+  switch (x) {
+    case MCP356xMode::ONESHOT_SHUTDOWN:
+    case MCP356xMode::STANDBY:
+    case MCP356xMode::ONESHOT_STANDBY:
+    case MCP356xMode::CONTINUOUS:
+      _desired_conf->mode = x;
+      return 0;
+    default:  break;
+  }
+  return -1;
+}
 
 
 /**
@@ -725,10 +535,10 @@ int8_t MCP356x::_detect_adc_clock() {
 int8_t MCP356x::_apply_usr_config() {
   _current_conf = MCP356xConfig(_desired_conf);
   int8_t ret = -1;
-  if (0 == setGain(_current_conf.gain)) {
-    if (0 == setBiasCurrent(_current_conf.bias)) {
-      if (0 == setAMCLKPrescaler(_current_conf.prescaler)) {
-        if (0 == setOversamplingRatio(_current_conf.over)) {
+  if (0 == _set_gain(_current_conf.gain)) {
+    if (0 == _set_bias_current(_current_conf.bias)) {
+      if (0 == _set_amlclk_prescaler(_current_conf.prescaler)) {
+        if (0 == _set_oversampling_ratio(_current_conf.over)) {
           if (0 == _set_scan_channels(_current_conf.scan)) {
             ret = 0;
           }
@@ -740,8 +550,11 @@ int8_t MCP356x::_apply_usr_config() {
 }
 
 
+/*
+* NOTE: This function ignores the mode value on purpose.
+*/
 bool MCP356x::_config_is_written() {
-  bool ret = !io_in_flight();
+  bool ret = true;
   ret &= (getGain() == _current_conf.gain);
   ret &= (getBiasCurrent() == _current_conf.bias);
   ret &= (getAMCLKPrescaler() == _current_conf.prescaler);
@@ -751,9 +564,34 @@ bool MCP356x::_config_is_written() {
 }
 
 
+/*
+* NOTE: This function ignores the mode value on purpose.
+*/
+bool MCP356x::_config_is_desired() {
+  bool ret = true;
+  ret &= (_desired_conf->gain == _current_conf.gain);
+  ret &= (_desired_conf->bias == _current_conf.bias);
+  ret &= (_desired_conf->prescaler == _current_conf.prescaler);
+  ret &= (_desired_conf->over == _current_conf.over);
+  ret &= (_get_shadow_value(MCP356xRegister::SCAN) == _desired_conf->scan);
+  return ret;
+}
+
+
 /*******************************************************************************
 * State machine parts
 *******************************************************************************/
+
+/*
+* Only returns true if in "true idle".
+* State is IDLE, No I/O in-flight, and no further states planned.
+*/
+FAST_FUNC bool MCP356x::isIdle() {
+  switch (currentState()) {
+    case MCP356xState::IDLE:  return (!io_in_flight() & _fsm_is_stable());
+    default:                  return false;
+  }
+}
 
 /**
 *
@@ -764,8 +602,8 @@ bool MCP356x::_config_is_written() {
 *   1 on unstable state with no advancement on this call
 *   2 on advancement of current state toward desired state
 */
-int8_t MCP356x::poll() {
-  if (io_in_flight()) {  return 0;  }  // Bailout clauses
+FAST_FUNC PollResult MCP356x::poll() {
+  if (io_in_flight()) {  return PollResult::NO_ACTION;  }  // Bailout clause
 
   // The driver handles IRQs first. And that is contingent on mode.
   if (_isr_fired && _servicing_irqs()) {
@@ -783,9 +621,15 @@ int8_t MCP356x::poll() {
     }
   }
 
-  return _fsm_poll();   // Always poll the FSM.
+  // Always poll the FSM. Considering we only got this far because there no open
+  //   I/O, if we have it now, it implies action. If the FSM advanced state, but
+  //   there is no I/O pending, it might mean we can advance again with an
+  //   immediate repoll.
+  int8_t ret = _fsm_poll();
+  if (0 == ret) {      return (io_in_flight() ? PollResult::ACTION : PollResult::NO_ACTION);  }
+  else if (ret > 0) {  return (io_in_flight() ? PollResult::ACTION : PollResult::REPOLL);     }
+  else {               return PollResult::ERROR;  }
 }
-
 
 
 /**
@@ -829,7 +673,7 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
       //ret = -1;
       break;
 
-    // Exit conditions: Configuration for calibration has been imparted.
+    // Exit conditions: Configuration for clock calibration has been imparted.
     case MCP356xState::POST_INIT:
       fsm_advance = (!_flags.value(MCP356X_FLAG_STATE_HOLD));
       break;
@@ -852,8 +696,16 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
     case MCP356xState::USR_CONF:
       fsm_advance = _config_is_written();
       if (fsm_advance) {
-        _flags.set(MCP356X_FLAG_USER_CONFIG);
-        c3p_log(LOG_LEV_NOTICE, LOCAL_LOG_TAG, "MCP356x initialized.");
+        if (_fsm_is_stable()) {
+          // The next state is undefined. The FSM won't abide dwelling here, so
+          //   we choose what state to advance into based on the config that was
+          //   written.
+          MCP356xState next_state = (MCP356xMode::STANDBY == _desired_conf->mode) ? MCP356xState::IDLE : MCP356xState::READING;
+          fsm_advance = (0 == _fsm_append_state(next_state));
+          if (!fsm_advance) {
+            c3p_log(LOG_LEV_WARN, LOCAL_LOG_TAG, "FAILED TO do");
+          }
+        }
       }
       break;
 
@@ -862,6 +714,21 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
     case MCP356xState::IDLE:
     case MCP356xState::READING:
       fsm_advance = !_fsm_is_stable();
+      if (!fsm_advance) {
+        // No new place to be, right away.
+        // Check for a calibration request. We will know because one or more
+        //   of the cal flags have been cleared.
+        if (!_flags.all_set(MCP356X_FLAG_ALL_CAL_MASK)) {
+          fsm_advance = (0 == _fsm_prepend_state(MCP356xState::CALIBRATION));
+        }
+      }
+      if (!fsm_advance) {
+        // Still no change.
+        // Check to see if the user changed the desired configuration.
+        if (!_config_is_written()) {
+          fsm_advance = (0 == _fsm_prepend_state(MCP356xState::USR_CONF));
+        }
+      }
       break;
 
     // We can't step our way out of this mess. We need to be init().
@@ -971,7 +838,7 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
       //   dwell on the temperature diode.
       if (0 == _write_register(MCP356xRegister::SCAN, 0)) {
         if (0 == _write_register(MCP356xRegister::MUX, 0xDE)) {
-          if (0 == setOversamplingRatio(MCP356xOversamplingRatio::OSR_8192)) {
+          if (0 == _set_oversampling_ratio(_desired_conf->over)) {
             uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0);
             if (0 == _write_register(MCP356xRegister::CONFIG0, (0x03 | c0_val))) {
               _mclk_freq = 0.0d;
@@ -1009,16 +876,16 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
       state_entry_success = true;
       break;
 
-    // Entry to IDLE always succeeds.
+    // Entry to READING succeeds if the config bits indite it is so, or a
+    //   register write to make it so succeeds,
     case MCP356xState::READING:
-      {
-        uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0);
-        if (0 == (0x03 & c0_val)) {
-          state_entry_success = (0 == _write_register(MCP356xRegister::CONFIG0, (0x03 | c0_val)));
-        }
+    state_entry_success = true;
+      state_entry_success = (0 == _set_read_mode(_desired_conf->mode));
+      if (!state_entry_success) {
+        _set_fault("_set_read_mode(READING) failed");
+        ret = -1;
       }
       break;
-
 
     // We allow fault entry to be done this way.
     case MCP356xState::FAULT:
@@ -1041,6 +908,149 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
 
 
 /**
+* Setup the low-level pin details. Execution is idempotent.
+*
+* @return
+*   -1 if the pin setup is wrong. Class must halt.
+*   0  if the pin setup is complete.
+*/
+int8_t MCP356x::_ll_pin_init() {
+  int8_t ret = -1;
+  if (_flags.value(MCP356X_FLAG_PINS_CONFIGURED)) {
+    ret = 0;
+  }
+  else if ((255 != _CS_PIN) & (255 != _IRQ_PIN)) {
+    ret = 0;
+    pinMode(_CS_PIN, GPIOMode::OUTPUT);
+    setPin(_CS_PIN, 1);
+    pinMode(_IRQ_PIN, GPIOMode::INPUT);
+    switch (_slot_number) {  // TODO: This is terrible. You know better.
+      case 0:  setPinFxn(_IRQ_PIN, IRQCondition::FALLING, mcp356x_isr0);  break;
+      case 1:  setPinFxn(_IRQ_PIN, IRQCondition::FALLING, mcp356x_isr1);  break;
+    }
+    if (255 != _MCLK_PIN) {
+      // If we have MCLK, we need to generate a squarewave on that pin.
+      // Otherwise, we hope that the board has an XTAL attached.
+      if (_flags.value(MCP356X_FLAG_USE_INTRNL_CLK)) {
+        // TODO: We presently do nothing with this signal. But we might tap it
+        //   for frequency measurement of the internal OSC.
+        pinMode(_MCLK_PIN, GPIOMode::INPUT);
+      }
+      else {
+        if (_flags.value(MCP356X_FLAG_GENERATE_MCLK)) {
+          // NOTE: Not all pin support this. Works for some pins on some MCUs.
+          //pinMode(_MCLK_PIN, GPIOMode::ANALOG_OUT);
+          //analogWriteFrequency(_MCLK_PIN, 4915200);
+          //analogWrite(_MCLK_PIN, 128);
+          //_mclk_freq = 4915200.0;
+          _flags.set(MCP356X_FLAG_MCLK_RUNNING);
+          _recalculate_clk_tree();
+        }
+        else {
+          // There is a hardware oscillator whose enable pin we control with
+          //   the MCLK pin. Set the pin high (enabled) and measure the clock.
+          pinMode(_MCLK_PIN, GPIOMode::OUTPUT);
+          _flags.set(MCP356X_FLAG_MCLK_RUNNING);
+          setPin(_MCLK_PIN, 1);
+        }
+      }
+    }
+    _flags.set(MCP356X_FLAG_PINS_CONFIGURED);
+  }
+  if (-1 == ret) {
+    _set_fault("_ll_pin_init() failed");
+  }
+  return ret;
+}
+
+
+/**
+* Send the fastcommand to bounce the ADC.
+*
+* @return
+*    -1 if there was a problem writing the reset command.
+*    0 if reset command was sent successfully.
+*/
+int8_t MCP356x::_reset_fxn() {
+  _clear_registers();
+  _isr_fired = false;
+  _irqs_noted = 0;
+  _irqs_serviced = 0;
+  int8_t ret = _send_fast_command(0x38);
+  return ((0 == ret) ? 0 : -1);
+}
+
+
+/**
+* Handles our configuration after reset.
+* Unlocks the registers ahead of any other operation.
+* NOTE: Presently sets IRQ pin to be push-pull. So multiple instances of this
+*   driver will require independant IRQ pins.
+*
+* @return
+*   -1 on failure to write a register.
+*   0  on success.
+*/
+int8_t MCP356x::_post_reset_fxn() {
+  int8_t ret = -1;
+  uint32_t c0_val = 0x00000080;
+
+  // Enable register write.
+  ret = _write_register(MCP356xRegister::LOCK, 0x000000A5);
+  if (0 == ret) {
+    // Enable fast command, disable IRQ on conversion start, IRQ pin is push-pull.
+    ret = _write_register(MCP356xRegister::IRQ, 0x00000006);
+    if (0 == ret) {
+      if (_flags.value(MCP356X_FLAG_USE_INTRNL_CLK)) {
+        c0_val &= 0xFFFFFFCF;   // Set CLK_SEL to use internal clock with no pin output.
+        c0_val |= 0x00000020;
+      }
+      if (_flags.value(MCP356X_FLAG_USE_INTRNL_VREF)) {
+        if (!_flags.value(MCP356X_FLAG_HAS_INTRNL_VREF)) {
+          _set_fault("Failed to use internal Vref (unsupported)");
+        }
+        else {
+          c0_val &= 0xFFFFFFBF;   // Set VREF_SEL to use internal VREF with buffered pin output.
+          c0_val |= 0x00000040;
+          _vref_plus  = 2.4;
+          _vref_minus = 0;
+        }
+      }
+      ret = _write_register(MCP356xRegister::CONFIG0, c0_val);
+      if (0 == ret) {
+        // For simplicity, we select a 32-bit sign-extended data representation with
+        //   channel identifiers.
+        ret = _write_register(MCP356xRegister::CONFIG3, 0x000000F0);
+      }
+    }
+  }
+  return ret;
+}
+
+
+/**
+* Sets up the driver to read the ADC channels that assist us with calibration.
+* Clears the existing calibration-related flags.
+*
+* @return
+*   -1 if switching to the calibration channels failed
+*   0 on success.
+*/
+int8_t MCP356x::_calibrate() {
+  int8_t ret = -1;
+  _flags.clear(MCP356X_FLAG_ALL_CAL_MASK);
+  if (0 == _set_scan_channels(0x0000E000)) {
+    if (0 == _set_read_mode(MCP356xMode::CONTINUOUS)) {
+      // Give the circuit time to settle, JiC the supply isn't yet stable.
+      _discard_window.reset(_circuit_settle_ms);
+      ret = 0;
+    }
+  }
+  return ret;
+}
+
+
+/**
 * Put the driver into a FAULT state.
 *
 * @param msg is a debug string to be added to the log.
@@ -1048,16 +1058,4 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
 void MCP356x::_set_fault(const char* msg) {
   c3p_log(LOG_LEV_WARN, LOCAL_LOG_TAG, "MCP356x fault: %s", msg);
   _fsm_mark_current_state(MCP356xState::FAULT);
-}
-
-
-/*
-* Only returns true if in "true idle".
-* State is IDLE, No I/O in-flight, and no further states planned.
-*/
-FAST_FUNC bool MCP356x::isIdle() {
-  switch (currentState()) {
-    case MCP356xState::IDLE:  return (!io_in_flight() & _fsm_is_stable());
-    default:                  return false;
-  }
 }

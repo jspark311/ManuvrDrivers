@@ -36,10 +36,49 @@ static const float ADC_GAIN_VALUES[8] = {
 };
 
 
-
 /*******************************************************************************
-* Functions to provide high-level semantic breakouts for registers...
+* High-level semantic breakouts for registers
+* TODO: Some of these are yet to be buried in a private scope.
 *******************************************************************************/
+/**
+* Causes a full refresh. Update our shadows with the state of the hardware
+*   registers.
+*
+* @return
+*    -2 on no bus adapter.
+*    -1 on failure to read register.
+*    0  on success.
+*/
+int8_t MCP356x::refresh() {
+  int8_t  ret = 0;
+  _flags.set(MCP356X_FLAG_REFRESH_CYCLE);
+  ret = _read_register(MCP356xRegister::ADCDATA);
+  return ret;
+}
+
+
+/**
+* Runs the current temperature value through the temperature transfer function
+*   to arrive at the die temperature.
+*
+* @return The calculated temperature in degrees C.
+*/
+float MCP356x::getTemperature() {
+  int32_t t_lsb = value(MCP356xChannel::TEMP);
+  float ret = 0.0;
+  if (_flags.value(MCP356X_FLAG_3RD_ORDER_TEMP)) {
+    const double k1 = 0.0000000000000271 * (t_lsb * t_lsb * t_lsb);
+    const double k2 = -0.000000018 * (t_lsb * t_lsb);
+    const double k3 = 0.0055 * t_lsb;
+    const double k4 = -604.22;
+    ret = k1 + k2 + k3 + k4;
+  }
+  else {
+    ret = 0.001581 * t_lsb - 324.27;
+  }
+  return ret;
+}
+
 
 /**
 * Sets the offset calibration for the ADC.
@@ -89,22 +128,6 @@ int8_t MCP356x::setGainCalibration(int32_t multiplier) {
 
 
 /**
-* Changes the gain setting.
-*
-* @param g The desired gain enum.
-* @return
-*    -2 on no bus adapter.
-*    -1 if there was a problem writing the config register.
-*    0 if config was set successfully.
-*/
-int8_t MCP356x::setGain(MCP356xGain g) {
-  uint32_t c_val = _get_shadow_value(MCP356xRegister::CONFIG2);
-  uint32_t gain_val = (c_val & 0xFFFFFFC7) | ((uint32_t) g << 3);
-  return _write_register(MCP356xRegister::CONFIG2, gain_val);
-}
-
-
-/**
 * Application-facing accessor for the current gain.
 *
 * @return the enum for the current gain setting.
@@ -112,23 +135,6 @@ int8_t MCP356x::setGain(MCP356xGain g) {
 MCP356xGain MCP356x::getGain() {
   return (MCP356xGain) ((_get_shadow_value(MCP356xRegister::CONFIG2) >> 3) & 0x07);
 }
-
-
-/**
-* Changes the current source setting in CONFIG0.
-* This is basically used for burnout detection in external hardware.
-*
-* @param e The desired bias current enum.
-* @return
-*    -2 on no bus adapter.
-*    -1 if there was a problem writing the config register.
-*    0 if config was set successfully.
-*/
-int8_t MCP356x::setBiasCurrent(MCP356xBiasCurrent e) {
-  uint8_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0) & 0xF3;
-  return _write_register(MCP356xRegister::CONFIG0, (c0_val | ((uint8_t) e << 2)));
-}
-
 
 /**
 * Application-facing accessor for the current source setting.
@@ -140,27 +146,6 @@ MCP356xBiasCurrent MCP356x::getBiasCurrent() {
   return (MCP356xBiasCurrent) ((_get_shadow_value(MCP356xRegister::CONFIG0) & 0x0000000C) >> 2);
 }
 
-
-/**
-* Changes the AMCLK prescaler.
-*
-* @param d
-* @return
-*   -2 if MCLK frequency is unknown, but prescalar setting succeeded.
-*   -1 if reconfiguration of prescalar failed.
-*   0  on success.
-*/
-int8_t MCP356x::setAMCLKPrescaler(MCP356xAMCLKPrescaler d) {
-  uint32_t c1_val = _get_shadow_value(MCP356xRegister::CONFIG1) & 0x00FFFF3F;
-  c1_val |= ((((uint8_t) d) & 0x03) << 6);
-  int8_t ret = _write_register(MCP356xRegister::CONFIG1, c1_val);
-  if (0 == ret) {
-    ret = _recalculate_clk_tree();
-  }
-  return ret;
-}
-
-
 /**
 * Application-facing accessor for the AMCLK prescaler.
 *
@@ -170,27 +155,6 @@ MCP356xAMCLKPrescaler MCP356x::getAMCLKPrescaler() {
   return (MCP356xAMCLKPrescaler) ((_get_shadow_value(MCP356xRegister::CONFIG1) & 0x000000C0) >> 6);
 }
 
-
-/**
-* Changes the oversampling ratio.
-*
-* @param d The desired oversampling enum.
-* @return
-*    -2 on no bus adapter.
-*    -1 if there was a problem writing the config register.
-*    0 if config was set successfully.
-*/
-int8_t MCP356x::setOversamplingRatio(MCP356xOversamplingRatio d) {
-  uint32_t c1_val = _get_shadow_value(MCP356xRegister::CONFIG1) & 0x00FFFFC3;
-  c1_val |= ((((uint8_t) d) & 0x0F) << 2);
-  int8_t ret = _write_register(MCP356xRegister::CONFIG1, c1_val);
-  if (0 == ret) {
-    ret = _recalculate_settling_time();
-  }
-  return ret;
-}
-
-
 /**
 * Application-facing accessor for the current oversampling ratio.
 *
@@ -199,6 +163,16 @@ int8_t MCP356x::setOversamplingRatio(MCP356xOversamplingRatio d) {
 MCP356xOversamplingRatio MCP356x::getOversamplingRatio() {
   return (MCP356xOversamplingRatio) ((_get_shadow_value(MCP356xRegister::CONFIG1) & 0x0000003C) >> 2);
 }
+
+/**
+* Application-facing accessor for the current effective read mode.
+*
+* @return the enum for the present read mode setting.
+*/
+MCP356xMode MCP356x::readMode() {
+  return (MCP356xMode)(_get_shadow_value(MCP356xRegister::CONFIG0) & 0x00000003);
+}
+
 
 
 /**
@@ -238,8 +212,100 @@ int8_t MCP356x::useInternalVref(bool x) {
 
 
 /*******************************************************************************
-* Internal functions
+* Mid-level register API.
 *******************************************************************************/
+
+/**
+* Changes the conversion mode in CONFIG0.
+*
+* @param e The desired conversion mode enum.
+* @return
+*    -2 on no bus adapter.
+*    -1 if there was a problem writing the config register.
+*    0 if config was set successfully.
+*/
+int8_t MCP356x::_set_read_mode(MCP356xMode e) {
+  int8_t ret = -1;
+  uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0);
+  const uint8_t DESIRED_MODE = ((uint8_t) e) & 0x03;
+  //if (DESIRED_MODE != (c0_val & 0x03)) {
+    const uint8_t NEW_C0 = (DESIRED_MODE | ~(0xFC & c0_val));
+    ret--;
+    if (0 == _write_register(MCP356xRegister::CONFIG0, NEW_C0)) {
+      ret = 0;
+    }
+  //}
+  return ret;
+}
+
+/**
+* Changes the current source setting in CONFIG0.
+* This is basically used for burnout detection in external hardware.
+*
+* @param e The desired bias current enum.
+* @return
+*    -2 on no bus adapter.
+*    -1 if there was a problem writing the config register.
+*    0 if config was set successfully.
+*/
+int8_t MCP356x::_set_bias_current(MCP356xBiasCurrent e) {
+  uint8_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0) & 0xF3;
+  return _write_register(MCP356xRegister::CONFIG0, (c0_val | ((uint8_t) e << 2)));
+}
+
+/**
+* Changes the gain setting.
+*
+* @param g The desired gain enum.
+* @return
+*    -2 on no bus adapter.
+*    -1 if there was a problem writing the config register.
+*    0 if config was set successfully.
+*/
+int8_t MCP356x::_set_gain(MCP356xGain g) {
+  uint32_t c_val = _get_shadow_value(MCP356xRegister::CONFIG2);
+  uint32_t gain_val = (c_val & 0xFFFFFFC7) | ((uint32_t) g << 3);
+  return _write_register(MCP356xRegister::CONFIG2, gain_val);
+}
+
+/**
+* Changes the AMCLK prescaler.
+*
+* @param d
+* @return
+*   -2 if MCLK frequency is unknown, but prescalar setting succeeded.
+*   -1 if reconfiguration of prescalar failed.
+*   0  on success.
+*/
+int8_t MCP356x::_set_amlclk_prescaler(MCP356xAMCLKPrescaler d) {
+  uint32_t c1_val = _get_shadow_value(MCP356xRegister::CONFIG1) & 0x00FFFF3F;
+  c1_val |= ((((uint8_t) d) & 0x03) << 6);
+  int8_t ret = _write_register(MCP356xRegister::CONFIG1, c1_val);
+  if (0 == ret) {
+    ret = _recalculate_clk_tree();
+  }
+  return ret;
+}
+
+/**
+* Changes the oversampling ratio.
+*
+* @param d The desired oversampling enum.
+* @return
+*    -2 on no bus adapter.
+*    -1 if there was a problem writing the config register.
+*    0 if config was set successfully.
+*/
+int8_t MCP356x::_set_oversampling_ratio(MCP356xOversamplingRatio d) {
+  uint32_t c1_val = _get_shadow_value(MCP356xRegister::CONFIG1) & 0x00FFFFC3;
+  c1_val |= ((((uint8_t) d) & 0x0F) << 2);
+  int8_t ret = _write_register(MCP356xRegister::CONFIG1, c1_val);
+  if (0 == ret) {
+    ret = _recalculate_settling_time();
+  }
+  return ret;
+}
+
 
 /**
 * Returns the number of channels this part supports. Should be (2, 4, 8). Any
@@ -346,43 +412,6 @@ float MCP356x::_gain_value() {
 
 
 /**
-* Applies the device address and properly shifts the register address into
-*   a control byte. Always sets up for incremental read/write.
-* This never fails and always returns a byte to be used as the first byte
-*   in an SPI transaction with the ADC.
-*
-* @param r The register we wish to transact with.
-* @return the first byte of an SPI register transaction.
-*/
-uint8_t MCP356x::_get_reg_addr(MCP356xRegister r) {
-  return (((_DEV_ADDR & 0x03) << 6) | (((uint8_t) r) << 2) | 0x02);
-}
-
-
-/**
-* Sends a fast command that is not register access.
-*
-* @param cmd The command byte to send
-* @return
-*    -2 on no bus adapter.
-*    -1 on failure to write register.
-*    0  on success.
-*/
-int8_t MCP356x::_send_fast_command(uint8_t cmd) {
-  int8_t ret = -2;
-  if (nullptr != _BUS) {
-    ret++;
-    SPIBusOp* op = (SPIBusOp*) _BUS->new_op(BusOpcode::TX, (BusOpCallback*) this);
-    if (nullptr != op) {
-      op->setParams((uint8_t) ((_DEV_ADDR & 0x03) << 6) | cmd);
-      ret = queue_io_job(op);
-    }
-  }
-  return ret;
-}
-
-
-/**
 * Saves the current channel settings and sets them to the new value given.
 *
 * @param rval The new value for the SCAN register.
@@ -398,14 +427,23 @@ int8_t MCP356x::_set_scan_channels(uint32_t rval) {
 
 /*******************************************************************************
 * Hardware discovery functions
+*
+* The valid ADC input clock range is between 0.1 and 20 MHz.
+* Technically, there is no lower bound on MCLK given in the datasheet. But our
+*   temporal resolution in the calibration phase of the FSM takes too long for
+*   a decent reading without some lower-bound.
+*
+* Some designs drive the ADC from an on-board high-Q oscillator. But there is
+*   no direct firmware means to discover the setting.
+*
+* The timing parameters of the ADC must be known to arrive at a linear model of
+*   the interrupt rate with respect to input clock. Then, we use the model to
+*   determine clock rate by watching the IRQ rate.
 *******************************************************************************/
 
 /**
 * After the ADC has been running for awhile, we can calculate the true rate of
 *   the input clock if we don't know it already.
-* NOTE: since the sample count doesn't reset when timing parameters are altered,
-*   this only gives accurate results if the settings are unchanged from init, or
-*   the caller has pinged resetReadCount() before taking the measurement.
 *
 * @param elapsed_us The number of microseconds that were spent taking readings.
 * @return The calculated MCLK frequency
@@ -453,6 +491,46 @@ int8_t MCP356x::_recalculate_settling_time() {
   uint32_t dmclks = (3 * osr3) + ((osr1 - 1) * osr3);
   _settling_ms = ((uint32_t) (1000 / _dmclk_freq)) * dmclks;
   return 0;
+}
+
+
+/*******************************************************************************
+* Basal register and SPI I/O functions.
+*******************************************************************************/
+/**
+* Applies the device address and properly shifts the register address into
+*   a control byte. Always sets up for incremental read/write.
+* This never fails and always returns a byte to be used as the first byte
+*   in an SPI transaction with the ADC.
+*
+* @param r The register we wish to transact with.
+* @return the first byte of an SPI register transaction.
+*/
+uint8_t MCP356x::_get_reg_addr(MCP356xRegister r) {
+  return (((_DEV_ADDR & 0x03) << 6) | (((uint8_t) r) << 2) | 0x02);
+}
+
+
+/**
+* Sends a fast command that is not register access.
+*
+* @param cmd The command byte to send
+* @return
+*    -2 on no bus adapter.
+*    -1 on failure to write register.
+*    0  on success.
+*/
+int8_t MCP356x::_send_fast_command(uint8_t cmd) {
+  int8_t ret = -2;
+  if (nullptr != _BUS) {
+    ret++;
+    SPIBusOp* op = (SPIBusOp*) _BUS->new_op(BusOpcode::TX, (BusOpCallback*) this);
+    if (nullptr != op) {
+      op->setParams((uint8_t) ((_DEV_ADDR & 0x03) << 6) | cmd);
+      ret = queue_io_job(op);
+    }
+  }
+  return ret;
 }
 
 
@@ -701,9 +779,14 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
       if (_flags.value(MCP356X_FLAG_USE_INTRNL_CLK)) {
         _flags.set(MCP356X_FLAG_MCLK_RUNNING);
       }
+      _current_conf.bias = getBiasCurrent();
       break;
     case MCP356xRegister::CONFIG1:
+      _current_conf.prescaler = getAMCLKPrescaler();
+      _current_conf.over = getOversamplingRatio();
+      break;
     case MCP356xRegister::CONFIG2:
+      _current_conf.gain = getGain();
       break;
     case MCP356xRegister::CONFIG3:
       if (MCP356xState::POST_INIT == currentState()) {
@@ -712,6 +795,7 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
       }
       break;
     case MCP356xRegister::SCAN:
+      _current_conf.scan = _get_shadow_value(MCP356xRegister::SCAN);
       _channel_flags = 0;  // Zero the channel flags.
       break;
 
@@ -729,9 +813,7 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
       break;
     case MCP356xRegister::OFFSETCAL:
       if (MCP356xState::CALIBRATION == currentState()) {
-        if (MCP356X_FLAG_ALL_CAL_MASK == (_flags.raw & MCP356X_FLAG_ALL_CAL_MASK)) {
-          _flags.set(MCP356X_FLAG_CALIBRATED);
-        }
+        _flags.set(MCP356X_FLAG_WROTE_OFFSET_CAL);
       }
       break;
     case MCP356xRegister::GAINCAL:

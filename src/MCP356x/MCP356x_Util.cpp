@@ -5,39 +5,29 @@ Author: J. Ian Lindsay
 
 #include "MCP356x.h"
 
-static const char* CHAN_NAMES[16] = {
+static const char* const MCP356X_CHAN_NAMES[16] = {
   "SE_0", "SE_1", "SE_2", "SE_3", "SE_4", "SE_5", "SE_6", "SE_7",
   "DIFF_A", "DIFF_B", "DIFF_C", "DIFF_D", "TEMP", "AVDD", "VCM", "OFFSET"
+};
+
+static const char* const MCP356X_REG_NAMES[16] = {
+  "ADCDATA", "CONFIG0", "CONFIG1", "CONFIG2", "CONFIG3", "IRQ", "MUX", "SCAN",
+  "TIMER", "OFFSETCAL", "GAINCAL", "RESERVED0", "RESERVED1", "LOCK", "RESERVED2", "CRCCFG"
 };
 
 
 /**
 * Static function to convert enum to string.
 */
-const char* MCP356x::stateStr(const MCP356xState e) {
-  return _FSM_STATES.enumStr(e);
-}
-
+const char* const MCP356x::stateStr(const MCP356xState e) {  return _FSM_STATES.enumStr(e);  }
 
 void MCP356x::printRegs(StringBuilder* output) {
-  output->concatf("[0]  ADCDATA    = 0x%08x\n", _get_shadow_value(MCP356xRegister::ADCDATA));
-  output->concatf("[1]  CONFIG0    = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG0));
-  output->concatf("[2]  CONFIG1    = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG1));
-  output->concatf("[3]  CONFIG2    = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG2));
-  output->concatf("[4]  CONFIG3    = 0x%02x\n", _get_shadow_value(MCP356xRegister::CONFIG3));
-  output->concatf("[5]  IRQ        = 0x%02x\n", _get_shadow_value(MCP356xRegister::IRQ));
-  output->concatf("[6]  MUX        = 0x%02x\n", _get_shadow_value(MCP356xRegister::MUX));
-  output->concatf("[7]  SCAN       = 0x%06x\n", _get_shadow_value(MCP356xRegister::SCAN));
-  output->concatf("[8]  TIMER      = 0x%06x\n", _get_shadow_value(MCP356xRegister::TIMER));
-  output->concatf("[9]  OFFSETCAL  = 0x%06x\n", _get_shadow_value(MCP356xRegister::OFFSETCAL));
-  output->concatf("[10] GAINCAL    = 0x%06x\n", _get_shadow_value(MCP356xRegister::GAINCAL));
-  output->concatf("[11] RESERVED0  = 0x%06x\n", _get_shadow_value(MCP356xRegister::RESERVED0));
-  output->concatf("[12] RESERVED1  = 0x%02x\n", _get_shadow_value(MCP356xRegister::RESERVED1));
-  output->concatf("[13] LOCK       = 0x%02x\n", _get_shadow_value(MCP356xRegister::LOCK));
-  output->concatf("[14] RESERVED2  = 0x%04x\n", _get_shadow_value(MCP356xRegister::RESERVED2));
-  output->concatf("[15] CRCCFG     = 0x%04x\n", _get_shadow_value(MCP356xRegister::CRCCFG));
+  for (uint8_t i = 0; i <= (uint8_t) MCP356xRegister::CRCCFG; i++) {
+    const MCP356xRegister TMP_REG     = (MCP356xRegister) i;
+    const uint32_t        TMP_REG_VAL = _get_shadow_value(TMP_REG);
+    output->concatf("[%2d] %10s = 0x%08x\n", i, MCP356X_REG_NAMES[i], TMP_REG_VAL);
+  }
 }
-
 
 void MCP356x::printPins(StringBuilder* output) {
   output->concatf("IRQ:   %u  (State: %c)\n", _IRQ_PIN, (readPin(_IRQ_PIN) ? '1':'0'));
@@ -45,10 +35,8 @@ void MCP356x::printPins(StringBuilder* output) {
   output->concatf("MCLK:  %u\n", _MCLK_PIN);
 }
 
-
 void MCP356x::printTimings(StringBuilder* output) {
   output->concatf("\tDiscard window:     %s\n", (_discard_window.expired() ? "expired" : "pending"));
-  output->concatf("\tMeasuring MCLK:     %c\n", (_measuring_clock() ? 'y' : 'n'));
   output->concatf("\tMCLK                = %.4f MHz\n", _mclk_freq / 1000000.0);
   output->concatf("\tDMCLK               = %.4f MHz\n", _dmclk_freq / 1000000.0);
   output->concatf("\tData rate           = %.4f KHz\n", _drclk_freq / 1000.0);
@@ -72,17 +60,21 @@ void MCP356x::printDebug(StringBuilder* output) {
 
   StringBuilder::styleHeader2(output, (const char*) prod_str.string());
 
-  output->concatf("\tPins conf'd:      %c\n",   (_flags.value(MCP356X_FLAG_PINS_CONFIGURED) ? 'y' : 'n'));
   output->concatf("\tI/O in-flight:    %c\n",   io_in_flight() ? 'y':'n');
   output->concatf("\t  Dispatched:     %u\n",   _io_dispatched);
   output->concatf("\t  Called back:    %u\n",   _io_called_back);
   output->concatf("\tISR Fired (noted / srvcd):    %c (%u / %u)\n", (_isr_fired ? 'y':'n'), _irqs_noted, _irqs_serviced);
   printFSM(output);
+  output->concatf("\tPins conf'd:    %c\n", (_flags.value(MCP356X_FLAG_PINS_CONFIGURED) ? 'y' : 'n'));
 
   if (adcFound()) {
     output->concatf("\tChannels:       %u\n", _channel_count());
     output->concatf("\tClock running:  %c\n", (_flags.value(MCP356X_FLAG_MCLK_RUNNING) ? 'y' : 'n'));
     output->concatf("\tConfigured:     %c\n", (adcConfigured() ? 'y' : 'n'));
+    if (!adcConfigured()) {
+      output->concatf("\t  ...as desired:  %c\n", (_config_is_desired() ? 'y' : 'n'));
+      output->concatf("\t  ...in hardware: %c\n", (_config_is_written() ? 'y' : 'n'));
+    }
     output->concatf("\tCalibrated:     %c\n", (adcCalibrated() ? 'y' : 'n'));
     if (!adcCalibrated()) {
       output->concatf("\t  SAMPLED_OFFSET: %c\n", (_flags.value(MCP356X_FLAG_SAMPLED_OFFSET) ? 'y' : 'n'));
@@ -120,7 +112,7 @@ void MCP356x::printDebug(StringBuilder* output) {
 void MCP356x::printChannel(MCP356xChannel chan, StringBuilder* output) {
   output->concatf(
     "%s:\t%.6fv\t%s\n",
-    CHAN_NAMES[((uint8_t) chan) & 0x0F],
+    MCP356X_CHAN_NAMES[((uint8_t) chan) & 0x0F],
     valueAsVoltage(chan),
     _channel_over_range(chan) ? "OvR" : " "
   );

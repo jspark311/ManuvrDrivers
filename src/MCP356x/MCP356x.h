@@ -58,6 +58,7 @@ enum class MCP356xChannel : uint8_t {
 /* Conversion modes */
 enum class MCP356xMode : uint8_t {
   ONESHOT_SHUTDOWN = 0,
+  STANDBY          = 1,
   ONESHOT_STANDBY  = 2,
   CONTINUOUS       = 3
 };
@@ -132,44 +133,6 @@ enum class MCP356xAMCLKPrescaler : uint8_t {
 
 /**
 * Driver state machine positions
-* ------------------------------------------------------------------------------
-* \dot
-* digraph statemachine {
-*      node [shape=record, fontname=Helvetica, fontsize=10];
-*      UNINIT      [ label="Uninitialized"                  style="rounded,filled" ];
-*      PRE_INIT    [ label="Class setup"                    style="rounded,filled" ];
-*      RESETTING   [ label="Resetting"                    fillcolor="yellow" style="rounded,filled" ];
-*      DISCOVERY   [ label="Hardware discovery"           fillcolor="yellow" style="rounded,filled" ];
-*      REGINIT     [ label="Initialize register shadows"  fillcolor="yellow" style="rounded,filled" ];
-*      CLK_MEASURE [ label="Measuring MCLK"               fillcolor="yellow" style="rounded,filled" ];
-*      CALIBRATION [ label="Internal calibration"         fillcolor="green"  style="rounded,filled" ];
-*      USR_CONF    [ label="Imparting user configuration" fillcolor="green"  style="rounded,filled" ];
-*      IDLE        [ label="Idle"                         fillcolor="green"  style="rounded,filled" ];
-*      READING     [ label="Reading data"                 fillcolor="green"  style="rounded,filled" ];
-*      FAULT       [ label="Fault"                        fillcolor="red"    style="rounded,filled" ];
-*
-*      UNINIT      ->   PRE_INIT      [ label ="Call to init()", arrowhead="open", style="solid" ];
-*      PRE_INIT    ->   RESETTING     [ label ="Class members initialized", arrowhead="open", style="solid" ];
-*      RESETTING   ->   DISCOVERY     [ label ="Reset complete", arrowhead="open", style="solid" ];
-*      DISCOVERY   ->   REGINIT       [ label ="Hardware found", arrowhead="open", style="solid" ];
-*      DISCOVERY   ->   FAULT         [ label ="Hardware not found", arrowhead="open", style="dashed" ];
-*      REGINIT     ->   CLK_MEASURE   [ label ="MCLK frequency is unspecified", arrowhead="open", style="solid" ];
-*      REGINIT     ->   CALIBRATION   [ label ="MCLK frequency is given", arrowhead="open", style="solid" ];
-*      CLK_MEASURE ->   CALIBRATION   [ label ="MCLK frequency was measured", arrowhead="open", style="solid" ];
-*      CLK_MEASURE ->   FAULT         [ label ="Failure to measure MCLK", arrowhead="open", style="dashed" ];
-*      CALIBRATION ->   FAULT         [ label ="Failure to calibrate", arrowhead="open", style="dashed" ];
-*      CALIBRATION ->   USR_CONF      [ label ="In-class calibration complete", arrowhead="open", style="solid" ];
-*      USR_CONF    ->   IDLE          [ label ="User configuration imparted", arrowhead="open", style="solid" ];
-*      IDLE        ->   READING       [ label ="Data register content is demanded", arrowhead="open", style="solid" ];
-*      IDLE        ->   CALIBRATION   [ label ="Call to calibrate()", arrowhead="open", style="solid" ];
-*      IDLE        ->   USR_CONF      [ label ="Configuration change", arrowhead="open", style="solid" ];
-*      READING     ->   USR_CONF      [ label ="Configuration change", arrowhead="open", style="solid" ];
-*      READING     ->   IDLE          [ label ="No data demand", arrowhead="open", style="solid" ];
-*      READING     ->   CALIBRATION   [ label ="Call to calibrate()", arrowhead="open", style="solid" ];
-*      READING     ->   FAULT         [ label ="Class fault while reading", arrowhead="open", style="dashed" ];
-*      FAULT       ->   PRE_INIT      [ label ="Call to reset()", arrowhead="open", style="solid" ];
-*  }
-*  \enddot
 */
 enum class MCP356xState : uint8_t {
   UNINIT = 0,     // init() has never been called.
@@ -197,8 +160,8 @@ enum class MCP356xState : uint8_t {
 // These are tracking bits for volatile and transient conditions.
 #define MCP356X_FLAG_DEVICE_PRESENT   0x00000001  // Part is likely an MCP356x.
 #define MCP356X_FLAG_PINS_CONFIGURED  0x00000002  // Low-level pin setup is complete.
-#define MCP356X_FLAG_USER_CONFIG      0x00000004  // Registers are initialized with the user's values.
-#define MCP356X_FLAG_CALIBRATED       0x00000008  // ADC is calibrated.
+
+#define MCP356X_FLAG_WROTE_OFFSET_CAL 0x00000008  // ADC is calibrated.
 #define MCP356X_FLAG_VREF_DECLARED    0x00000010  // The application has given us Vref.
 #define MCP356X_FLAG_CRC_ERROR        0x00000020  // The chip has reported a CRC error.
 #define MCP356X_FLAG_MCLK_RUNNING     0x00000040  // MCLK is running.
@@ -216,7 +179,9 @@ enum class MCP356xState : uint8_t {
 #define MCP356X_FLAG_GENERATE_MCLK    0x80000000  // MCU is to generate the clock.
 
 // Bits indicating calibration steps.
-#define MCP356X_FLAG_ALL_CAL_MASK     (MCP356X_FLAG_SAMPLED_AVDD | MCP356X_FLAG_SAMPLED_VCM | MCP356X_FLAG_SAMPLED_OFFSET)
+#define MCP356X_FLAG_ALL_CAL_MASK ( \
+  MCP356X_FLAG_SAMPLED_AVDD | MCP356X_FLAG_SAMPLED_VCM | \
+  MCP356X_FLAG_SAMPLED_OFFSET | MCP356X_FLAG_WROTE_OFFSET_CAL)
 
 // Bits that track static configurations.
 #define MCP356X_FLAG_DRIVER_OPTS_MASK ( \
@@ -268,23 +233,24 @@ class MCP356xConfig {
 };
 
 
-class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
+class MCP356x : public StateMachine<MCP356xState>, public C3PPollable, public BusOpCallback {
   public:
     MCP356x(
       const uint8_t irq_pin,
       const uint8_t cs_pin,
       const uint8_t mclk_pin,
       const uint8_t addr,
-      const MCP356xConfig*
+      MCP356xConfig*
     );
     ~MCP356x();
 
-    int8_t  reset();
-    int8_t  init(SPIAdapter* bus = nullptr);
-    inline  void setAdapter(SPIAdapter* b) {  _BUS = b;     };
-    int8_t  refresh();
-    int8_t  poll();
-    bool    isIdle();
+    int8_t     reset();
+    int8_t     init(SPIAdapter* bus = nullptr);
+    int8_t     deinit();
+    int8_t     refresh();
+    PollResult poll();
+    bool       isIdle();
+    inline void setAdapter(SPIAdapter* b) {  _BUS = b;     };
 
     double  valueAsVoltage(MCP356xChannel);
     int32_t value(MCP356xChannel);
@@ -300,26 +266,32 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
 
     int8_t  setOffsetCalibration(int32_t);
     int8_t  setGainCalibration(int32_t);
-    int8_t  setGain(MCP356xGain);
-    int8_t  setBiasCurrent(MCP356xBiasCurrent);
-    int8_t  setAMCLKPrescaler(MCP356xAMCLKPrescaler);
-    int8_t  setOversamplingRatio(MCP356xOversamplingRatio);
+
+
     int8_t  calibrate();
+    int8_t  readSamples(int32_t scan_count);
 
     MCP356xOversamplingRatio getOversamplingRatio();
     MCP356xGain getGain();
     MCP356xBiasCurrent getBiasCurrent();
     MCP356xAMCLKPrescaler getAMCLKPrescaler();
+    int8_t      readMode(MCP356xMode);
+    MCP356xMode readMode();
+
+    int8_t setGain(MCP356xGain);
+    int8_t setBiasCurrent(MCP356xBiasCurrent);
+    int8_t setOversamplingRatio(MCP356xOversamplingRatio);
+    int8_t setAMCLKPrescaler(MCP356xAMCLKPrescaler);
 
     int8_t  setScanChannels(int count, ...);
     int8_t  setReferenceRange(float plus, float minus);
     inline void    setMCLKFrequency(double x) {  _mclk_freq = x;  };
     inline uint8_t getIRQPin() {        return _IRQ_PIN;  };
-    inline bool    adcFound() {         return _flags.value(MCP356X_FLAG_DEVICE_PRESENT);    };
-    inline bool    adcConfigured() {    return _flags.value(MCP356X_FLAG_USER_CONFIG);       };
+    inline bool    adcFound() {         return _flags.value(MCP356X_FLAG_DEVICE_PRESENT);     };
+    inline bool    adcConfigured() {    return (_config_is_desired() & _config_is_written()); };
     inline bool    adcCalibrating() {   return (currentState() == MCP356xState::CALIBRATION); };
-    inline bool    adcCalibrated() {    return _flags.value(MCP356X_FLAG_CALIBRATED);        };
-    inline bool    hasInternalVref() {  return _flags.value(MCP356X_FLAG_HAS_INTRNL_VREF);   };
+    inline bool    adcCalibrated() {    return _flags.all_set(MCP356X_FLAG_ALL_CAL_MASK);     };
+    inline bool    hasInternalVref() {  return _flags.value(MCP356X_FLAG_HAS_INTRNL_VREF);    };
     bool   usingInternalVref();
     int8_t useInternalVref(bool);
 
@@ -355,7 +327,7 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     int8_t io_op_callback(BusOp*);
     int8_t queue_io_job(BusOp*);
 
-    static const char* stateStr(const MCP356xState);
+    static const char* const stateStr(const MCP356xState);
 
 
 
@@ -372,7 +344,7 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     uint32_t  _io_called_back  = 0;   // How many I/O operations came back?
     uint32_t  _irqs_noted      = 0;   // How many IRQs hit the pin?
     uint32_t  _irqs_serviced   = 0;   // How many IRQs triggered read operations?
-    int32_t   _scans_req       = 0;   // How many full scan loops should we take?
+    int32_t   _scans_req       = 0;   // How many full scan loops have we yet to take?
 
     FlagContainer32  _flags;                 // Aggregate boolean class state.
     StopWatch        _profiler_irq_timing;   // Profiler for IRQ response.
@@ -401,51 +373,53 @@ class MCP356x : public StateMachine<MCP356xState>, public BusOpCallback {
     uint8_t  _slot_number          = 0;
     bool     _isr_fired            = false;
 
-    /* Mandatory overrides from StateMachine. */
+    /* State machine functions */
     int8_t   _fsm_poll();                        // Polling for state exit.
     int8_t   _fsm_set_position(MCP356xState);    // Attempt a state entry.
+    int8_t   _ll_pin_init();
+    int8_t   _reset_fxn();
+    int8_t   _post_reset_fxn();
+    int8_t   _calibrate();
+    void     _set_fault(const char*);
 
-    /* State machine functions */
-    void   _set_fault(const char*);
-    inline bool _measuring_clock() {  return (MCP356xState::CLK_MEASURE == currentState());  };
+    /* Config-write functions that actually dispatch I/O */
+    int8_t  _set_gain(MCP356xGain);
+    int8_t  _set_bias_current(MCP356xBiasCurrent);
+    int8_t  _set_amlclk_prescaler(MCP356xAMCLKPrescaler);
+    int8_t  _set_oversampling_ratio(MCP356xOversamplingRatio);
+    int8_t  _set_read_mode(MCP356xMode);
 
-    /* Everything below this line is up for review */
-    int8_t  _ll_pin_init();
-    int8_t  _reset_fxn();
-    int8_t  _post_reset_fxn();
-    int8_t  _proc_irq_register();
-    int8_t  _calibrate();
+    /* Mid-level register abstraction */
+    uint8_t  _channel_count();
+    int8_t   _set_scan_channels(uint32_t);
+    int8_t   _normalize_data_register();
+    uint8_t  _output_coding_bytes();
+    float    _gain_value();
 
-    uint8_t _channel_count();
-    int8_t  _set_scan_channels(uint32_t);
     int8_t  _apply_usr_config();
     bool    _config_is_written();
+    bool    _config_is_desired();
 
-    bool   _mclk_in_bounds();
-    int8_t _detect_adc_clock();
     double _calculate_input_clock(unsigned long);
     int8_t _recalculate_clk_tree();
     int8_t _recalculate_settling_time();
 
+    /* Basal register functions */
     void     _clear_registers();
     uint8_t  _get_reg_addr(MCP356xRegister);
     int8_t   _set_shadow_value(MCP356xRegister, uint32_t val);
     uint32_t _get_shadow_value(MCP356xRegister);
     int8_t   _write_register(MCP356xRegister, uint32_t val);
     int8_t   _read_register(MCP356xRegister);
-    int8_t   _send_fast_command(uint8_t cmd);
-
     int8_t   _proc_reg_write(MCP356xRegister);
     int8_t   _proc_reg_read(MCP356xRegister);
-    int8_t   _normalize_data_register();
+    int8_t   _proc_irq_register();
+    int8_t   _send_fast_command(uint8_t cmd);
 
-    uint8_t _output_coding_bytes();
-    float   _gain_value();
-
-    inline bool _servicing_irqs() {        return _flags.value(MCP356X_FLAG_SERVICING_IRQS);   };
-    inline void _servicing_irqs(bool x) {  _flags.set(MCP356X_FLAG_SERVICING_IRQS, x);   };
-
-    inline bool _vref_declared() {  return _flags.value(MCP356X_FLAG_VREF_DECLARED);  };
+    inline void _servicing_irqs(bool x) {  _flags.set(MCP356X_FLAG_SERVICING_IRQS, x);        };
+    inline bool _servicing_irqs() {        return _flags.value(MCP356X_FLAG_SERVICING_IRQS);  };
+    inline bool _vref_declared() {         return _flags.value(MCP356X_FLAG_VREF_DECLARED);   };
+    bool         _mclk_in_bounds() {  return ((_mclk_freq >= 100000.0) && (_mclk_freq <= 20000000.0));  };
     inline bool _scan_covers_channel(MCP356xChannel c) {
       return (0x01 & (_reg_shadows[(uint8_t) MCP356xRegister::SCAN] >> ((uint8_t) c)));
     };

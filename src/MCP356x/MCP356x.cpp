@@ -412,7 +412,7 @@ int8_t MCP356x::readSamples(int32_t scan_count) {
         _fsm_append_state(MCP356xState::READING);
         break;
       case MCP356xState::READING:
-        _fsm_append_state(MCP356xState::READING);
+        _fsm_append_state(MCP356xState::IDLE);
         ret = 0;
         break;
       default:

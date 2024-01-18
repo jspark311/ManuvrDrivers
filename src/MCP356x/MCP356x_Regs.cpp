@@ -353,7 +353,6 @@ int8_t MCP356x::_normalize_data_register() {
   // Update the over-range marker...
   channel_vals[(uint8_t) chan]  = nval;   // Store the decoded ADC reading.
   _channel_set_ovr_flag(chan, ((nval > 8388609) | (nval < -8388609)));
-  _channel_set_new_flag(chan);            // Mark the channel as updated.
 
   switch (chan) {
     // Different channels are interpreted differently...
@@ -396,6 +395,15 @@ int8_t MCP356x::_normalize_data_register() {
         setOffsetCalibration(nval);
       }
       break;
+  }
+
+  // With a callback, we deliver the value directly.
+  // Without anyone specific to notify, mark the channel as updated.
+  if (nullptr != _value_callback) {
+    _value_callback((uint8_t) chan, valueAsVoltage(chan));
+  }
+  else {
+    _channel_set_new_flag(chan);
   }
   return 0;
 }

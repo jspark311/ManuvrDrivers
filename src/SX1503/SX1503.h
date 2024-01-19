@@ -83,7 +83,7 @@ enum class SX1503RegId : uint8_t {
 /*
 * Driver class.
 */
-class SX1503 : public I2CDevice {
+class SX1503 : public I2CDevice, public GPIOWrapper {
   public:
     SX1503(const uint8_t irq_pin, const uint8_t reset_pin);
     SX1503(const uint8_t* buf, const unsigned int len);  // Takes serialized state as args.
@@ -103,7 +103,7 @@ class SX1503 : public I2CDevice {
     int8_t   gpioMode(uint8_t pin, GPIOMode mode);
     GPIOMode gpioMode(uint8_t pin);
     int8_t   digitalWrite(uint8_t pin, bool value);
-    uint8_t  digitalRead(uint8_t pin);
+    int8_t   digitalRead(uint8_t pin);
     uint16_t getPinValues();
     int8_t   setPinValues(uint16_t);
 

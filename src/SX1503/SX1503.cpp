@@ -381,14 +381,10 @@ int8_t SX1503::digitalWrite(uint8_t pin, bool value) {
 *   0 or 1 to reflect the logic level
 *   0 if the pin is unsupported
 */
-uint8_t SX1503::digitalRead(uint8_t pin) {
-  uint8_t ret = 0;
-  if (pin < 8) {
-    ret = (_a_dat >> pin) & 0x01;
-  }
-  else if (pin < 16) {
-    ret = (_b_dat >> (pin & 0x07)) & 0x01;
-  }
+int8_t SX1503::digitalRead(uint8_t pin) {
+  int8_t ret = 0;
+  if (pin < 8) {        ret = (int8_t) ((_a_dat >> pin) & 0x01);           }
+  else if (pin < 16) {  ret = (int8_t) ((_b_dat >> (pin & 0x07)) & 0x01);  }
   return ret;
 }
 
@@ -909,7 +905,7 @@ void SX1503::printPins(StringBuilder* output) {
   if (initialized()) {
     StringBuilder::styleHeader1(output, "SX1503 Pins");
     for (uint8_t i = 0; i < 16; i++) {
-      output->concatf("\t%2d  %12s  %c\n", i, getPinModeStr(gpioMode(i)), digitalRead(i) ? '1' : '0');
+      output->concatf("\t%2d  %12s  %c\n", i, getPinModeStr(gpioMode(i)), this->digitalRead(i) ? '1' : '0');
     }
     output->concat("\n");
   }

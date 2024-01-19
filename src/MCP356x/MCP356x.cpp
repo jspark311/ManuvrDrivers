@@ -660,8 +660,8 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
     // Exit conditions: The IRQ pin indicates that the chip has completed its
     //   reset cycle (if we were given one). Otherwise, we blindly advance.
     case MCP356xState::RESETTING:
-      fsm_advance = ((255 == _IRQ_PIN) | (0 < _irqs_noted));
-      //fsm_advance = true;  // TODO: For some reason, we miss the IRQ...
+      // TODO: For some reason, we miss the IRQ...
+      fsm_advance = (!_fsm_is_waiting() | ((255 != _IRQ_PIN) & (0 < _irqs_noted)));
       break;
 
     // Exit conditions: A compatible device was found by register refresh.
@@ -799,9 +799,9 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
     case MCP356xState::RESETTING:
       state_entry_success = (0 == _reset_fxn());
       if (state_entry_success) {
-        if (255 == _IRQ_PIN) {     // If we were not given an IRQ pin,
-          _fsm_lockout(75);        //   observe an arbitrary delay value.
-        }
+        // Observe an arbitrary delay value. If we were given an IRQ pin, the
+        //   _fsm_poll() will not wait this long.
+        _fsm_lockout(75);
       }
       else {
         _set_fault("_reset_fxn() failed");

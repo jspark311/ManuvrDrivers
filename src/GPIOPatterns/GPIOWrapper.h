@@ -13,9 +13,9 @@
 */
 class PlatformGPIOShim : public GPIOWrapper {
 public:
-  inline int8_t pinMode(uint8_t pin, GPIOMode m) {  return ::pinMode(pin, m);   };
-  inline int8_t setPin(uint8_t pin, bool val) {     return ::setPin(pin, val);  };
-  inline int8_t readPin(uint8_t pin) {              return ::readPin(pin);      };
+  inline int8_t gpioMode(uint8_t pin, GPIOMode m) {    return pinMode(pin, m);   };
+  inline int8_t digitalWrite(uint8_t pin, bool val) {  return setPin(pin, val);  };
+  inline int8_t digitalRead(uint8_t pin) {             return readPin(pin);      };
 };
 
 

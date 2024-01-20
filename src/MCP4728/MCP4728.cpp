@@ -71,7 +71,7 @@ int8_t MCP4728::init(I2CAdapter* b) {
   _flags &= MCP4728_FLAG_RESET_MASK;
   int8_t ret = _ll_pin_init();
   if (nullptr != b) {
-    assignBusInstance(b);
+    setAdapter(b);
   }
   for (uint8_t i = 0; i < 4; i++) {    _DAC_VOLTS[i]  = 0;   }
   for (uint8_t i = 0; i < 24; i++) {   _DAC_VALUES[i] = 0;   }

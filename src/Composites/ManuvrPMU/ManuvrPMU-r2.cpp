@@ -151,8 +151,8 @@ int8_t ManuvrPMU::init(I2CAdapter* b) {
     ret--;
     if (nullptr != b) {
       ret--;
-      ltc294x.assignBusInstance(b);
-      bq24155.assignBusInstance(b);
+      ltc294x.setAdapter(b);
+      bq24155.setAdapter(b);
       int8_t ret0 = ltc294x.init();
       int8_t ret1 = bq24155.init();
       if (0 == ret0) {

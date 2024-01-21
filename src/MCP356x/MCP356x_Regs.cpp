@@ -6,7 +6,6 @@ This source file is meant to contain the low-level I/O and register access.
 */
 
 #include "MCP356x.h"
-const char* const LOCAL_LOG_TAG = "MCP356x-Regs";
 
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
@@ -34,6 +33,22 @@ const uint16_t MCP356x::OSR3_VALUES[16] = {
 static const float ADC_GAIN_VALUES[8] = {
   0.33, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0
 };
+
+const EnumDef<MCP356xState> _STATE_LIST[] = {
+  { MCP356xState::UNINIT,      "UNINIT"},      // init() has never been called.
+  { MCP356xState::PRE_INIT,    "PRE_INIT"},    // Pin control is being established.
+  { MCP356xState::RESETTING,   "RESETTING"},   // Driver is resetting the ADC.
+  { MCP356xState::DISCOVERY,   "DISCOVERY"},   // Driver is probing for the ADC.
+  { MCP356xState::POST_INIT,   "POST_INIT"},   // The initial ADC configuration is being written.
+  { MCP356xState::CLK_MEASURE, "CLK_MEASURE"}, // Driver is measuring the clock.
+  { MCP356xState::CALIBRATION, "CALIBRATION"}, // The ADC is self-calibrating.
+  { MCP356xState::USR_CONF,    "USR_CONF"},    // User config is being written.
+  { MCP356xState::IDLE,        "IDLE"},        // Powered up and calibrated, but not reading.
+  { MCP356xState::READING,     "READING"},     // Everything running, data collection proceeding.
+  { MCP356xState::FAULT,       "FAULT"},       // State machine encountered something it couldn't cope with.
+  { MCP356xState::INVALID,     "INVALID", (ENUM_WRAPPER_FLAG_CATCHALL)}  // FSM hygiene.
+};
+const EnumDefList<MCP356xState> MCP356x::_FSM_STATES(&_STATE_LIST[0], (sizeof(_STATE_LIST) / sizeof(_STATE_LIST[0])), "MCP356xState");
 
 
 /*******************************************************************************
@@ -229,7 +244,7 @@ int8_t MCP356x::_set_read_mode(MCP356xMode e) {
   uint32_t c0_val = _get_shadow_value(MCP356xRegister::CONFIG0);
   const uint8_t DESIRED_MODE = ((uint8_t) e) & 0x03;
   //if (DESIRED_MODE != (c0_val & 0x03)) {
-    const uint8_t NEW_C0 = (DESIRED_MODE | ~(0xFC & c0_val));
+    const uint8_t NEW_C0 = (DESIRED_MODE | (0xFC & c0_val));
     ret--;
     if (0 == _write_register(MCP356xRegister::CONFIG0, NEW_C0)) {
       ret = 0;
@@ -399,7 +414,7 @@ int8_t MCP356x::_normalize_data_register() {
 
   // With a callback, we deliver the value directly.
   // Without anyone specific to notify, mark the channel as updated.
-  if (nullptr != _value_callback) {
+  if ((nullptr != _value_callback) & (MCP356xState::READING == currentState())) {
     _value_callback((uint8_t) chan, valueAsVoltage(chan));
   }
   else {
@@ -675,7 +690,7 @@ int8_t MCP356x::_write_register(MCP356xRegister r, uint32_t val) {
     ret++;
     if (nullptr != op) {
       _set_shadow_value(r, safe_val);
-      c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_write_register(%u) --> 0x%08x", (uint8_t) r, safe_val);
+      if (_log_verbosity >= LOG_LEV_DEBUG) c3p_log(LOG_LEV_DEBUG, MCP356X_LOG_TAG, "_write_register(%u) --> 0x%08x", (uint8_t) r, safe_val);
       op->setParams((uint8_t) _get_reg_addr(r));
       op->setBuffer((uint8_t*) &_reg_shadows[(uint8_t) r], MCP356x_reg_width[(uint8_t) r]);
       if (0 == queue_io_job(op)) {
@@ -729,7 +744,7 @@ int8_t MCP356x::_proc_irq_register() {
   uint8_t irq_reg_data = (uint8_t) _get_shadow_value(MCP356xRegister::IRQ);
   _flags.set(MCP356X_FLAG_CRC_ERROR, (0 == (0x20 & irq_reg_data)));
   if (0 == (0x40 & irq_reg_data)) {   // Conversion is finished.
-    //c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_proc_irq_register() conversion finsihed");
+    //c3p_log(LOG_LEV_DEBUG, MCP356X_LOG_TAG, "_proc_irq_register() conversion finsihed");
     if (_busop_dat_read.hasFault()) {
       // If there was a bus fault, the BusOp might be left in an unqueuable state.
       // Try to reset the BusOp to satisfy the caller.
@@ -752,7 +767,7 @@ int8_t MCP356x::_proc_irq_register() {
     setPin(_CS_PIN, 1);
     setPin(_CS_PIN, 0);
     setPin(_CS_PIN, 1);
-    c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_proc_irq_register() found a PoR event");
+    if (_log_verbosity >= LOG_LEV_NOTICE) c3p_log(LOG_LEV_NOTICE, MCP356X_LOG_TAG, "_proc_irq_register() found a PoR event");
   }
   if (0 == (0x20 & irq_reg_data)) { // CRC config error.
     // Something is sideways in the configuration.
@@ -765,7 +780,7 @@ int8_t MCP356x::_proc_irq_register() {
   //}
   // Check the state of the IRQ pin, JiC we took too long.
   _isr_fired = !readPin(_IRQ_PIN);
-  //c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_proc_irq_register(%u) returns %d", irq_reg_data, ret);
+  //c3p_log(LOG_LEV_DEBUG, MCP356X_LOG_TAG, "_proc_irq_register(%u) returns %d", irq_reg_data, ret);
   _irqs_serviced++;
   return ret;
 }
@@ -780,7 +795,7 @@ int8_t MCP356x::_proc_irq_register() {
 int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
   uint32_t reg_val = _get_shadow_value(r);
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "_proc_reg_write(%s)  %u --> 0x%06x", stateStr(currentState()), (uint8_t) r, reg_val);
+  if (_log_verbosity >= LOG_LEV_DEBUG) c3p_log(LOG_LEV_DEBUG, MCP356X_LOG_TAG, "_proc_reg_write(%s)  %u --> 0x%06x", stateStr(currentState()), (uint8_t) r, reg_val);
 
   switch (r) {
     case MCP356xRegister::CONFIG0:
@@ -847,7 +862,11 @@ int8_t MCP356x::_proc_reg_write(MCP356xRegister r) {
 */
 int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
   int8_t ret = BUSOP_CALLBACK_NOMINAL;
-  //c3p_log(LOG_LEV_DEBUG, LOCAL_LOG_TAG, "MCP356x::_proc_reg_read(%s)  %u --> 0x%02x", stateStr(_current_state), (uint8_t) r, reg_val);
+  if ((MCP356xRegister::ADCDATA != r) && (_log_verbosity >= LOG_LEV_DEBUG)) {
+    // Don't even try to log the data register reads. They will flood the log
+    //   under most circumstances.
+    c3p_log(LOG_LEV_DEBUG, MCP356X_LOG_TAG, "MCP356x::_proc_reg_read(%s)  %u --> 0x%02x", stateStr(currentState()), (uint8_t) r, _get_shadow_value(r));
+  }
 
   switch (r) {
     case MCP356xRegister::CONFIG0:
@@ -878,16 +897,16 @@ int8_t MCP356x::_proc_reg_read(MCP356xRegister r) {
                 ret = 0;
                 break;
               default:
-                c3p_log(LOG_LEV_ERROR, LOCAL_LOG_TAG, "bad RESERVED2 value");
+                if (_log_verbosity >= LOG_LEV_ERROR) c3p_log(LOG_LEV_ERROR, MCP356X_LOG_TAG, "bad RESERVED2 value");
                 break;
             }
             break;
           default:
-            c3p_log(LOG_LEV_ERROR, LOCAL_LOG_TAG, "bad RESERVED1 value");
+            if (_log_verbosity >= LOG_LEV_ERROR) c3p_log(LOG_LEV_ERROR, MCP356X_LOG_TAG, "bad RESERVED1 value");
             break;
         }
       }
-      else c3p_log(LOG_LEV_ERROR, LOCAL_LOG_TAG, "bad RESERVED0 value");
+      else if (_log_verbosity >= LOG_LEV_ERROR) c3p_log(LOG_LEV_ERROR, MCP356X_LOG_TAG, "bad RESERVED0 value");
       break;
     case MCP356xRegister::CRCCFG:
       break;

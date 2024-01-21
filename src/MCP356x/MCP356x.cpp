@@ -7,36 +7,9 @@ Author: J. Ian Lindsay
 
 #define MCP356X_FSM_WAYPOINT_DEPTH  12
 
-const char* const LOCAL_LOG_TAG = "MCP356x";
-
 /*******************************************************************************
-*      _______.___________.    ___   .___________. __    ______     _______.
-*     /       |           |   /   \  |           ||  |  /      |   /       |
-*    |   (----`---|  |----`  /  ^  \ `---|  |----`|  | |  ,----'  |   (----`
-*     \   \       |  |      /  /_\  \    |  |     |  | |  |        \   \
-* .----)   |      |  |     /  _____  \   |  |     |  | |  `----.----)   |
-* |_______/       |__|    /__/     \__\  |__|     |__|  \______|_______/
-*
-* Static members and initializers should be located here.
+* Interrupt service routines, and multiple dev support.
 *******************************************************************************/
-
-const EnumDef<MCP356xState> _STATE_LIST[] = {
-  { MCP356xState::UNINIT,      "UNINIT"},      // init() has never been called.
-  { MCP356xState::PRE_INIT,    "PRE_INIT"},    // Pin control is being established.
-  { MCP356xState::RESETTING,   "RESETTING"},   // Driver is resetting the ADC.
-  { MCP356xState::DISCOVERY,   "DISCOVERY"},   // Driver is probing for the ADC.
-  { MCP356xState::POST_INIT,   "POST_INIT"},   // The initial ADC configuration is being written.
-  { MCP356xState::CLK_MEASURE, "CLK_MEASURE"}, // Driver is measuring the clock.
-  { MCP356xState::CALIBRATION, "CALIBRATION"}, // The ADC is self-calibrating.
-  { MCP356xState::USR_CONF,    "USR_CONF"},    // User config is being written.
-  { MCP356xState::IDLE,        "IDLE"},        // Powered up and calibrated, but not reading.
-  { MCP356xState::READING,     "READING"},     // Everything running, data collection proceeding.
-  { MCP356xState::FAULT,       "FAULT"},       // State machine encountered something it couldn't cope with.
-  { MCP356xState::INVALID,     "INVALID", (ENUM_WRAPPER_FLAG_CATCHALL)}  // FSM hygiene.
-};
-const EnumDefList<MCP356xState> MCP356x::_FSM_STATES(&_STATE_LIST[0], (sizeof(_STATE_LIST) / sizeof(_STATE_LIST[0])), "MCP356xState");
-
-
 // We can have up to two of these in a given system.
 // TODO: AbstractPlatform needs a way to call specific objects from setPinFxn()
 //   to avoid these sorts of pseudo-singleton patterns. ISR function scope.
@@ -570,10 +543,12 @@ bool MCP356x::_config_is_written() {
 bool MCP356x::_config_is_desired() {
   bool ret = true;
   ret &= (_desired_conf->gain == _current_conf.gain);
+  //if (!ret) { c3p_log(LOG_LEV_ERROR, "config_is_desired", "gain");  return ret;  }
   ret &= (_desired_conf->bias == _current_conf.bias);
+  //if (!ret) { c3p_log(LOG_LEV_ERROR, "config_is_desired", "bias");  return ret;  }
   ret &= (_desired_conf->prescaler == _current_conf.prescaler);
   ret &= (_desired_conf->over == _current_conf.over);
-  ret &= (_get_shadow_value(MCP356xRegister::SCAN) == _desired_conf->scan);
+  ret &= (_desired_conf->scan == _current_conf.scan);
   return ret;
 }
 
@@ -661,7 +636,7 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
     //   reset cycle (if we were given one). Otherwise, we blindly advance.
     case MCP356xState::RESETTING:
       // TODO: For some reason, we miss the IRQ...
-      fsm_advance = (!_fsm_is_waiting() | ((255 != _IRQ_PIN) & (0 < _irqs_noted)));
+      fsm_advance = ((!_fsm_is_waiting()) | ((255 != _IRQ_PIN) & (0 < _irqs_noted)));
       break;
 
     // Exit conditions: A compatible device was found by register refresh.
@@ -703,7 +678,7 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
           MCP356xState next_state = (MCP356xMode::STANDBY == _desired_conf->mode) ? MCP356xState::IDLE : MCP356xState::READING;
           fsm_advance = (0 == _fsm_append_state(next_state));
           if (!fsm_advance) {
-            c3p_log(LOG_LEV_WARN, LOCAL_LOG_TAG, "FAILED TO do");
+            if (_log_verbosity >= LOG_LEV_WARN) c3p_log(LOG_LEV_WARN, MCP356X_LOG_TAG, "FAILED TO do");
           }
         }
       }
@@ -725,7 +700,7 @@ FAST_FUNC int8_t MCP356x::_fsm_poll() {
       if (!fsm_advance) {
         // Still no change.
         // Check to see if the user changed the desired configuration.
-        if (!_config_is_written()) {
+        if ((!_config_is_desired()) && _config_is_written()) {
           fsm_advance = (0 == _fsm_prepend_state(MCP356xState::USR_CONF));
         }
       }
@@ -894,13 +869,13 @@ FAST_FUNC int8_t MCP356x::_fsm_set_position(MCP356xState new_state) {
       break;
 
     default:
-      c3p_log(LOG_LEV_ALERT, LOCAL_LOG_TAG, "_fsm_set_position(%s) is unhandled.", _FSM_STATES.enumStr(new_state));
+      if (_log_verbosity >= LOG_LEV_ALERT) c3p_log(LOG_LEV_ALERT, MCP356X_LOG_TAG, "_fsm_set_position(%s) is unhandled.", _FSM_STATES.enumStr(new_state));
       _set_fault("Unhandled MCP356xState");
       break;
   }
 
   if (state_entry_success) {
-    c3p_log(LOG_LEV_NOTICE, LOCAL_LOG_TAG, "MCP356x State %s ---> %s", _FSM_STATES.enumStr(currentState()), _FSM_STATES.enumStr(new_state));
+    if (_log_verbosity >= LOG_LEV_NOTICE) c3p_log(LOG_LEV_NOTICE, MCP356X_LOG_TAG, "MCP356x State %s ---> %s", _FSM_STATES.enumStr(currentState()), _FSM_STATES.enumStr(new_state));
     ret = 0;
   }
   return ret;
@@ -1056,6 +1031,6 @@ int8_t MCP356x::_calibrate() {
 * @param msg is a debug string to be added to the log.
 */
 void MCP356x::_set_fault(const char* msg) {
-  c3p_log(LOG_LEV_WARN, LOCAL_LOG_TAG, "MCP356x fault: %s", msg);
+  if (_log_verbosity >= LOG_LEV_WARN) c3p_log(LOG_LEV_WARN, MCP356X_LOG_TAG, "MCP356x fault: %s", msg);
   _fsm_mark_current_state(MCP356xState::FAULT);
 }

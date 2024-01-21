@@ -173,6 +173,12 @@ int8_t MCP356x::console_handler(StringBuilder* text_return, StringBuilder* args)
     else if (0 == StringBuilder::strcasecmp(cmd, "regs")) {
       printRegs(text_return);
     }
+    else if (0 == StringBuilder::strcasecmp(cmd, "verbosity")) {
+      if (1 < args->count()) {
+        verbosity(args->position_as_int(1));
+      }
+      text_return->concatf("MCP356x logging verbosity is %u.\n", (uint8_t) verbosity());
+    }
     else if (0 == StringBuilder::strcasecmp(cmd, "busops")) {
       _busop_irq_read.printDebug(text_return);
       _busop_dat_read.printDebug(text_return);

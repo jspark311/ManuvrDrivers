@@ -256,8 +256,10 @@ class MCP356x : public StateMachine<MCP356xState>, public C3PPollable, public Bu
     int32_t value(MCP356xChannel);
 
     bool scanComplete();
-    inline void      scansRequested(int32_t x) {    _scans_req = x;     };
-    inline int32_t   scansRequested() {             return _scans_req;  };
+    inline void      verbosity(uint8_t v) {       _log_verbosity = v;      };
+    inline uint8_t   verbosity() {                return _log_verbosity;   };
+    inline void      scansRequested(int32_t x) {  _scans_req = x;          };
+    inline int32_t   scansRequested() {           return _scans_req;       };
     inline uint32_t  lastRead() {        return micros_last_read;  };
     inline uint32_t  readCount() {       return _profiler_result_read.executions();  };
     inline void      resetReadCount() {  _profiler_result_read.reset();              };
@@ -266,7 +268,6 @@ class MCP356x : public StateMachine<MCP356xState>, public C3PPollable, public Bu
 
     int8_t  setOffsetCalibration(int32_t);
     int8_t  setGainCalibration(int32_t);
-
 
     int8_t  calibrate();
     int8_t  readSamples(int32_t scan_count);
@@ -370,6 +371,7 @@ class MCP356x : public StateMachine<MCP356xState>, public C3PPollable, public Bu
     uint32_t _settling_ms          = 0;  // Settling time of the ADC alone.
     uint32_t read_accumulator      = 0;
     int8_t   _bus_priority         = 0;  // Defaults to neutral.
+    int8_t   _log_verbosity        = LOG_LEV_ERROR;
     uint8_t  _slot_number          = 0;
     bool     _isr_fired            = false;
 
@@ -438,6 +440,7 @@ class MCP356x : public StateMachine<MCP356xState>, public C3PPollable, public Bu
     static const uint16_t OSR1_VALUES[16];
     static const uint16_t OSR3_VALUES[16];
     static const EnumDefList<MCP356xState> _FSM_STATES;
+    static constexpr const char* const MCP356X_LOG_TAG = "MCP356x";
 };
 
 #endif  // __MCP356x_H__

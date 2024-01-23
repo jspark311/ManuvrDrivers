@@ -123,12 +123,14 @@ int8_t MCP356x::init(SPIAdapter* b) {
   _clear_registers();
   setOption(MCP356X_FLAG_DRIVER_OPTS_MASK & _desired_conf->flags);
 
-  if (0 == _fsm_set_route(7, MCP356xState::PRE_INIT, MCP356xState::RESETTING, MCP356xState::DISCOVERY,  MCP356xState::POST_INIT, MCP356xState::CLK_MEASURE, MCP356xState::CALIBRATION, MCP356xState::USR_CONF)) {
-    if (_flags.value(MCP356X_FLAG_GENERATE_MCLK)) {
-      // TODO: Isolate CLK measurement selection.
+  if (0 == _fsm_set_route(4, MCP356xState::PRE_INIT, MCP356xState::RESETTING, MCP356xState::DISCOVERY,  MCP356xState::POST_INIT)) {
+    if (!_mclk_in_bounds()) {
+      // If we already know what the MCLK rate is, we can derive parameters
+      //   without measuring.
+      _fsm_append_state(MCP356xState::CLK_MEASURE);
     }
     MCP356xState next_state = (MCP356xMode::STANDBY == _desired_conf->mode) ? MCP356xState::IDLE : MCP356xState::READING;
-    _fsm_append_state(next_state);
+    _fsm_append_route(3, MCP356xState::CALIBRATION, MCP356xState::USR_CONF, next_state);
     ret = 0;
   }
   return ret;
@@ -543,9 +545,7 @@ bool MCP356x::_config_is_written() {
 bool MCP356x::_config_is_desired() {
   bool ret = true;
   ret &= (_desired_conf->gain == _current_conf.gain);
-  //if (!ret) { c3p_log(LOG_LEV_ERROR, "config_is_desired", "gain");  return ret;  }
   ret &= (_desired_conf->bias == _current_conf.bias);
-  //if (!ret) { c3p_log(LOG_LEV_ERROR, "config_is_desired", "bias");  return ret;  }
   ret &= (_desired_conf->prescaler == _current_conf.prescaler);
   ret &= (_desired_conf->over == _current_conf.over);
   ret &= (_desired_conf->scan == _current_conf.scan);

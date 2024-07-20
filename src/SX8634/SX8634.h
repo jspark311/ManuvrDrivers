@@ -468,7 +468,7 @@ class SX8634 : public I2CDevice {
     int8_t  _class_state_from_spm();    // Init this class from SPM shadow.
 
     int8_t  _process_gpi_change(uint8_t new_val);
-    int8_t  _(uint32_t)(uint);    // Will block until reset disasserts or times out.
+    int8_t  _wait_for_reset(uint32_t); // Will block until reset disasserts or times out.
     int8_t  _reset_callback();        // Deals with the back-side of reset.
     int8_t  _clear_registers();       // Wipe our shadows.
     int8_t  _start_compensation();    // Tell the sensor to run a compensation cycle.

@@ -42,7 +42,7 @@ StorageErr I2CEEPROM::wipe(uint32_t offset, uint32_t range) {
   }
   if (0 == _busy_check()) {
     ret = StorageErr::HW_FAULT;
-    for (uint i = 0; i < DEV_BLOCK_SIZE; i++) {  *(_page_buffer + i) = 0xFF;  }
+    for (uint32_t i = 0; i < DEV_BLOCK_SIZE; i++) {  *(_page_buffer + i) = 0xFF;  }
     _op_len_rem = strict_min(range, (DEV_SIZE_BYTES - offset));  // Constrain.
     if (0 == _set_address_ptr(offset)) {
       _data_io_op.set_opcode(BusOpcode::TX);
@@ -64,9 +64,9 @@ StorageErr I2CEEPROM::wipe(uint32_t offset, uint32_t range) {
 int8_t I2CEEPROM::allocateBlocksForLength(uint32_t len, DataRecord* rec) {
   int8_t ret = -1;
   if (0 == _busy_check()) {
-    const uint BLOCKS_NEEDED = (len / PAYLOAD_SIZE_BYTES) + ((0 == (len % PAYLOAD_SIZE_BYTES)) ? 0:1);
+    const uint32_t BLOCKS_NEEDED = (len / PAYLOAD_SIZE_BYTES) + ((0 == (len % PAYLOAD_SIZE_BYTES)) ? 0:1);
     LinkedList<StorageBlock*>* blocks = rec->getBlockList();
-    uint blocks_found = blocks->size();
+    uint32_t blocks_found = blocks->size();
     ret--;
 
     if (BLOCKS_NEEDED > blocks_found) {    // Present allocation is too small.
@@ -74,7 +74,7 @@ int8_t I2CEEPROM::allocateBlocksForLength(uint32_t len, DataRecord* rec) {
       if (_free_space >= ((BLOCKS_NEEDED - blocks_found) * DEV_BLOCK_SIZE)) {
         // If we have enough free space to allocate the extra needed space, do so.
         ret--;
-        uint i = 1;
+        uint32_t i = 1;
         uint32_t blk_addr  = 0;
         bool loop_continue = true;
         while (loop_continue) {
@@ -126,7 +126,7 @@ StorageErr I2CEEPROM::persistentWrite(DataRecord* rec, StringBuilder* buf) {
   //   LinkedList<StorageBlock*>* full_blk_list = rec->getBlockList();
   //   int blk_count = full_blk_list->count();
   //   // TODO: blk_count ought to match chunks. Test for it.
-  //   for (uint i = 0; i < blk_count; i++) {   // Copy the block list.
+  //   for (uint32_t i = 0; i < blk_count; i++) {   // Copy the block list.
   //     op->_block_queue.insert(full_blk_list->get(i));
   //   }
   //
@@ -147,7 +147,7 @@ StorageErr I2CEEPROM::persistentWrite(DataRecord* rec, StringBuilder* buf) {
   //
   //       if (StorageErr::NONE == ret) {   // If we are still ok to proceed...
   //         const uint32_t BYTES_NEXT_LEN = strict_min((uint32_t) len, (uint32_t) DEV_BLOCK_SIZE);
-  //         for (uint i = 0; i < BYTES_NEXT_LEN; i++) {
+  //         for (uint32_t i = 0; i < BYTES_NEXT_LEN; i++) {
   //           *(_page_buffer + i) = *(buf + i);
   //         }
   //         _data_io_op.set_opcode(BusOpcode::TX);
@@ -188,7 +188,7 @@ StorageErr I2CEEPROM::persistentWrite(uint8_t* buf, unsigned int len, uint32_t a
       }
     }
     const uint32_t BYTES_NEXT_LEN = strict_min((uint32_t) len, (uint32_t) DEV_BLOCK_SIZE);
-    for (uint i = 0; i < BYTES_NEXT_LEN; i++) {
+    for (uint32_t i = 0; i < BYTES_NEXT_LEN; i++) {
       *(_page_buffer + i) = *(buf + i);
     }
     _data_io_op.set_opcode(BusOpcode::TX);
@@ -254,10 +254,10 @@ int8_t I2CEEPROM::init(I2CAdapter* b) {
     if (nullptr == _page_buffer) return ret;
   }
   if (nullptr == _alloc_table) {
-    const uint ALLOC_TABLE_SIZE = _allocation_table_size();
+    const uint32_t ALLOC_TABLE_SIZE = _allocation_table_size();
     _alloc_table = (uint8_t*) malloc(ALLOC_TABLE_SIZE);
     if (nullptr == _alloc_table) return ret;
-    for (uint i = 0; i < ALLOC_TABLE_SIZE; i++) {  *(_alloc_table + i) = 0;  }
+    for (uint32_t i = 0; i < ALLOC_TABLE_SIZE; i++) {  *(_alloc_table + i) = 0;  }
   }
   _free_space = 0;  // We reserve the first block.
 
@@ -383,15 +383,15 @@ int8_t I2CEEPROM::_set_fsm_position(I2CEEPROMFSM new_state) {
 * Allocation table functions
 *******************************************************************************/
 
-const uint I2CEEPROM::_allocation_table_size() {
+const uint32_t I2CEEPROM::_allocation_table_size() {
   return ((DEV_TOTAL_BLOCKS >> 3) + ((DEV_TOTAL_BLOCKS & 0x07) ? 1:0));
 }
 
 
 void I2CEEPROM::_mark_block_allocated(const uint32_t BLKIDX, const bool allocd) {
   if (nullptr != _alloc_table) {
-    const uint INDEX_COMPONENT = BLKIDX >> 3;
-    const uint SHIFT_COMPONENT = BLKIDX & 0x07;
+    const uint32_t INDEX_COMPONENT = BLKIDX >> 3;
+    const uint32_t SHIFT_COMPONENT = BLKIDX & 0x07;
     const uint8_t BIT_MASK    = 1 << SHIFT_COMPONENT;
     const uint8_t CURRENT_VAL = *(_alloc_table + INDEX_COMPONENT) & ~BIT_MASK;
     *(_alloc_table + INDEX_COMPONENT) = CURRENT_VAL | (allocd ? BIT_MASK:0);
@@ -411,18 +411,18 @@ void I2CEEPROM::_mark_block_allocated(const uint32_t BLKIDX, const bool allocd) 
 
 
 bool I2CEEPROM::_is_block_allocated(const uint32_t BLKIDX) {
-  const uint INDEX_COMPONENT = BLKIDX >> 3;
-  const uint SHIFT_COMPONENT = BLKIDX & 0x07;
+  const uint32_t INDEX_COMPONENT = BLKIDX >> 3;
+  const uint32_t SHIFT_COMPONENT = BLKIDX & 0x07;
   return ((*(_alloc_table + INDEX_COMPONENT) >> SHIFT_COMPONENT) & 0x01);
 }
 
 
 void I2CEEPROM::_recalculate_free_space() {
-  const uint ALLOC_TABLE_SIZE = _allocation_table_size();
+  const uint32_t ALLOC_TABLE_SIZE = _allocation_table_size();
   uint32_t acc_val = 0;
-  for (uint x = 0; x < ALLOC_TABLE_SIZE; x++) {
+  for (uint32_t x = 0; x < ALLOC_TABLE_SIZE; x++) {
     const uint8_t THIS_BYTE = *(_alloc_table+x);
-    for (uint y = 0; y < 8; y++) {
+    for (uint32_t y = 0; y < 8; y++) {
       if (0 == (THIS_BYTE >> y) & 0x01) {
         acc_val += DEV_BLOCK_SIZE;
       }
@@ -516,7 +516,7 @@ int8_t I2CEEPROM::io_op_callback(BusOp* _op) {
           //   of the page buffer.
           uint32_t empty_val = 0;
           uint32_t buf_addr  = 0;
-          for (uint i = 0; i < DEV_ADDR_SIZE_BYTES; i++) {
+          for (uint32_t i = 0; i < DEV_ADDR_SIZE_BYTES; i++) {
             // Copy out the block address.
             empty_val = (empty_val << 8) | 0xFF;
             buf_addr  = (buf_addr << 8)  | *(_page_buffer + i);

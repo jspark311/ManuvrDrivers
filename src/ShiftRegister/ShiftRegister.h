@@ -4,11 +4,11 @@
 * NOTE: This driver assumes usage on an SPI adapter.
 */
 
-#include "AbstractPlatform.h"
-#include "BusQueue/SPIAdapter.h"
-
 #ifndef __SHIFT_REG_DRIVER_H_
 #define __SHIFT_REG_DRIVER_H_
+
+#include "AbstractPlatform.h"
+#include "BusQueue/SPIAdapter.h"
 
 /*
 * Class flags.

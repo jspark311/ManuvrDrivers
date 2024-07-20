@@ -39,13 +39,14 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#include <AbstractPlatform.h>
-#include <FlagContainer.h>
-#include "BusQueue/I2CAdapter.h"
-#include "BusQueue/SPIAdapter.h"
 
 #ifndef _SPARKFUN_AS3935_H_
 #define _SPARKFUN_AS3935_H_
+
+#include "AbstractPlatform.h"
+#include "FlagContainer.h"
+#include "BusQueue/I2CAdapter.h"
+#include "BusQueue/SPIAdapter.h"
 
 /* Class flags */
 #define AS3935_FLAG_DEVICE_PRESENT   0x0001  // Part was found.

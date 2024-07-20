@@ -17,8 +17,8 @@
 #ifndef AS7265X_H
 #define AS7265X_H
 
-#include <AbstractPlatform.h>
-#include <FlagContainer.h>
+#include "AbstractPlatform.h"
+#include "FlagContainer.h"
 #include "BusQueue/I2CAdapter.h"
 
 #define AS72651_DEVICE_TYPE         0x00

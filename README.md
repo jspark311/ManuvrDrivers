@@ -5,9 +5,7 @@ A collection of non-blocking flexible hardware drivers written on top of [CppPot
 
 ## This repo's relationship to CppPotpourri
 
-[CppPotpourri](https://github.com/jspark311/CppPotpourri) was developed, in part, to allow asynchronous I/O and to ease the maintenance burden of drivers written to take advantage of it. CppPotpourri provides a platform agnostic collection of embedded-friendly libraries and abstract interfaces to hardware which covers nearly all of the basic stuff that a given driver will need (pin manipulation and interrupts, I2C/SPI/UART, RTCs, RNG, threading and delays). Thus, drivers that stay confined to the API provided by CppPotpourri will be hardware agnostic as well.
-
-One major benefit to this abstraction is that drivers written under one environment don't require porting for use under any other environment.
+[CppPotpourri](https://github.com/jspark311/CppPotpourri) was developed, in part, to allow asynchronous I/O and to ease the maintenance burden of drivers written to take advantage of it. CppPotpourri provides a platform agnostic collection of embedded-friendly libraries and abstract interfaces to hardware which covers nearly all of the basic stuff that a given driver will need (pin manipulation and interrupts, I2C/SPI/UART, RTCs, RNG, threading and delays). Thus, drivers that stay confined to the API provided by CppPotpourri will be hardware agnostic as well, and won't require porting for use under any other platform.
 
 ### Notes on platform support
 

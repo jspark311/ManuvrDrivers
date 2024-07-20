@@ -75,7 +75,7 @@ class I2CEEPROM : public Storage, public I2CDevice {
     I2CBusOp _addr_ptr_op;    // A commonly-used bus operation.
     I2CBusOp _data_io_op;     // A commonly-used bus operation.
 
-    inline const uint _allocation_table_size();
+    inline const uint32_t _allocation_table_size();
     void _mark_block_allocated(const uint32_t BLKADDR, const bool allocd);
     bool _is_block_allocated(const uint32_t BLKADDR);
 

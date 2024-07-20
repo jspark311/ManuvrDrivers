@@ -57,14 +57,13 @@ of www.endmemo.com, altitude equation courtesy of NOAA, and dew point equation
 courtesy of Brian McNoldy at http://andrew.rsmas.miami.edu.
 */
 
-#include <AbstractPlatform.h>
-#include <FlagContainer.h>
-#include "BusQueue/I2CAdapter.h"
-
 #ifndef TG_BME_280_H
 #define TG_BME_280_H
 
-#define PRESSURE_AT_SEALEVEL       101325.0
+#include "AbstractPlatform.h"
+#include "EnumeratedTypeCodes.h"
+#include "FlagContainer.h"
+#include "BusQueue/I2CAdapter.h"
 
 /* Class flags */
 #define BME280_FLAG_DEVICE_PRESENT   0x0001  // Part was found.

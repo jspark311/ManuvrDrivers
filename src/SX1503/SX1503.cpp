@@ -740,7 +740,7 @@ int8_t SX1503::io_op_callback(BusOp* _op) {
 
   if (!op->hasFault()) {
     uint8_t* buf = op->buffer();
-    uint     len = op->bufferLen();
+    uint32_t len = op->bufferLen();
     ret = BUSOP_CALLBACK_NOMINAL;
     if (!_sx_flag(SX1503_FLAG_DEVICE_PRESENT)) {
       // With no ID register to check, we construe no failure on bus operation
@@ -749,7 +749,7 @@ int8_t SX1503::io_op_callback(BusOp* _op) {
     }
     switch (op->get_opcode()) {
       case BusOpcode::TX:
-        for (uint i = 0; i < len; i++) {
+        for (uint32_t i = 0; i < len; i++) {
           SX1503RegId reg   = _reg_id_from_addr(i + op->sub_addr);
           uint8_t     value = *(buf + i);
           switch (reg) {
@@ -803,7 +803,7 @@ int8_t SX1503::io_op_callback(BusOp* _op) {
         break;
 
       case BusOpcode::RX:
-        for (uint i = 0; i < len; i++) {
+        for (uint32_t i = 0; i < len; i++) {
           SX1503RegId reg   = _reg_id_from_addr(i + op->sub_addr);
           uint8_t     value = *(buf + i);
           switch (reg) {

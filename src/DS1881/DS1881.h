@@ -21,7 +21,7 @@ limitations under the License.
 #ifndef __DS1881_DRIVER_H__
 #define __DS1881_DRIVER_H__
 
-#include <AbstractPlatform.h>
+#include "AbstractPlatform.h"
 #include "BusQueue/I2CAdapter.h"
 
 /* Hardware-defined registers */

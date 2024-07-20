@@ -36,12 +36,10 @@
 #ifndef _ADAFRUIT_ILI9341H_
 #define _ADAFRUIT_ILI9341H_
 
-#include "Adafruit_GFX.h"
-#include "Arduino.h"
-#include "Print.h"
-#include <Adafruit_SPITFT.h>
-#include <Adafruit_SPITFT_Macros.h>
-#include <SPI.h>
+#include "Image/Image.h"
+#include "BusQueue/SPIAdapter.h"
+#include "TimerTools/TimerTools.h"
+
 
 #define ILI9341_TFTWIDTH 240  ///< ILI9341 max TFT width
 #define ILI9341_TFTHEIGHT 320 ///< ILI9341 max TFT height

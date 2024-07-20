@@ -14,13 +14,13 @@
 *
 */
 
-#include <AbstractPlatform.h>
-#include <FlagContainer.h>
-#include "BusQueue/I2CAdapter.h"
-#include <Vector3.h>
-
 #ifndef ADAFRUIT_FT6206_LIBRARY
 #define ADAFRUIT_FT6206_LIBRARY
+
+#include "AbstractPlatform.h"
+#include "FlagContainer.h"
+#include "BusQueue/I2CAdapter.h"
+#include "Vector3.h"
 
 #define FT62XX_ADDR 0x38           //!< I2C address
 #define FT62XX_G_FT5201ID 0xA8     //!< FocalTech's panel ID

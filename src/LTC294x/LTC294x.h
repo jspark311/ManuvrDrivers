@@ -22,8 +22,8 @@ limitations under the License.
 #ifndef __LTC294X_DRIVER_H__
 #define __LTC294X_DRIVER_H__
 
-#include <AbstractPlatform.h>
-#include <FlagContainer.h>
+#include "AbstractPlatform.h"
+#include "FlagContainer.h"
 #include "BusQueue/I2CAdapter.h"
 
 #define LTC294X_I2CADDR        0x64

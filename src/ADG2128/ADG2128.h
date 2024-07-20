@@ -22,8 +22,8 @@ limitations under the License.
 #ifndef ADG2128_CROSSPOINT_H
 #define ADG2128_CROSSPOINT_H
 
-#include <AbstractPlatform.h>
-#include <StringBuilder.h>
+class StringBuilder;
+#include "AbstractPlatform.h"
 #include "BusQueue/I2CAdapter.h"
 
 

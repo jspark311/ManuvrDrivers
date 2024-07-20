@@ -15,11 +15,11 @@ local, and you've found our code helpful, please buy us a round!
 
 Distributed as-is; no warranty is given.
 ******************************************************************************/
-#include <AbstractPlatform.h>
-#include "BusQueue/I2CAdapter.h"
-
 #ifndef __TMP102_DRIVER_H_
 #define __TMP102_DRIVER_H_
+
+#include "AbstractPlatform.h"
+#include "BusQueue/I2CAdapter.h"
 
 /* Class flags */
 #define TMP102_FLAG_DEVICE_PRESENT     0x0001  // Part was found.

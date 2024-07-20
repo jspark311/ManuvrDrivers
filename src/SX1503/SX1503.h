@@ -22,8 +22,8 @@ limitations under the License.
 #ifndef __SX1503_DRIVER_H__
 #define __SX1503_DRIVER_H__
 
-#include <CppPotpourri.h>
-#include <AbstractPlatform.h>
+#include "CppPotpourri.h"
+#include "AbstractPlatform.h"
 #include "BusQueue/I2CAdapter.h"
 
 #define SX1503_I2C_ADDR           0x20  // Not configurable for SX1503.

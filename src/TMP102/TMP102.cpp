@@ -631,7 +631,7 @@ int8_t TMP102::io_op_callback(BusOp* _op) {
   int8_t    ret = BUSOP_CALLBACK_NOMINAL;
 
   if (!op->hasFault()) {
-    uint     len = op->bufferLen();
+    uint32_t len = op->bufferLen();
     switch (op->get_opcode()) {
       case BusOpcode::TX:
         // The part requires that the first byte of any write is the pointer.

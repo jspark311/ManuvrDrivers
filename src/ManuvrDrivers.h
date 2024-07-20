@@ -6,6 +6,10 @@ This header file is meant to work around Arduino's strange inclusion behavior.
 Other build systems may sensibly use this header to include the entire driver
   library that is verified working. But will probably get better build times
   by including only the drivers being used by the project.
+
+NOTE: This file does not have header-guards. Each driver is responsible for
+  implementing inclusion protections as it sees fit. No driver in this repo
+  should ever include this file.
 */
 
 /*** Commodity hardware *******************************************************/

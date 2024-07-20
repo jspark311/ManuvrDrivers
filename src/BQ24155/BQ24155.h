@@ -22,9 +22,9 @@ limitations under the License.
 #ifndef __BQ24155_DRIVER_H__
 #define __BQ24155_DRIVER_H__
 
-#include <AbstractPlatform.h>
-#include <FlagContainer.h>
-#include <Battery.h>
+#include "AbstractPlatform.h"
+#include "FlagContainer.h"
+#include "Battery.h"
 #include "BusQueue/I2CAdapter.h"
 
 /* Driver state flags. */

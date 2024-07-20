@@ -41,8 +41,8 @@ SOFTWARE.
 #ifndef LIB_ADAFRUIT_CCS811_H
 #define LIB_ADAFRUIT_CCS811_H
 
-#include <AbstractPlatform.h>
-#include <FlagContainer.h>
+#include "AbstractPlatform.h"
+#include "FlagContainer.h"
 #include "BusQueue/I2CAdapter.h"
 
 /* Class flags */

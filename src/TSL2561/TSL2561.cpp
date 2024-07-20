@@ -587,7 +587,7 @@ int8_t TSL2561::io_op_callback(BusOp* _op) {
   }
 
   uint8_t* buf     = op->buffer();
-  uint     len     = op->bufferLen();
+  uint32_t len     = op->bufferLen();
 
   switch (op->get_opcode()) {
     case BusOpcode::TX:

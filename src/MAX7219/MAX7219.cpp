@@ -268,7 +268,7 @@ void MAX7219::init() {
 * Renders a double to the display with number of decimal places determine by precision
 *   precision is a number from 0 to 6 indicating the desired decimial places
 */
-void MAX7219::showDouble(double x, uint precision) {
+void MAX7219::showDouble(double x, uint32_t precision) {
   unsigned long lodp = abs(int(x));
   double rodp = (x < 0) ? (lodp - x) : (x - lodp);
   //clearDisplay(0);
@@ -296,7 +296,7 @@ void MAX7219::showDouble(double x, uint precision) {
 * Renders a double to the display with number of decimal places determine by precision
 *   precision is a number from 0 to 6 indicating the desired decimial places
 */
-//void MAX7219::showDouble(double x, uint precision) {
+//void MAX7219::showDouble(double x, uint32_t precision) {
 //  uint8_t idx = 8;
 //  unsigned long lodp = abs(int(x));
 //  unsigned long rhm  = pow(10, (idx-(1 + (x < 0) ? 1 : 0)) - precision);

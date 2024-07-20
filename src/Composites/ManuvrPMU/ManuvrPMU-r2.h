@@ -22,20 +22,20 @@ Our goal is to encapsulate power-supply concerns to this class.
 LiPo is the assumed chemistry.
 */
 
+#ifndef __DIGITABULUM_PMU_DRIVER_H__
+#define __DIGITABULUM_PMU_DRIVER_H__
+
 #include <inttypes.h>
 #include <stdint.h>
-#include <StringBuilder.h>
-#include <Battery.h>
-#include <FlagContainer.h>
-#include <AbstractPlatform.h>
-#include <BusQueue/I2CAdapter.h>
+#include "StringBuilder.h"
+#include "Battery.h"
+#include "FlagContainer.h"
+#include "AbstractPlatform.h"
+#include "BusQueue/I2CAdapter.h"
 
 // Uses these two drivers from this same codebase
 #include "../../BQ24155/BQ24155.h"
 #include "../../LTC294x/LTC294x.h"
-
-#ifndef __DIGITABULUM_PMU_DRIVER_H__
-#define __DIGITABULUM_PMU_DRIVER_H__
 
 #define DIGITAB_PMU_FLAG_PINS_CONFIGURED   0x01  // Low-level pin setup is complete.
 #define DIGITAB_PMU_FLAG_V_25              0x02  // Aux regulator is set to 2.5v.

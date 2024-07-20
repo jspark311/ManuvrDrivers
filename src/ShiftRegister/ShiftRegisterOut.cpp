@@ -286,19 +286,19 @@ int8_t ShiftRegisterOut::io_op_callback(BusOp* _op) {
   }
   else {
     uint8_t* buf = op->buffer();
-    const uint BUF_LEN = op->bufferLen();
+    const uint32_t BUF_LEN = op->bufferLen();
     uint8_t diff_array[BUF_LEN] = {0, };
-    for (uint idx = 0; idx < BUF_LEN; idx++) {
+    for (uint32_t idx = 0; idx < BUF_LEN; idx++) {
       const uint8_t BYTE_IDX = idx + DEVS_IN_CHAIN;
       diff_array[idx] = *(buf + idx) ^ *(_shadows + BYTE_IDX);
       *(_shadows + BYTE_IDX) = *(buf + idx);
     }
     if (_callback) {
-      for (uint dev_idx = 0; dev_idx < DEVS_IN_CHAIN; dev_idx++) {
+      for (uint32_t dev_idx = 0; dev_idx < DEVS_IN_CHAIN; dev_idx++) {
         const uint8_t BYTE_IDX = ((DEVS_IN_CHAIN - 1) - dev_idx);
         if (0 != diff_array[BYTE_IDX]) {
           const uint8_t ORIGINAL = _shadows[BYTE_IDX + DEVS_IN_CHAIN];
-          for (uint bit_idx = 0; bit_idx < 8; bit_idx++) {
+          for (uint32_t bit_idx = 0; bit_idx < 8; bit_idx++) {
             const uint8_t BIT_MASK = 1 << bit_idx;
             if (diff_array[BYTE_IDX] & BIT_MASK) {
               const uint8_t PIN_NUMBER = (dev_idx << 3) + bit_idx;

@@ -2,13 +2,13 @@
 *
 *******************************************************************************/
 
-#include <AbstractPlatform.h>
-#include <EnumeratedTypeCodes.h>
-#include "BusQueue/SPIAdapter.h"
-#include <FlagContainer.h>
-
 #ifndef __SX127X_DRIVER_H
 #define __SX127X_DRIVER_H
+
+#include "AbstractPlatform.h"
+#include "EnumeratedTypeCodes.h"
+#include "BusQueue/SPIAdapter.h"
+#include "FlagContainer.h"
 
 #define SX127X_FSM_WAYPOINT_DEPTH  16
 

@@ -226,12 +226,12 @@ int8_t LTC294x::io_op_callback(BusOp* _op) {
 
   if (!op->hasFault()) {
     uint8_t* buf     = op->buffer();
-    uint     len     = op->bufferLen();
+    uint32_t len     = op->bufferLen();
     uint8_t  reg_idx = (uint8_t) _reg_id_from_addr(op->sub_addr);
     bool run_post_init_fxn = false;
     switch (op->get_opcode()) {
       case BusOpcode::TX:
-        for (uint i = 0; i < len; i++) {
+        for (uint32_t i = 0; i < len; i++) {
           switch ((LTC294xRegID) reg_idx) {
             case LTC294xRegID::CONTROL:
               _flags.set(LTC294X_FLAG_INIT_CTRL);
@@ -265,7 +265,7 @@ int8_t LTC294x::io_op_callback(BusOp* _op) {
         break;
 
       case BusOpcode::RX:
-        for (uint i = 0; i < len; i++) {
+        for (uint32_t i = 0; i < len; i++) {
           uint16_t val = _get_shadow_value((LTC294xRegID) reg_idx);
           switch ((LTC294xRegID) reg_idx) {
             case LTC294xRegID::STATUS:

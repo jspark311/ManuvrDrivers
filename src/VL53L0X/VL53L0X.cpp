@@ -901,7 +901,7 @@ int8_t VL53L0X::io_op_callback(BusOp* _op) {
 
   if (!op->hasFault()) {
     uint8_t* buf     = op->buffer();
-    uint     len     = op->bufferLen();
+    uint32_t len     = op->bufferLen();
     uint8_t  r       = op->sub_addr;
     switch (op->get_opcode()) {
       case BusOpcode::TX:
@@ -946,8 +946,8 @@ uint8_t* VL53L0X::_get_reg_ptr(VL53L0XRegID r) {
 /**
 *
 */
-uint VL53L0X::_get_shadow_value(VL53L0XRegID r) {
-  uint ret = 0;
+uint32_t VL53L0X::_get_shadow_value(VL53L0XRegID r) {
+  uint32_t ret = 0;
   switch (r) {
       break;
     default:

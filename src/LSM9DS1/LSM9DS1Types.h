@@ -1,11 +1,10 @@
 /*
 */
 
-#include <stdint.h>
-#include <AbstractPlatform.h>
-
 #ifndef __LSM9DS1_TYPES_H__
 #define __LSM9DS1_TYPES_H__
+
+#include <stdint.h>
 
 
 /* We use this struct to map between update rates and timestamp deltas. */

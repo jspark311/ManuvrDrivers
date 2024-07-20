@@ -39,11 +39,11 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <AbstractPlatform.h>
-#include "BusQueue/I2CAdapter.h"
-
 #ifndef __VEML6075_DRIVER_H_
 #define __VEML6075_DRIVER_H_
+
+#include "AbstractPlatform.h"
+#include "BusQueue/I2CAdapter.h"
 
 /* Class flags */
 #define VEML6075_FLAG_DEVICE_PRESENT   0x0001  // Part was found.

@@ -9,10 +9,11 @@
 * TODO: Wall-off the NVM storage functions by a compiler flag for the ENG/CAL builds.
 */
 
-#include "AbstractPlatform.h"
-#include "BusQueue/I2CAdapter.h"
 #ifndef __MCP4728_DRIVER_H__
 #define __MCP4728_DRIVER_H__
+
+#include "AbstractPlatform.h"
+#include "BusQueue/I2CAdapter.h"
 
 /*
 * Class flags.

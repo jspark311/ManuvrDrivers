@@ -23,6 +23,7 @@ This driver's relationship to the base I2CDevice class is that the switch
 */
 
 #include "ADG2128.h"
+#include "StringBuilder.h"
 
 static const uint8_t readback_addr[24] = {
   0x34, 0, 0x3c, 0, 0x74, 0, 0x7c, 0,

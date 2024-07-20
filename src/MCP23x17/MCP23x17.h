@@ -40,13 +40,13 @@ limitations under the License.
 
 */
 
-#include <CppPotpourri.h>
-#include <AbstractPlatform.h>
-#include "BusQueue/I2CAdapter.h"
-#include "BusQueue/SPIAdapter.h"
-
 #ifndef MCP23X17_DRIVER_H
 #define MCP23X17_DRIVER_H
+
+#include "CppPotpourri.h"
+#include "AbstractPlatform.h"
+#include "BusQueue/I2CAdapter.h"
+#include "BusQueue/SPIAdapter.h"
 
 
 /* These enum values indicate addresses. */

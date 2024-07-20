@@ -5,18 +5,34 @@ message(STATUS "==============================================")
 message(STATUS "ManuvrDrivers")
 message(STATUS "==============================================")
 
-# idf_component_set_property(ManuvrDrivers COMPONENT_NAME "ManuvrDrivers")
-# idf_component_set_property(ManuvrDrivers COMPONENT_TYPE LIBRARY)
+set(src_dirs)
+list(APPEND src_dirs "src/AMG88xx" )
+list(APPEND src_dirs "src/BME280" )
+list(APPEND src_dirs "src/VEML6075" )
+list(APPEND src_dirs "src/TSL2561")
+list(APPEND src_dirs "src/LTC294x" )
+list(APPEND src_dirs "src/BQ24155" )
+#list(APPEND src_dirs "src/LSM9DS1" )
+list(APPEND src_dirs "src/SX1503" )
+list(APPEND src_dirs "src/SX8634")
+list(APPEND src_dirs "src/SSD13xx" )
+#list(APPEND src_dirs "src/SX127x" )
+list(APPEND src_dirs "src/MCP4728" )
+list(APPEND src_dirs "src/ADG2128" )
+list(APPEND src_dirs "src/DS1881")
+list(APPEND src_dirs "src/PAC195x" )
+list(APPEND src_dirs "src/MCP23x17" )
+list(APPEND src_dirs "src/TMP102" )
+list(APPEND src_dirs "src/LSM6DSOX")
+#list(APPEND src_dirs "src/Composites/ManuvrPMU" )
+list(APPEND src_dirs "src/AudemeMOVI")
+list(APPEND src_dirs "src/GPIOPatterns/GPIButton")
 
 idf_component_register(
-  SRC_DIRS "src/AMG88xx" "src/BME280" "src/VEML6075" "src/TSL2561"
-    "src/LTC294x" "src/BQ24155" "src/LSM9DS1" "src/SX1503" "src/SX8634"
-    "src/SSD13xx" "src/SX127x" "src/MCP4728" "src/ADG2128" "src/DS1881"
-    "src/PAC195x" "src/MCP23x17" "src/TMP102" "src/LSM6DSOX"
-    "src/Composites/ManuvrPMU" "src/AudemeMOVI"
-    "src/GPIOPatterns/GPIButton"
+  SRC_DIRS "${src_dirs}"
   INCLUDE_DIRS "src"
+  PRIV_INCLUDE_DIRS "."
   REQUIRES CppPotpourri
 )
 
-target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-ignored-qualifiers -Wno-implicit-fallthrough)
+target_compile_options(${COMPONENT_LIB} PUBLIC -Wno-ignored-qualifiers -Wno-implicit-fallthrough)

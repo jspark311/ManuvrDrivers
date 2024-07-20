@@ -521,12 +521,12 @@ int8_t BQ24155::io_op_callback(BusOp* _op) {
 
   if (!op->hasFault()) {
     uint8_t* buf     = op->buffer();
-    uint     len     = op->bufferLen();
+    uint32_t len     = op->bufferLen();
     uint8_t  reg_idx = (uint8_t) _reg_id_from_addr(op->sub_addr);
     bool run_post_init_fxn = false;
     switch (op->get_opcode()) {
       case BusOpcode::TX:
-        for (uint i = 0; i < len; i++) {
+        for (uint32_t i = 0; i < len; i++) {
           uint8_t value = *buf++;
           switch ((BQ24155RegID) reg_idx) {
             case BQ24155RegID::STATUS:
@@ -550,7 +550,7 @@ int8_t BQ24155::io_op_callback(BusOp* _op) {
         break;
 
       case BusOpcode::RX:
-        for (uint i = 0; i < len; i++) {
+        for (uint32_t i = 0; i < len; i++) {
           uint8_t val = *buf++;
           switch ((BQ24155RegID) reg_idx) {
             case BQ24155RegID::STATUS:

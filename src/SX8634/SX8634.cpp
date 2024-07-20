@@ -630,7 +630,7 @@ void SX8634::_set_shadow_reg_val(uint8_t addr, uint8_t val) {
 void SX8634::_set_shadow_reg_val(uint8_t addr, uint8_t* buf, uint8_t len) {
   int idx = _get_shadow_reg_mem_addr(addr);
   if (0 <= idx) {
-    if (((uint) idx + len) <= sizeof(_registers)) {
+    if (((uint32_t) idx + len) <= sizeof(_registers)) {
       memcpy(&_registers[idx], buf, len);
     }
   }
@@ -1099,7 +1099,7 @@ int8_t SX8634::_class_state_from_spm() {
 * Low-level stuff
 *******************************************************************************/
 
-int8_t SX8634::_wait_for_reset(uint timeout_ms) {
+int8_t SX8634::_wait_for_reset(uint32_t timeout_ms) {
   int8_t ret = -1;
   if (_opts.haveIRQPin()) {
     uint8_t tries = 40;

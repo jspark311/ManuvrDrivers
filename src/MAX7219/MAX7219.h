@@ -47,7 +47,7 @@ class MAX7219 : public BusOpCallback {
     int8_t queue_io_job(BusOp*);
 
     void init();
-    void showDouble(double x, uint precision);
+    void showDouble(double x, uint32_t precision);
     void showDoubleRaw(double x);
 
 

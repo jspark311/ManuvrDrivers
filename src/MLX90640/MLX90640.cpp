@@ -891,11 +891,11 @@ int8_t GridEYE::io_op_callback(BusOp* _op) {
     }
 
     uint8_t* buf     = op->buffer();
-    uint     len     = op->bufferLen();
+    uint32_t len     = op->bufferLen();
     uint8_t  reg_idx = (uint8_t) _reg_id_from_addr(op->sub_addr);
     switch (op->get_opcode()) {
       case BusOpcode::TX:
-        for (uint i = 0; i < len; i++) {
+        for (uint32_t i = 0; i < len; i++) {
           uint8_t value = *buf++;
           switch ((AMG88XXRegID) reg_idx) {
             case AMG88XXRegID::POWER_CONTROL:
@@ -935,7 +935,7 @@ int8_t GridEYE::io_op_callback(BusOp* _op) {
         break;
 
       case BusOpcode::RX:
-        for (uint i = 0; i < len; i++) {
+        for (uint32_t i = 0; i < len; i++) {
           uint8_t value = *buf++;
           switch ((AMG88XXRegID) reg_idx) {
             case AMG88XXRegID::POWER_CONTROL:

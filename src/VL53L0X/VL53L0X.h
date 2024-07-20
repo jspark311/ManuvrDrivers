@@ -82,12 +82,11 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
 
-#include <AbstractPlatform.h>
-#include "BusQueue/I2CAdapter.h"
-
-
 #ifndef __VL53L0X_DRIVER_H_
 #define __VL53L0X_DRIVER_H_
+
+#include "AbstractPlatform.h"
+#include "BusQueue/I2CAdapter.h"
 
 #define ADDRESS_DEFAULT 0x29
 
@@ -256,7 +255,7 @@ class VL53L0X : public I2CDevice {
     };
 
     /* Shadow value manipulation functions. */
-    uint     _get_shadow_value(VL53L0XRegID);
+    uint32_t _get_shadow_value(VL53L0XRegID);
     uint8_t* _get_reg_ptr(VL53L0XRegID);
 
     /* Lowest-level register manipulation functions before I/O. */

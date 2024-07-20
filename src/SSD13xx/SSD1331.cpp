@@ -537,7 +537,7 @@ int8_t SSD1331::console_handler(StringBuilder* text_return, StringBuilder* args)
     print_timer = true;
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "fill")) {
-    uint color = (uint) args->position_as_int(1);
+    uint32_t color = (uint32_t) args->position_as_int(1);
     fill(color);
     text_return->concatf("display.fill(%u)\n", color);
     print_timer = true;

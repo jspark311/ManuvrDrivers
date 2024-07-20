@@ -70,11 +70,11 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <AbstractPlatform.h>
-#include "BusQueue/I2CAdapter.h"
-
 #ifndef __AMG88XX_DRIVER_H_
 #define __AMG88XX_DRIVER_H_
+
+#include "AbstractPlatform.h"
+#include "BusQueue/I2CAdapter.h"
 
 /* Class flags */
 #define GRIDEYE_FLAG_DEVICE_PRESENT   0x0001  // Part was found.

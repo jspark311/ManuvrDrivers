@@ -182,7 +182,7 @@ class BME280 {
 
     // Calculate the altitude based on the pressure with the
     // specified units.
-    float Altitude(float pressure, float seaLevelPressure = PRESSURE_AT_SEALEVEL); // Pressure given in Pa.
+    float Altitude(float pressure, float seaLevelPressure = PRESSURE_AT_SEA_LEVEL); // Pressure given in Pa.
 
     // Convert current pressure to sea-level pressure, returns
     // Altitude (in meters), temperature in Celsius

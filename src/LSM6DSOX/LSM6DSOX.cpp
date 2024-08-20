@@ -161,7 +161,7 @@ static bool _reg_range_writable(LSM6DSOXRegister r, uint8_t len) {
 * Constructor.
 */
 LSM6DSOX::LSM6DSOX(const uint8_t cs_pin, const uint8_t int1_pin, const uint8_t int2_pin)
-  : _CS_PIN(cs_pin), _INT1_PIN(int1_pin), _INT2_PIN(int2_pin),
+  : SPIIDevice(cs_pin), _INT1_PIN(int1_pin), _INT2_PIN(int2_pin),
     _imu_data_refresh(BusOpcode::RX, this, cs_pin, false),
     _fifo_lev_refresh(BusOpcode::RX, this, cs_pin, false) {}
 
@@ -237,12 +237,12 @@ int8_t LSM6DSOX::init(SPIAdapter* b) {
     reg_shadows[i] = 0;
   }
   if (nullptr != b) {
-    _BUS = b;
+    _bus = b;
   }
   int8_t pin_ret = _ll_pin_init();
-  if (nullptr != _BUS) {
+  if (nullptr != _bus) {
     ret--;
-    _imu_data_refresh.setAdapter(_BUS);
+    _imu_data_refresh.setAdapter(_bus);
     _imu_data_refresh.shouldReap(false);
     _imu_data_refresh.shouldFreeBuffer(false);
     _imu_data_refresh.setBuffer(&reg_shadows[_get_shadow_offset(LSM6DSOXRegister::FIFO_DATA_OUT_TAG)], 7);
@@ -253,7 +253,7 @@ int8_t LSM6DSOX::init(SPIAdapter* b) {
     _imu_data_refresh.cpha(true);
     _imu_data_refresh.setParams(_get_reg_addr(LSM6DSOXRegister::FIFO_DATA_OUT_TAG) | 0x80);
 
-    _fifo_lev_refresh.setAdapter(_BUS);
+    _fifo_lev_refresh.setAdapter(_bus);
     _fifo_lev_refresh.shouldReap(false);
     _fifo_lev_refresh.shouldFreeBuffer(false);
     _fifo_lev_refresh.setBuffer(&reg_shadows[_get_shadow_offset(LSM6DSOXRegister::FIFO_STATUS1)], 2);
@@ -469,7 +469,7 @@ int16_t LSM6DSOX::_gyro_get_sample_range() {
 int8_t LSM6DSOX::_read_axes() {
   int8_t ret = -3;
   if (_imu_data_refresh.isIdle()) {
-    ret = _BUS->queue_io_job(&_imu_data_refresh);
+    ret = _bus->queue_io_job(&_imu_data_refresh);
   }
   return ret;
 }
@@ -479,7 +479,7 @@ int8_t LSM6DSOX::_read_axes() {
 int8_t LSM6DSOX::_read_fifo_level() {
   int8_t ret = -3;
   if (_fifo_lev_refresh.isIdle()) {
-    ret = _BUS->queue_io_job(&_fifo_lev_refresh);
+    ret = _bus->queue_io_job(&_fifo_lev_refresh);
   }
   return ret;
 }
@@ -616,8 +616,8 @@ int8_t LSM6DSOX::_write_register(LSM6DSOXRegister r, uint8_t val) {
   int8_t ret = -2;
   if (_reg_range_writable(r, 1)) {
     ret++;
-    if (nullptr != _BUS) {
-      SPIBusOp* op = (SPIBusOp*) _BUS->new_op(BusOpcode::TX, (BusOpCallback*) this);
+    if (nullptr != _bus) {
+      SPIBusOp* op = (SPIBusOp*) _bus->new_op(BusOpcode::TX, (BusOpCallback*) this);
       reg_shadows[_get_shadow_offset(r)] = val;
       op->setParams(_get_reg_addr(r));   // Write without autoincrement.
       op->setBuffer(&reg_shadows[_get_shadow_offset(r)], 1);
@@ -634,8 +634,8 @@ int8_t LSM6DSOX::_write_registers(LSM6DSOXRegister r, uint8_t len) {
   int8_t ret = -2;
   if (_reg_range_writable(r, len)) {
     ret++;
-    if (nullptr != _BUS) {
-      SPIBusOp* op = (SPIBusOp*) _BUS->new_op(BusOpcode::TX, (BusOpCallback*) this);
+    if (nullptr != _bus) {
+      SPIBusOp* op = (SPIBusOp*) _bus->new_op(BusOpcode::TX, (BusOpCallback*) this);
       op->setParams(_get_reg_addr(r));
       op->setBuffer(&reg_shadows[_get_shadow_offset(r)], len);
       ret = queue_io_job(op);
@@ -649,8 +649,8 @@ int8_t LSM6DSOX::_write_registers(LSM6DSOXRegister r, uint8_t len) {
 */
 int8_t LSM6DSOX::_read_register(LSM6DSOXRegister r) {
   int8_t ret = -1;
-  if (nullptr != _BUS) {
-    SPIBusOp* op = (SPIBusOp*) _BUS->new_op(BusOpcode::RX, (BusOpCallback*) this);
+  if (nullptr != _bus) {
+    SPIBusOp* op = (SPIBusOp*) _bus->new_op(BusOpcode::RX, (BusOpCallback*) this);
     op->setParams(_get_reg_addr(r) | 0x80);   // Read without autoincrement.
     op->setBuffer(&reg_shadows[_get_shadow_offset(r)], 1);
     ret = queue_io_job(op);
@@ -665,8 +665,8 @@ int8_t LSM6DSOX::_read_registers(LSM6DSOXRegister r, uint8_t len) {
   int8_t ret = -2;
   if (_reg_range_continuous(r, len)) {
     ret++;
-    if (nullptr != _BUS) {
-      SPIBusOp* op = (SPIBusOp*) _BUS->new_op(BusOpcode::RX, (BusOpCallback*) this);
+    if (nullptr != _bus) {
+      SPIBusOp* op = (SPIBusOp*) _bus->new_op(BusOpcode::RX, (BusOpCallback*) this);
       op->setParams(_get_reg_addr(r) | 0x80);   // Read with autoincrement.
       op->setBuffer(&reg_shadows[_get_shadow_offset(r)], len);
       ret = queue_io_job(op);
@@ -1138,7 +1138,7 @@ int8_t LSM6DSOX::queue_io_job(BusOp* _op) {
   op->maxFreq(10000000);
   op->cpol(true);  // This part needs SPI mode-3.
   op->cpha(true);
-  return _BUS->queue_io_job(op);
+  return _bus->queue_io_job(op);
 }
 
 

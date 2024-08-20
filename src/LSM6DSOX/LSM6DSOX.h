@@ -149,7 +149,7 @@ enum class LSM6DSOX_ODR : uint8_t {
 
 
 
-class LSM6DSOX : public BusOpCallback {
+class LSM6DSOX : public SPIIDevice {
   public:
     LSM6DSOX(const uint8_t cs_pin, const uint8_t int1_pin, const uint8_t int2_pin);
     ~LSM6DSOX();
@@ -208,11 +208,9 @@ class LSM6DSOX : public BusOpCallback {
   private:
     const static LSM6DSOX_ODR DEFAULT_ODR  = LSM6DSOX_ODR::ODR_104;
     const static LSM6DSOX_ODR DEFAULT_TEMP = LSM6DSOX_ODR::ODR_12_5;
-    const uint8_t  _CS_PIN;
     const uint8_t  _INT1_PIN;
     const uint8_t  _INT2_PIN;
     uint32_t       _flags        = 0;
-    SPIAdapter*    _BUS          = nullptr;
     TripleAxisPipe* _pipeline    = nullptr; // We are a source for this pipeline.
     Vector3<float> _acc;          // Given in g's.
     Vector3<float> _gyro;         // Given in deg/sec.

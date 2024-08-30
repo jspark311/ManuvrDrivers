@@ -89,7 +89,7 @@ float MCP356x::getTemperature() {
     ret = k1 + k2 + k3 + k4;
   }
   else {
-    ret = 0.001581 * t_lsb - 324.27;
+    ret = (0.001581D * t_lsb) - 324.27D;
   }
   return ret;
 }
@@ -415,7 +415,7 @@ int8_t MCP356x::_normalize_data_register() {
   // With a callback, we deliver the value directly.
   // Without anyone specific to notify, mark the channel as updated.
   if ((nullptr != _value_callback) & (MCP356xState::READING == currentState())) {
-    _value_callback((uint8_t) chan, valueAsVoltage(chan));
+    _value_callback(chan, valueAsVoltage(chan));
   }
   else {
     _channel_set_new_flag(chan);

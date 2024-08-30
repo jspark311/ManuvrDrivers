@@ -11,9 +11,6 @@
 #include "StringBuilder.h"
 #include "FlagContainer.h"
 
-/* A callback to be notified of new values. */
-typedef void (*ADCValueCallback)(uint8_t chan, double voltage);
-
 
 /* In this case, these enum values translate directly to register addresses. */
 enum class MCP356xRegister : uint8_t {
@@ -148,6 +145,10 @@ enum class MCP356xState : uint8_t {
   FAULT,          // State machine encountered something it couldn't cope with.
   INVALID = 255   // FSM hygiene.
 };
+
+
+/* A callback to be notified of new values. */
+typedef void (*ADCValueCallback)(MCP356xChannel chan, double voltage);
 
 
 /*

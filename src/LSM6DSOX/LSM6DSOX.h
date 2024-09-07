@@ -170,8 +170,6 @@ class LSM6DSOX : public SPIIDevice {
     int8_t enableTemp(LSM6DSOX_ODR ODR_Temp = DEFAULT_TEMP);
 
     inline void attachPipe(TripleAxisPipe* tap) {   _pipeline = tap;   };
-    inline void efferentGnomon(GnomonType n) {      _NXT_FMT  = n;     };
-    inline GnomonType efferentGnomon() {            return _NXT_FMT;   };
 
     /* Accessors taken from flags. */
     inline bool devFound() {      return _class_flag(LSM6DSOX_FLAG_DEV_FOUND);     };
@@ -228,7 +226,6 @@ class LSM6DSOX : public SPIIDevice {
     uint16_t       _fifo_remaining = 0;    // How much data is left in the FIFO?
     uint8_t        reg_shadows[95] = {0, };
     uint8_t        _verbosity      = 7;    // How chatty is the class?
-    GnomonType      _NXT_FMT = GnomonType::LH_POS_Z; // Sensor default
 
     SPIBusOp       _imu_data_refresh;
     SPIBusOp       _fifo_lev_refresh;

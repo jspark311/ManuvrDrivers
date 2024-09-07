@@ -869,32 +869,7 @@ int8_t LSM6DSOX::_bus_read_callback(uint8_t reg_addr, uint8_t* buf, uint16_t len
                 float f_x = (-1 * new_x) * _data_scale_gyro;
                 float f_y = (-1 * new_y) * _data_scale_gyro;
                 float f_z = (-1 * new_z) * _data_scale_gyro;
-                switch (_NXT_FMT) {
-                  case GnomonType::RH_NEG_X:
-                  case GnomonType::LH_POS_X:
-                    f_z *= -1.0;
-                  case GnomonType::RH_POS_X:
-                  case GnomonType::LH_NEG_X:
-                    _gyro.set(f_z, f_y, f_x);
-                    break;
-
-                  case GnomonType::RH_NEG_Y:
-                  case GnomonType::LH_POS_Y:
-                    f_z *= -1.0;
-                  case GnomonType::RH_POS_Y:
-                  case GnomonType::LH_NEG_Y:
-                    _gyro.set(f_x, f_z, f_y);
-                    break;
-
-                  case GnomonType::RH_POS_Z:
-                  case GnomonType::LH_NEG_Z:
-                    f_z *= -1.0;
-                  case GnomonType::RH_NEG_Z:
-                  case GnomonType::LH_POS_Z:   // Sensor default.
-                  default:  // Undefinition results in no transform.
-                    _gyro.set(f_x, f_y, f_z);
-                    break;
-                }
+                _gyro.set(f_x, f_y, f_z);
                 _gyro -= _offset_gyro;
                 _last_read_gyro = millis();
                 if ((nullptr != _pipeline) && calibrated()) {
@@ -908,32 +883,7 @@ int8_t LSM6DSOX::_bus_read_callback(uint8_t reg_addr, uint8_t* buf, uint16_t len
                 float f_x = new_x * _data_scale_acc;
                 float f_y = new_y * _data_scale_acc;
                 float f_z = new_z * _data_scale_acc;
-                switch (_NXT_FMT) {
-                  case GnomonType::RH_NEG_X:
-                  case GnomonType::LH_POS_X:
-                    f_z *= -1.0;
-                  case GnomonType::RH_POS_X:
-                  case GnomonType::LH_NEG_X:
-                    _acc.set(f_z, f_y, f_x);
-                    break;
-
-                  case GnomonType::RH_NEG_Y:
-                  case GnomonType::LH_POS_Y:
-                    f_z *= -1.0;
-                  case GnomonType::RH_POS_Y:
-                  case GnomonType::LH_NEG_Y:
-                    _acc.set(f_x, f_z, f_y);
-                    break;
-
-                  case GnomonType::RH_POS_Z:
-                  case GnomonType::LH_NEG_Z:
-                    f_z *= -1.0;
-                  case GnomonType::RH_NEG_Z:
-                  case GnomonType::LH_POS_Z:   // Sensor default.
-                  default:  // Undefinition results in no transform.
-                    _acc.set(f_x, f_y, f_z);
-                    break;
-                }
+                _acc.set(f_x, f_y, f_z);
                 _acc -= _offset_acc;
                 _last_read_axes = millis();
                 if ((nullptr != _pipeline) && calibrated()) {
@@ -1185,12 +1135,6 @@ int LSM6DSOX::console_handler(StringBuilder* text_return, StringBuilder* args) {
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "reset")) {
     text_return->concatf("IMU.reset() returns %d.\n", reset());
-  }
-  else if (0 == StringBuilder::strcasecmp(cmd, "gnomon")) {
-    if (1 < args->count()) {
-      efferentGnomon((GnomonType) args->position_as_int(1));
-    }
-    text_return->concatf("IMU efferentGnomon(%u).\n", (uint8_t) efferentGnomon());
   }
   else if (0 == StringBuilder::strcasecmp(cmd, "enable")) {
     if (1 < args->count()) {

@@ -20,7 +20,7 @@ limitations under the License.
 */
 
 #include "SX1503.h"
-#include <StringBuilder.h>
+#include "StringBuilder.h"
 
 /*******************************************************************************
 *      _______.___________.    ___   .___________. __    ______     _______.
@@ -970,10 +970,6 @@ int8_t SX1503::console_handler(StringBuilder* text_return, StringBuilder* args) 
           case GPIOMode::INPUT_PULLUP:
           case GPIOMode::INPUT_PULLDOWN:
           case GPIOMode::OUTPUT_OD:
-          case GPIOMode::BIDIR_OD:
-          case GPIOMode::BIDIR_OD_PULLUP:
-          case GPIOMode::ANALOG_OUT:
-          case GPIOMode::ANALOG_IN:
             text_return->concatf("gpioMode(%u, %s) Returns %d.\n", arg0, getPinModeStr((GPIOMode) arg1), gpioMode(arg0, (GPIOMode)arg1));
             break;
           default:
@@ -987,10 +983,6 @@ int8_t SX1503::console_handler(StringBuilder* text_return, StringBuilder* args) 
         text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::INPUT_PULLUP,    getPinModeStr(GPIOMode::INPUT_PULLUP));
         text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::INPUT_PULLDOWN,  getPinModeStr(GPIOMode::INPUT_PULLDOWN));
         text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::OUTPUT_OD,       getPinModeStr(GPIOMode::OUTPUT_OD));
-        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::BIDIR_OD,        getPinModeStr(GPIOMode::BIDIR_OD));
-        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::BIDIR_OD_PULLUP, getPinModeStr(GPIOMode::BIDIR_OD_PULLUP));
-        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::ANALOG_OUT,      getPinModeStr(GPIOMode::ANALOG_OUT));
-        text_return->concatf("%u: %s\n", (uint8_t) GPIOMode::ANALOG_IN,       getPinModeStr(GPIOMode::ANALOG_IN));
         break;
     }
   }

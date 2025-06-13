@@ -34,6 +34,8 @@ NOTE: This file does not have header-guards. Each driver is responsible for
 /* Texas Instruments */
 #include "TMP102/TMP102.h"      // A low-power temperature sensor (I2C)
 #include "BQ24155/BQ24155.h"    // Lithium battery charge controller (I2C)
+#include "TCA9548/TCA9548.h"    // I2C compatible bux multiplexer (I2C)
+#include "OPT4060/OPT4060.h"    // High-resolution color sensor (I2C)
 
 /* Analog Devices */
 #include "ADG2128/ADG2128.h"    // 8x12 split-rail analog switch (I2C)
@@ -58,7 +60,11 @@ NOTE: This file does not have header-guards. Each driver is responsible for
 #include "MCP23x17/MCP23x17.h"  // 16-bit GPIO expanders (I2C and SPI)
 #include "PAC195x/PAC195x.h"    // A flexible multi-channel power monitor
 
+/* NXP */
+#include "PCAL9539/PCAL9539.h"  // 16-bit GPIO expander (I2C)
+
 /* ST Microelectronics */
+#include "LED1202/LED1202.h"    // 12-LED driver chip (I2C)
 #include "LSM6DSOX/LSM6DSOX.h"  // 6-DoF IMU (SPI)
 #include "VL53L0X/VL53L0X.h"    // ToF distance sensor with 2m range (I2C)
 

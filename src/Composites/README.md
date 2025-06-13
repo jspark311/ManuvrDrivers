@@ -11,3 +11,5 @@ These drivers will not be pulled into a project by inclusion of `ManuvrDrivers.h
 If needed, they should be included on a direct basis by the programs that want them.
 
 ### ManuvrPMU
+
+### ViamSonus

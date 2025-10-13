@@ -12,6 +12,9 @@ NOTE: This file does not have header-guards. Each driver is responsible for
   should ever include this file.
 */
 
+/*** Rationalizer header ******************************************************/
+#include "DriverRationalizer.h"    // Sanity-preservation hook.
+
 /*** Commodity hardware *******************************************************/
 #include "ShiftRegister/ShiftRegister.h"   // Drivers for SPI-connected shift-registers.
 #include "I2CEEPROM/I2CEEPROM.h"           // Common driver for many small I2C EEPROMS.

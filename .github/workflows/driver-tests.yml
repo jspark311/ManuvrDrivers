@@ -1,0 +1,32 @@
+name: DriverTests
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+
+    # This is only ever expected to run on one piece of hardware: The CI runner
+    #   in the author's home rack.
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: make
+      run: cd extras/unit_tests; make alltests
+    - name: run-tests
+      run: ./extras/unit_tests/build/AllTests > extras/unit_tests/build/test-output-`date +%Y-%m-%d-%H.%M.%S`.log
+    - name: package-results
+      run: cd cd extras/unit_tests/build; tar -cvf ../../../test-cov-doc.tar .
+    - uses: actions/upload-artifact@v4
+      with:
+        name: results
+        path:  test-cov-doc.tar
+        if-no-files-found: error
+        compression-level: 6
+        overwrite: false
+        include-hidden-files: false

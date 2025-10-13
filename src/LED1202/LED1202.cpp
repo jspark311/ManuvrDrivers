@@ -21,6 +21,10 @@ Date:   2025.04.28
 *
 * Static members and initializers should be located here.
 *******************************************************************************/
+static const float LED1202_MAX_CHAN_CURRENT[12] = {
+  0.0020f, 0.0020f, 0.0020f, 0.0020f, 0.0020f, 0.0020f,
+  0.0020f, 0.0020f, 0.0020f, 0.0020f, 0.0020f, 0.0020f
+};
 
 /*
 * These are the default register values for the part, with the exception of the
@@ -85,7 +89,6 @@ void LED1202::isr_fxn() {
 }
 
 
-
 /*******************************************************************************
 *   ___ _              ___      _ _              _      _
 *  / __| |__ _ ______ | _ ) ___(_) |___ _ _ _ __| |__ _| |_ ___
@@ -95,10 +98,27 @@ void LED1202::isr_fxn() {
 * Constructors/destructors, class initialization functions and so-forth...
 *******************************************************************************/
 /*
-* Constructor. Takes pin numbers as arguments.
+* Constructor. Takes pin numbers as arguments. Uses hardware's maximum channel
+*   current values as the safety ceiling.
 */
 LED1202::LED1202(const uint8_t I2C_ADDR, const uint8_t IRQ_PIN, I2CAdapter* bus) :
-  I2CDevice(I2C_ADDR, bus), _IRQ_PIN(IRQ_PIN), _flags(0)
+  LED1202(
+    I2C_ADDR, IRQ_PIN,
+    LED1202_MAX_CHAN_CURRENT,
+    bus
+  ) {}
+
+
+/*
+* Constructor. Takes pin numbers as arguments. Uses hardware's maximum channel
+*   current values as the safety ceiling.
+*/
+LED1202::LED1202(
+  const uint8_t I2C_ADDR,
+  const uint8_t IRQ_PIN,
+  const float MAX_CURRENT[12],
+  I2CAdapter* bus
+) : I2CDevice(I2C_ADDR, bus), _IRQ_PIN(IRQ_PIN), _flags(0)
 {
   _reset_register_values();
   for (unsigned int i = 0; i < LED1202_INTERRUPTER_COUNT; i++) {
@@ -107,6 +127,7 @@ LED1202::LED1202(const uint8_t I2C_ADDR, const uint8_t IRQ_PIN, I2CAdapter* bus)
       break;
     }
   }
+  for (unsigned int i = 0; i < 12; i++) {  _MAX_CHAN_MILLIAMPS[i] = MAX_CURRENT[i];  }
 }
 
 
@@ -161,6 +182,37 @@ bool LED1202::led_enabled(uint8_t chan) {
 }
 
 
+int8_t LED1202::led_enabled_mask(uint16_t mask, bool en) {
+  const uint16_t MASK_VAL = mask;
+  const uint16_t REG_VAL  = (_get_shadow_value16(LED1202Register::CHAN_ENABLE_L) & (~MASK_VAL));
+  const uint16_t NEW_VAL  = (en ? (MASK_VAL | REG_VAL) : REG_VAL);
+  _set_shadow_value16(LED1202Register::CHAN_ENABLE_L, NEW_VAL);
+  if (0 == _write_registers(LED1202Register::CHAN_ENABLE_L, 1)) {
+    return 0;
+  }
+  return -1;
+}
+
+
+int8_t LED1202::led_enabled(uint8_t chan, bool en) {
+  const uint16_t MASK_VAL = (1 << chan);
+  return led_enabled_mask(MASK_VAL, en);
+}
+
+
+int8_t LED1202::enabled(bool en) {
+  _set_shadow_value16(LED1202Register::DEV_ENABLE, (en ? 1 : 0));
+  if (0 == _write_registers(LED1202Register::DEV_ENABLE, 1)) {
+    return 0;
+  }
+  return -1;
+}
+
+bool LED1202::enabled() {
+  return (0 != _get_shadow_value16(LED1202Register::CHAN_ENABLE_L));
+}
+
+
 uint16_t* LED1202::led_pattern(uint8_t chan) {
   return nullptr;
 }
@@ -181,7 +233,7 @@ int8_t LED1202::led_max_current(uint8_t chan, float val) {
   int8_t ret = -1;
   if (chan < 12) {
     ret--;
-    if (val <= 0.02f) {
+    if (val <= _MAX_CHAN_MILLIAMPS[chan]) {
       ret--;
       const LED1202Register REG = (LED1202Register) ((uint8_t) LED1202Register::CS0_CURRENT + chan);
       uint8_t iled_val = (12750.0 * val);
@@ -198,6 +250,12 @@ int8_t LED1202::led_max_current(uint8_t chan, float val) {
         ret = 0;
       }
     }
+    else {
+      c3p_log(LOG_LEV_ERROR, "LED1202", "led_max_current(%u, %.4f) failed. 0.4f is the per-channel max.", chan, val, _MAX_CHAN_MILLIAMPS[chan]);
+    }
+  }
+  else {
+    c3p_log(LOG_LEV_ERROR, "LED1202", "led_max_current(%u, %.4f) failed. Channel must be in the range [0, 11].", chan, val);
   }
   return ret;
 }

@@ -914,8 +914,8 @@ int8_t MCP356x::_ll_pin_init() {
       else {
         if (_flags.value(MCP356X_FLAG_GENERATE_MCLK)) {
           // NOTE: Not all pin support this. Works for some pins on some MCUs.
-          //pinMode(_MCLK_PIN, GPIOMode::ANALOG_OUT);
-          //analogWriteFrequency(_MCLK_PIN, 4915200);
+          // pinMode(_MCLK_PIN, GPIOMode::ANALOG_OUT);
+          // analogWriteFrequency(_MCLK_PIN, _mclk_freq);
           //analogWrite(_MCLK_PIN, 128);
           //_mclk_freq = 4915200.0;
           _flags.set(MCP356X_FLAG_MCLK_RUNNING);

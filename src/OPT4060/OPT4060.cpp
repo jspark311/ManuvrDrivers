@@ -227,37 +227,6 @@ int8_t OPT4060::poll() {
         ret = 1;
       }
     }
-
-    if (255 != _opts.ALRT_PIN) {
-      // TODO: Read pin.
-    }
-    else {
-      // TODO: Read status register.
-    }
-  }
-  return ret;
-}
-
-
-float OPT4060::channelValue(OPT4060Channel chan) {
-  float ret = 0.0f;
-  switch (chan) {
-    case OPT4060Channel::RED:
-    case OPT4060Channel::GREEN:
-    case OPT4060Channel::BLUE:
-    case OPT4060Channel::WHITE:
-      {
-        uint16_t msw_val = _get_shadow_value((OPT4060Register) ((uint8_t) OPT4060Register::CHAN0_MSW + ((uint8_t) chan << 1)));
-        uint16_t lsw_val = _get_shadow_value((OPT4060Register) ((uint8_t) OPT4060Register::CHAN0_LSW + ((uint8_t) chan << 1)));
-        uint16_t exponent  = (msw_val >> 12);
-        uint32_t mantissa  = ((uint32_t) (msw_val & 0x0FFF) << 8) | (uint32_t)(lsw_val >> 8);
-        uint32_t adc_count = mantissa << exponent;
-        ret = adc_count * 0.00215f;
-      }
-      _opt4060_clear_flag(OPT4060_FLAG_FRESH_VALUE);
-      break;
-    default:
-      break;
   }
   return ret;
 }
@@ -352,6 +321,47 @@ OPT4060IntPin OPT4060::optPinMode() {
   }
   return ret;
 }
+
+
+
+/*******************************************************************************
+* Data access functions
+*******************************************************************************/
+
+/**
+* For the given channel, return the SI representation of the most-recent sample.
+* Clears the fresh data flag.
+*/
+uint32_t OPT4060::milliLux(OPT4060Channel chan) {
+  if (dataReady()) {
+    uint8_t chan_idx = 3;
+    switch (chan) {
+      case OPT4060Channel::RED:     chan_idx--;
+      case OPT4060Channel::GREEN:   chan_idx--;
+      case OPT4060Channel::BLUE:    chan_idx--;
+      case OPT4060Channel::WHITE:
+        _opt4060_clear_flag(OPT4060_FLAG_FRESH_VALUE);
+        return _millilux[chan_idx];
+      default:
+        break;
+    }
+  }
+  return 0;
+}
+
+/**
+* For all channels, return the SI representation of the most-recent sample set.
+* Clears the fresh data flag.
+*/
+int8_t OPT4060::milliLux(Vector3<uint32_t>* rgb_vect) {
+  if (dataReady()) {
+    rgb_vect->set(_millilux[0], _millilux[1], _millilux[2]);
+    _opt4060_clear_flag(OPT4060_FLAG_FRESH_VALUE);
+    return 0;
+  }
+  return -1;
+}
+
 
 
 uint32_t OPT4060::colorValue(const ImgBufferFormat FMT) {
@@ -572,7 +582,6 @@ int8_t OPT4060::_read_channels() {
   if (_busop_chan_refresh.isIdle()) {
     _last_read_us = micros();
     ret = _bus->queue_io_job(&_busop_chan_refresh);
-    _opt4060_clear_flag(OPT4060_FLAG_FRESH_VALUE);
   }
   return ret;
 }
@@ -601,9 +610,9 @@ bool OPT4060::_need_to_read() {
 
       case OPT4060Mode::CONTINUOUS:
         if (_opts.haveAlertPin()) {
-          // No action is required here. We just wait for the next polling cycle to
-          //   notice that the conversion (presumed running) is finished, and read
-          //   the registers in case it is.
+          const int8_t PIN_STATE = readPin(_opts.ALRT_PIN);
+          // TODO: Consider polarity register.
+          return (1 == PIN_STATE);
         }
         else {
           // Otherwise, we'll need to check how long its been since a read happened.
@@ -652,6 +661,8 @@ int8_t OPT4060::_trigger_conversion() {
 *   member for retreival.
 */
 int8_t OPT4060::_normalize_data() {
+  // These are values from the datasheet. They are used in this function to
+  //   determine significant figures and flatten apparent sensor response.
   static const float ADC_SCALARS[4] = {2.4f, 1.0f, 1.3f, 1.0f};
   static const float RES_TABLE[] = {
     2.15f,    4.30f,    8.6f,  17.2f,  34.4f,  68.8f,
@@ -684,10 +695,12 @@ int8_t OPT4060::_normalize_data() {
 }
 
 
-/*
+/**
 * Idempotently setup the low-level pin details. Because there is a
 *   bi-directional I/O pin involved, the device must be configured prior to
 *   calling this function if there is to be any chance of success.
+*
+* @return 0 on success.
 */
 int8_t OPT4060::_ll_pin_init() {
   int8_t ret = 0;
@@ -700,7 +713,10 @@ int8_t OPT4060::_ll_pin_init() {
             // TODO: SetFxn();
           case OPT4060IntPin::ALL_CONV:
           case OPT4060IntPin::CHAN_CONV:
-            pinMode(_opts.ALRT_PIN, GPIOMode::INPUT_PULLUP);  // TODO: Should be an option.
+            // TODO: PULLUP/DOWN Should be an option.
+            if (0 != pinMode(_opts.ALRT_PIN, GPIOMode::INPUT_PULLUP)) {
+              ret = -1;
+            }
             break;
 
           case OPT4060IntPin::TRIGGER:
@@ -801,9 +817,9 @@ int8_t OPT4060::io_op_callback(BusOp* _op) {
   if (!op->hasFault()) {
     if (&_busop_chan_refresh == op) {
       _chan_read_timer.reset();
-      _opt4060_set_flag(OPT4060_FLAG_FRESH_VALUE);
       if (initialized()) {
         _normalize_data();
+        _opt4060_set_flag(OPT4060_FLAG_FRESH_VALUE);
       }
       return ret;
     }

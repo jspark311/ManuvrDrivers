@@ -1,6 +1,10 @@
 /**
+*
+*
+*
+*
 * NOTES:
-*   1. Driver reports brightness values in terms of lux.
+*   1. Driver reports brightness values in terms of lux, and color in normalized form.
 *   2. Driver does not support SMBus alert.
 *   3. Driver only allows interrupt generation when ALL channels are finished converting.
 *      This economizes on power and bus I/O volume at the possible cost of data loss
@@ -194,6 +198,9 @@ class OPT4060Opts {
 
 
 
+/**
+* The driver.
+*/
 class OPT4060 : public I2CDevice {
   public:
     OPT4060(const OPT4060Opts, I2CAdapter* bus = nullptr);
@@ -216,7 +223,7 @@ class OPT4060 : public I2CDevice {
     int8_t reportOverload(bool autorescale);
     int8_t rescaleOnOverload(bool autorescale);
 
-    // Set the number of consecutive faults
+    // Get/set the number of consecutive faults for threshold logic.
     // 0 - 1 fault
     // 1 - 2 faults
     // 2 - 4 faults
@@ -236,11 +243,17 @@ class OPT4060 : public I2CDevice {
     OPT4060Mode mode();
     OPT4060IntPin optPinMode();
 
+    /* Data access functions */
+    // These functions report normalized sensor data converted to lux.
+    uint32_t milliLux(OPT4060Channel);
+    int8_t   milliLux(Vector3<uint32_t>*);
     inline Vector3<float> getErrorLux() {  return Vector3<float>(_effective_res[0], _effective_res[1], _effective_res[2]);  };
-    float    channelValue(OPT4060Channel);
+
+    // Color functions report values as normalized against total incident light.
     uint32_t colorValue(const ImgBufferFormat);
     int8_t   colorValue(Vector3<float>*);
     int8_t   colorValue(Vector3<uint8_t>*);
+
 
     /* Overrides from the BusOpCallback interface */
     int8_t io_op_callahead(BusOp*);
@@ -294,7 +307,7 @@ class OPT4060 : public I2CDevice {
 
     // The sensor's response is reported logarithmically. This function applies
     //   corrective adjustments to the shadow register values, and converts the
-    //   results into uint32_t. These are then stored in the private _lux
+    //   results into uint32_t. These are then stored in the private _millilux
     //   member for retreival.
     int8_t _normalize_data();
 

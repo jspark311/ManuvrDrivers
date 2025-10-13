@@ -46,6 +46,14 @@
  *
  */
 
+
+
+// TODO: this translation unit remains unported to C3P and will not compile
+//   under most environments.    ---J. Ian Lindsay
+#if defined(CONFIG_C3P_ILI9341)
+#warning "This translation unit has not been ported. It make build for you, but do not file a bug if it does not."
+#endif
+
 #include "Adafruit_ILI9341.h"
 #ifndef ARDUINO_STM32_FEATHER
 #include "pins_arduino.h"
@@ -327,3 +335,7 @@ uint8_t Adafruit_ILI9341::readcommand8(uint8_t commandByte, uint8_t index) {
   sendCommand(0xD9, &data, 1); // Set Index Register
   return Adafruit_SPITFT::readcommand8(commandByte);
 }
+
+
+
+#endif   // End of feature selection block.

@@ -282,6 +282,7 @@ enum class LED1202Register : uint8_t {
 class LED1202 : public I2CDevice {
   public:
     LED1202(const uint8_t I2C_ADDR, const uint8_t IRQ_PIN = 255, I2CAdapter* bus = nullptr);
+    LED1202(const uint8_t I2C_ADDR, const uint8_t IRQ_PIN, const float MAX_CURRENT[12], I2CAdapter* bus = nullptr);
     ~LED1202();
 
     int8_t init(I2CAdapter* bus = nullptr);
@@ -306,6 +307,8 @@ class LED1202 : public I2CDevice {
     //   the entire register space, we may as well.
     bool      led_open(uint8_t chan);
     bool      led_enabled(uint8_t chan);
+    int8_t    led_enabled(uint8_t chan, bool en);
+    int8_t    led_enabled_mask(uint16_t mask, bool en);
     uint16_t* led_pattern(uint8_t chan);
     float     led_max_current(uint8_t chan);  // Returns Amps.
     int8_t    led_max_current(uint8_t chan, float);  // Takes Amps.
@@ -318,8 +321,9 @@ class LED1202 : public I2CDevice {
 
   private:
     const uint8_t _IRQ_PIN;
-    uint16_t _flags;
+    float    _MAX_CHAN_MILLIAMPS[12] = {0.0f};
     uint8_t  _chan_milliamps[12] = {0};
+    uint16_t _flags;
     uint8_t  _shadows[(uint8_t) LED1202Register::INVALID];
 
     int8_t   _ll_pin_init();
